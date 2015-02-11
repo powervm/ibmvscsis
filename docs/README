@@ -1,0 +1,3 @@
+This directory is for any implementation-specific architecture
+design docs for the implementation of NVMe fabrics and the first
+fabric, RDMA.

@@ -1,0 +1,42 @@
+This Makefile provides the ability to compile the nvme-fabric files to the
+kernel on your Linux computer system, not the kernel tree that eventually
+needs to conform to (Kernel build, menuconfig, Linux coding standard, etc)
+and submit a patch against.  This allows very fast and rough sanity
+checks (like, does the init() function do the right thing when an insmod
+is issued).
+
+There is an issue with using this Makefile.  Since this project introduces
+new .h files into the kernel tree, a workaround is needed to make this
+build work (the typical -I path for kernel build system, EXTRA_CFLAGS
+and ccflags-y doesn't work).
+
+You need to add symbolic links in the include directory where the 
+kernel include files are installed on your local system which point
+to these new nvme include files.
+
+Example:
+cd /usr/src/kernels/linux-3.17.2-200.fc20.x86_64/include/linux
+mkdir nvme-fabrics
+sudo ln -s /home/jpfreyen/Desktop/projects/fabrics/stg-nvmf/localbuild/../nvm/linux-mainline/include/linux/nvme-fabrics/nvme-fabrics.h nvme-fabrics.h
+
+
+When all this is set up, you will be able to compile the code modularly
+and be able to load the driver to your local system's kernel:
+
+[ 8195.604014] 
+/home/jpfreyen/Desktop/projects/fabrics/stg-nvmf/localbuild/../nvm/linux-mainline/drivers/block/nvme-fabrics/nvme-fabrics-rdma.c: nvme_rdma_init, retval 0
+[ 9951.271124] 
+/home/jpfreyen/Desktop/projects/fabrics/stg-nvmf/localbuild/../nvm/linux-mainline/drivers/block/nvme-fabrics/nvme-fabrics-rdma.c: nvme_rdma_exit, retval 0
+
+If some mistake occurs (or you try loading the nvme-fabric module from a
+successful kernel tree build), you will get some type of error in dmesg like
+this:
+
+[ 4140.834212] nvme_rdma: version magic '3.19.0-rc3 SMP mod_unload
+modversions ' should be '3.17.2-200.fc20.x86_64 SMP mod_unload '
+
+In this example, the first number is the version of the kernel source
+tree being used for the nvme-fabric project, and the second number
+is the version of the kernel being used on the local system which we
+tried 'insmod'ing the module too.
+
