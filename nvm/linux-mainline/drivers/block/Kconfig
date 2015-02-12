@@ -310,6 +310,12 @@ config BLK_DEV_NBD
 
 	  If unsure, say N.
 
+config NVME_FABRICS
+	tristate "NVMe Fabrics Project; default to y for compile-sake"
+	default y
+	---help---
+	  TODO: FILL ME OUT...
+
 config BLK_DEV_NVME
 	tristate "NVM Express block device"
 	depends on PCI
