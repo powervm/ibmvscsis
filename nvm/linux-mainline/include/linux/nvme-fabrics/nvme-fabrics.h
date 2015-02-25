@@ -32,62 +32,138 @@
 #include <linux/bio.h>
 #include <linux/nvme-fabrics/nvme-common.h>
 
-struct cmd_info {
-	__u16 sqid;
-	__u16 sqt;
-	__u16 cqid;
-	__u16 cqh;
+#define NVME_FABRIC_IOCTL_ID		_IO('N', 0x66)
+#define NVME_FABRIC_IOCTL_ADMIN_CMD	_IOWR('N', 0x67, struct nvme_admin_cmd)
+#define NVME_FABRIC_IOCTL_SUBMIT_IO	_IOW('N', 0x68, struct nvme_user_io)
+
+/*
+ * ctype values for a command capsule header. Defines
+ * what type of 64-byte command is being sent.  Part
+ * of the Command Capsule Format being proposed in
+ * NVMe Org proposal "Fabrics TP 002".
+ */
+#define CTYPE_NVME_CMD		0
+#define CTYPE_FABRIC_AGNOSTIC	1
+#define CTYPE_FABRIC_SPECIFIC	2
+
+/*
+ * This is the Queue Information field which is part
+ * of the Command Capsule Format being proposed in
+ * NVMe Org proposal "Fabrics TP 002".
+ */
+struct capsule_queue_info {
+	union {
+		struct {
+			__le16 sqidf;
+			__le16 sqt;
+			__le16 cqidf;
+			__le16 cqh;
+
+		} qinfo;
+		__le64	qw;
+	};
 };
 
+/*
+ * This is the Capsule Header field which is part
+ * of the Command Capsule Format being proposed in
+ * NVMe Org proposal "Fabrics TP 002".
+ *
+ * Note the bits mean something different if the capsule
+ * is a command capsule or response capsule.
+ */
+struct capsule_header {
+	union {
+		struct {
+			__u8 ctype :3;
+			__u8 cattr :5;
+			__u8 rsvd;
+
+		} cmd_hdr;
+		struct {
+			__le16 cqidf;
+		} cmd_resp;
+	};
+};
+
+/*
+ * This is the Command Capsule Format being proposed in
+ * NVMe Org proposal "Fabrics TP 002".
+ */
 struct nvme_cmd_capsule {
-	struct cmd_info capsule_cmd;
-	struct nvme_common_command cmd;
+
+	/* normal 64-byte nvme cmd submission */
+	struct nvme_common_command sub;
 
 	/*
-	 * README: this points to sgl entry for a driver using
-	 * sgl lists, or an address that points to data,
-	 * or...
+	 * specifies if the 'sub' parameter in the command
+	 * information area of the capsule is:
+	 *
+	 * 1. an NVMe command
+	 * 2. a specific fabric-centric command
+	 * 3. a fabric agnostic command.
 	 */
-	void *data_contents;
+	struct capsule_header hdr;
+
+	/* contains sub/cpl queue doorbell info */
+	struct capsule_queue_info info;
+
+	/* This is specific to the NVMe command.
+	 * If DPTR of NVMe cmd is SGL1
+	 * and
+	 * bit 0 of byte 15 of DPTR/SGL1 is 0, then
+	 * this entry will be set to NULL.  Otherwise,
+	 * if DPTR of NVMe cmd is SGL1
+	 * and
+	 * bit 0 of byte 15 DPTR/SGL1 is 1, then
+	 * it will point to one of the SGL struct types
+	 * defined in Figure 19 of the NVMe 1.2 spec.
+	 */
+	void *data_section;
 };
 
+/*
+ * This is the Command Capsule Format being proposed in
+ * NVMe Org proposal "Fabrics TP 002".
+ *
+ * nvme_rsp_capsule is the response to a
+ * nvme_cmd_capsule packet sent.
+ */
 struct nvme_rsp_capsule {
-	struct cmd_info capsule_cmd;
-	struct nvme_completion cpl;
+
+	/* normal 16-byte nvme completion packet */
+	struct nvme_completion resp;
 
 	/*
-	 * README: this points to sgl entry for a driver using
-	 * sgl lists, or an address that points to data,
-	 * or...
+	 * this field will specify the completion queue
+	 * associated with the completion.
 	 */
-	void *data_contents;
+	struct capsule_header hdr;
+
+	/* contains sub/cpl queue doorbell info */
+	struct capsule_queue_info info;
+
+	/*
+	 * TODO: I believe the same rules apply here as for
+	 * '*data_section' in nvme_cmd_capsule struct
+	 * but not sure??
+	 */
+	void *data_section;
 };
 
 /*
- *  README: Theory is we want to encapsulate the NVMe specific queues into
- *  more abstract capsule queues for fabrics.  Thus we will have, say, 1024
- *  (for example), deep nvme_cmd_capsule and nvme_response_capsule queues.
+ * This struct would be used to embed more than 1 sgl descriptors
+ * with a data block and have that pointed by
+ * '*data_section' in the nvme_*_capsule structs.
+ *
+ * For capsule commands that just use SGL1 in the actual
+ * NVMe submission command, the '*data_section' variable
+ * could still be used without the need for a
+ * nvme_sgl_data_capsule struct defined below.
  */
-struct nvme_fabric_cmd_queue {
-	__le16 capsule_entries;
-	__le16 sq_cmd_head;
-	__le16 sq_cmd_tail;
-	struct nvme_cmd_capsule *cmd_capsules;
-};
-
-struct nvme_fabric_rsp_queue {
-	__le16 capsule_entries;
-	__le16 cp_rsp_head;
-	__le16 cp_rsp_tail;
-	struct nvme_response_capsule *rsp_capsules;
-};
-
-/*
- * ????????????????
- */
-struct nvme_fabric {
-	struct nvme_fabric_host_operations *fops;
-	void *TODO;
+struct nvme_sgl_data_capsule {
+	struct nvme_sgl_descriptor sgllist[NVME_SGL_SEGMENT_MAXSIZE];
+	void *data;
 };
 
 /*
@@ -113,10 +189,10 @@ struct connection {
 	 */
 	__u16 receive_depth;
 	/*
-	   according to the demo code, there were specific structs
-	   used to establish the specific fabric connection that
-	   were embedded in the more generic connection struct
-	*/
+	 * according to the demo code, there were specific structs
+	 * used to establish the specific fabric connection that
+	 * were embedded in the more generic connection struct
+	 */
 	void *xport_connection;
 
 	/*
@@ -133,8 +209,6 @@ struct connection {
  */
 struct nvme_fabric_dev {
 	__le16 num_capsule_pairs;
-	struct nvme_fabric_cmd_queue *cmd_capsule;
-	struct nvme_fabric_rsp_queue *rsp_capsule;
 	char name[12];  /* name can be name of controller */
 	char serial[20];
 	char model[40];
@@ -145,15 +219,6 @@ struct nvme_fabric_dev {
 	__le16 num_namespaces;
 };
 
-/*
- *
- * Some notes:
- *      *If you want the device to have an ioctl associated with
- *       it, define a block_device_operations with it.  This
- *       would not be a core function of
- *       nvme_fabric_host_operations.
- *
- */
 struct nvme_fabric_host_operations {
 	struct module *owner;
 
@@ -295,6 +360,28 @@ struct nvme_fabric_host_operations {
 	 */
 	void (*stop_destroy_queues)(struct connection *conn);
 };
+
+/*
+ * TODO: The thinking is we need to put in an API framework into
+ * the Linux kernel itself that it would call those generic
+ * functions for any nvme-fabric host device driver.  *fops
+ * points to the specific implementations of the specific
+ * nvme-fabric host driver.
+ */
+struct nvme_fabric {
+	struct nvme_fabric_host_operations *fops;
+	void *TODO;
+};
+
+/*
+ *
+ * Some notes:
+ *      *If you want the device to have an ioctl associated with
+ *       it, define a block_device_operations with it.  This
+ *       would not be a core function of
+ *       nvme_fabric_host_operations.
+ *
+ */
 
 void nvme_new_capsule(struct nvme_fabric *fabric,
 		      struct nvme_cmd_capsule *capsule,
