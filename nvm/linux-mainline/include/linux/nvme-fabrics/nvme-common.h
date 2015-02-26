@@ -85,6 +85,13 @@ struct nvme_queue {
 #define NVME_SGL_BIT_BUCKET		0x1
 #define NVME_SGL_SEGMENT		0x2
 #define NVME_SGL_LAST_SEGMENT		0x3
+
+/* TODO, FIXME: Need as part of the "Fabrics TP 002" proposal 
+ * SGL Tagged Segment and SGL Tagged Last Segment
+ * #define NVME_SGL_TAGGED_SEGMENT	??
+ * #define NVME_SGL_TAGGED_LAST_SEGMENT	??
+ */
+
 #define NVME_SGL_TAGGED_DATA_BLOCK	0xE
 #define NVME_SGL_VENDOR_SPECIFIC	0xF
 
@@ -139,6 +146,11 @@ struct nvme_sgl_tagged_datablock {
 	__u8   len[3]; /* length in bytes of the data block- 16MB max  */
 	__u8   sgl_identifier; /* contains a SGL Descriptor Type value */
 };
+
+/*
+ * TODO, FIXME: Need as part of the "Fabrics TP 002" proposal 
+ * SGL Tagged Segment and SGL Tagged Last Segment
+ */
 
 /* Overall struct for section 4.4, Scatter Gather List, NVMe 1.2 spec  */
 struct nvme_sgl_descriptor {
