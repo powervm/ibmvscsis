@@ -46,6 +46,12 @@
 #define CTYPE_FABRIC_AGNOSTIC	1
 #define CTYPE_FABRIC_SPECIFIC	2
 
+enum nvme_fabric_type {
+	NVME_FABRIC_PCIE = 0,	/* PCIe Fabric */
+	NVME_FABRIC_RDMA = 1,	/* RDMA Family Fabrics; IBA, iWARP, ROCE, ... */
+	/* Future NVMe Fabrics */
+};
+
 /*
  * This is the Queue Information field which is part
  * of the Command Capsule Format being proposed in
