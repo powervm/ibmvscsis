@@ -31,10 +31,7 @@
 
 #include <linux/bio.h>
 #include <linux/nvme-fabrics/nvme-common.h>
-
-#define NVME_FABRIC_IOCTL_ID		_IO('N', 0x66)
-#define NVME_FABRIC_IOCTL_ADMIN_CMD	_IOWR('N', 0x67, struct nvme_admin_cmd)
-#define NVME_FABRIC_IOCTL_SUBMIT_IO	_IOW('N', 0x68, struct nvme_user_io)
+#include <linux/moduleparam.h>
 
 /*
  * ctype values for a command capsule header. Defines
@@ -51,6 +48,10 @@ enum nvme_fabric_type {
 	NVME_FABRIC_RDMA = 1,	/* RDMA Family Fabrics; IBA, iWARP, ROCE, ... */
 	/* Future NVMe Fabrics */
 };
+
+/* TODO: Add sizeof BUILD_BUG_ON() checks to these struct sizes
+ * when space is more fleshed out enough to put a size on these things.
+ */
 
 /*
  * This is the Queue Information field which is part
@@ -173,86 +174,39 @@ struct nvme_sgl_data_capsule {
 };
 
 /*
- * struct that describes the fabric connection session the host
- * is using to communicate with the target.
- *
- * TODO: Needs to be completed and filled out
- */
-struct connection {
-
-	/*
-	 * set when the target accepts our login request
-	 */
-	__u32 session_id;
-
-	/*
-	 * holds the size of the send queue
-	 */
-	__u16  send_depth;
-
-	/*
-	 * holds the size of the receive queue
-	 */
-	__u16 receive_depth;
-	/*
-	 * according to the demo code, there were specific structs
-	 * used to establish the specific fabric connection that
-	 * were embedded in the more generic connection struct
-	 */
-	void *xport_connection;
-
-	/*
-	 * More to fill out...
-	 */
-	void *TODO;
-};
-
-/*
  * TODO:  Think this will be the fundamental device type for
  * all NVMe fabric device drivers??
  *
  * For each device instance, it can represent 1 controller discovered.
  */
 struct nvme_fabric_dev {
-	__le16 num_capsule_pairs;
-	char name[12];  /* name can be name of controller */
-	char serial[20];
-	char model[40];
-	char firmware_rev[8];
-	struct nvme_fabric *fabric;
-	struct connection *conn;
+
+	/* generic, pci-e free, nvme implementation stuff */
+	struct nvme_common_dev *dev;
+
+	/* needed for default fabric address to describe host */
 	__le64 fabric_address;
-	__le16 num_namespaces;
+
+	/*
+	 * there needs to be a way to go between the local (host)
+	 * nvme device and the remote (target) nvme device.  Host
+	 * will think it's the nvme device but this tells it
+	 * 'to go here instead'.
+	 */
+	void *xport_context;
+
+	/*
+	 * API fabric-specific drivers (RDMA, INFINIBAND, etc)
+	 * must implement
+	 */
+	struct nvme_fabric_host_operations *fops;
+
+	/* any fabric, implementation specific structs to associate */
+	void *fabric_private;
 };
 
 struct nvme_fabric_host_operations {
 	struct module *owner;
-
-	/*
-	 * Function that...
-	 *
-	 * @capsule:
-	 * @pbio:
-	 * @sq:
-	 * @dbell_value:
-	 *
-	 * Return Value:
-	 *      0 for success,
-	 *      Any other value, error
-	 */
-	int (*new_capsule)(struct nvme_cmd_capsule *capsule,
-		struct bio *pbio, struct nvme_common_command cmd,
-		__u32 dbell_value);
-
-	/*
-	 * Function that...??
-	 *
-	 * @capsule:
-	 *
-	 * Figure there is no need for a return value because
-	 * once it's sent, it's sent...
-	 */
-	void (*send_capsule)(struct nvme_cmd_capsule *capsule);
 
 	/*
 	 *  Function that takes the specific transport context being
@@ -291,7 +245,9 @@ struct nvme_fabric_host_operations {
 	 * over the fabric by this function.
 	 *
 	 * @dev:	The current nvme_fabric device being operated on.
-	 * @nvmeq:	TODO: Not sure 'why' other than it was needed in
+	 * @queue_num:	Which nvme_queue nvmeq to use in dev.
+	 *\		TODO: Not sure 'why' nvmeq was used here
+	 *		other than it was needed in
 	 *		the demo.
 	 * @cmd:	NVMe I/O command to be sent over the fabric to
 	 *		the target.
@@ -305,14 +261,9 @@ struct nvme_fabric_host_operations {
 	 * Notes:
 	 *	This function is based on on nvmerp_submit_io_cmd()
 	 *      of the demo.
-	 *
-	 *      TODO: I think this function needs a 'result' like
-	 *      prepsend_admin_cmd().  Why did the demo return
-	 *      an nvme_completion status for nvmerp_submit_aq_cmd()
-	 *      but not nvmerp_submit_io_cmd()?
 	 */
 	int (*prepsend_io_cmd)(struct nvme_fabric_dev *dev,
-			struct nvme_queue *nvmeq,
+			__u16 queue_num,
 			struct nvme_command *cmd,
 			__u32 len);
 
@@ -328,9 +279,8 @@ struct nvme_fabric_host_operations {
 		- track # of controllers discovered
 		-structure that keeps # of ns for each dev,
 		 name of each controller, fabric address for each controller
-	   TODO
 	*/
-	int (*probe)(struct nvme_fabric_dev *dev);
+	int (*probe)(int FINISHME);
 
 	/*
 	 * Function that establishes a fabric-specific connection with
@@ -351,7 +301,7 @@ struct nvme_fabric_host_operations {
 	 *      actually make a connection first, then create
 	 *      the queues.
 	 */
-	int (*connect_create_queues)(struct connection *conn);
+	int (*connect_create_queues)(int TODO);
 
 	/*
 	 * Function that stops processing queues and destroys
@@ -364,19 +314,7 @@ struct nvme_fabric_host_operations {
 	 *     This function is base on disconnect_queue() from
 	 *     the demo.
 	 */
-	void (*stop_destroy_queues)(struct connection *conn);
-};
-
-/*
- * TODO: The thinking is we need to put in an API framework into
- * the Linux kernel itself that it would call those generic
- * functions for any nvme-fabric host device driver.  *fops
- * points to the specific implementations of the specific
- * nvme-fabric host driver.
- */
-struct nvme_fabric {
-	struct nvme_fabric_host_operations *fops;
-	void *TODO;
+	void (*stop_destroy_queues)(int TODO);
 };
 
 /*
@@ -389,14 +327,21 @@ struct nvme_fabric {
  *
  */
 
-void nvme_new_capsule(struct nvme_fabric *fabric,
-		      struct nvme_cmd_capsule *capsule,
-		      struct bio *pbio,
-		      struct nvme_common_command cmd,
-		      __u32 dbell_value);
-
-int nvme_register_fabric(int TODO,
+int nvme_fabric_register(char *nvme_class_name,
 			 struct nvme_fabric_host_operations *new_fabric);
+int nvme_fabric_unregister(int TODO);
+int nvme_fabric_discovery(char *address, int port, int fabric);
+int nvme_fabric_remove_target(char *address, int port, int fabric);
+int nvme_sysfs_init(char *nvme_class_name);
+void nvme_sysfs_exit(void);
+ssize_t nvme_sysfs_do_add_target(struct class *class,
+				struct class_attribute *attr,
+				const char *buf, size_t count);
+ssize_t nvme_sysfs_show_add_target(struct class *class,
+			struct class_attribute *attr,
+			char *buf);
+ssize_t nvme_sysfs_do_remove_target(struct class *class,
+			struct class_attribute *attr,
+			const char *buf, size_t count);
 
-int nvme_unregister_fabric(int TODO);
 #endif  /* _LINUX_NVME_FABRICS_H */

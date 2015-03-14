@@ -27,8 +27,27 @@
 #include <linux/nvme-fabrics/nvme-common.h>
 #include <linux/nvme-fabrics/nvme-fabrics.h>
 #include <linux/errno.h>
+#include <linux/in.h>
+#include <linux/inet.h>
 
 #define NVME_UNUSED(x) ((void)x)
+
+/*
+ * WIP: The vision here is on a nvme_fabric_register(), at
+ * minimum we register the nvme_fabric_host_operations defined
+ * for the specific driver into this nvme-fabric middle layer.
+ * The middle layer will call the generic function pointer
+ * ops API in the appropriate order so specific drivers don't
+ * have to worry about stuff that this and to hopefully make
+ * it easier to write new host fabric drivers.
+ *
+ * TODO: A single static variable may not be right (may
+ * want an array of variables for example), but for
+ * now, practical purposes we can assume a single machine will
+ * be a single fabric host. We may also need to register
+ * more than the nvme_fabric_host_operations.
+ */
+static struct nvme_fabric_host_operations *host_fabric_ops;
 
 /*
  * Check we didin't inadvertently grow the command struct
@@ -51,44 +70,84 @@ static inline void _nvme_check_size(void)
 }
 
 /*
- * Public function that...
+ * Public function that starts a target discovery
  *
- * @fabric
- * @capsule
- * @pbio
- * @cmd
- * @dbell_value
+ * THIS NEEDS TO BE A CAPSULE FUNCTION
+ *
+ * TODO, WIP, FIXME: The current guts of this function
+ *		is actually the start of the
+ *		rdma-specific probe() call, so this code will get
+ *		moved to nvme-fabric-rdma.c.
+ *
+ * So:
+ *      -nvme_sysfs_init() registers files
+ *      -do_add_target() gets called
+ *      -do_add_target() calls this function (generic code).
+ *       then this function, nvme_fabric_discovery,
+ *       calls fops->probe() which will
+ *       call the specific-probe/discovery code for the
+ *       specific fabric (in this case, nvme-fabric-rdma.c
+ *       and the function nvme_rdma_probe())
+ *
+ * @address: The fabric address used for the discovery connection.
+ * @port:    The port on the machine used for the discovery connection.
+ * @fabric:  The type of fabric used for the connection.
+ * Return Value:
+ *      O for success,
+ *	Any other value, error
  */
-void nvme_new_capsule(struct nvme_fabric *fabric,
-		      struct nvme_cmd_capsule *capsule,
-		      struct bio *pbio,
-		      struct nvme_common_command cmd,
-		      __u32 dbell_value)
+int nvme_fabric_discovery(char *address, int port, int fabric)
 {
+	struct sockaddr		dstaddr;
+	struct sockaddr_in	*dstaddr_in;
 
-	const int UNINIT = -666;
-	int ret = UNINIT;  /* to catch uninitialized return value */
+	pr_info("%s: %s()\n", __FILE__, __func__);
 
-	if (fabric->fops) {
-		if (fabric->fops->new_capsule) {
-			ret = fabric->fops->new_capsule(
-				capsule, pbio, cmd, dbell_value);
-			if (ret != 0)
-				pr_err("%s: Error: new_capsule() =  %d.\n",
-				       __func__, ret);
-		}
-	}
-	if (ret == UNINIT)
-		pr_err("%s: Error: fops/new_capsule() uninitialized, %d.\n",
-		       __func__, ret);
+	dstaddr_in = (struct sockaddr_in *) &dstaddr;
+	memset(dstaddr_in, 0, sizeof(*dstaddr_in));
+	dstaddr_in->sin_family = AF_INET;
+
+	dstaddr_in->sin_addr.s_addr = in_aton(address);
+
+	dstaddr_in->sin_port = cpu_to_be16(port);
+	NVME_UNUSED(fabric);
+
+	return 0;
 }
-EXPORT_SYMBOL_GPL(nvme_new_capsule);
+EXPORT_SYMBOL_GPL(nvme_fabric_discovery);
 
 /*
- * Public function that registers this module as a new NVMe fabric
- * driver.
+ * Public function that starts the target removal process
  *
- * @TODO: TODO DUH!!
+ * THIS NEEDS TO BE A CAPSULE FUNCTION
+ *
+ * TODO, WIP, FIXME
+ *
+ * Return Value:
+ *      O for success,
+ *	Any other value, error
+ */
+int nvme_fabric_remove_target(char *address,
+			      int port, int fabric)
+{
+	struct sockaddr dstaddr;
+	struct sockaddr_in *dstaddr_in;
+
+	pr_info("%s: %s()\n", __FILE__, __func__);
+
+	dstaddr_in = (struct sockaddr_in *) &dstaddr;
+	memset(dstaddr_in, 0, sizeof(*dstaddr_in));
+	dstaddr_in->sin_family = AF_INET;
+	dstaddr_in->sin_port = cpu_to_be16(port);
+	dstaddr_in->sin_addr.s_addr  = in_aton(address);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(nvme_fabric_remove_target);
+
+/*
+ * Public function that registers this module as a new NVMe fabric driver.
+ *
  * @new_fabric: New fabric with specific operations defined for
  *            that NVMe fabric driver.
  *
@@ -96,53 +155,75 @@ EXPORT_SYMBOL_GPL(nvme_new_capsule);
  *      O for success,
  *	Any other value, error
  */
-int nvme_register_fabric(int TODO,
+int nvme_fabric_register(char *nvme_class_name,
 			 struct nvme_fabric_host_operations *new_fabric)
 {
-	NVME_UNUSED(new_fabric);
+	int ret = -EINVAL;
+
+	pr_info("%s: %s()\n", __FILE__, __func__);
 
 	/*
-	 * At some point, all this new framework code has to get tied
-	 * into the Linux kernel itself into a function like
-	 * this one.  Possibilities include:
-	 *
-	 * driver_register(struct device_driver *drv)
-	 *
-	 * found in drivers/base, but the problem is this
-	 * device_driver struct has a:
-	 *
-	 * struct bus_type bus
-	 *
-	 * member in it that I don't think it makes much sense for
-	 * us as we may be using ethernet as our 'bus' for RDMA
-	 * connections...
-	 *
-	 * From talking to Phil, looks like we will use a sysfs
-	 * call (class_create(), class_create_file(), etc), similiar
-	 * to what iscsi does.
+	 * TODO: Basic check, may change if host_fabric_ops changes
+	 * as we further implement this stuff.
 	 */
-	return 0;
+	if (host_fabric_ops == NULL)
+		host_fabric_ops = new_fabric;
+	else {
+		pr_err("%s %s(): host_fabric_ops/API already registered!\n",
+		       __FILE__, __func__);
+		ret = -EBUSY;
+	    goto err2;
+	}
+
+	ret = nvme_common_init();
+	if (ret) {
+		pr_err("%s %s(): Error- nvme_common_init() failed\n",
+		       __FILE__, __func__);
+		goto err2;
+	}
+
+	ret = nvme_sysfs_init(nvme_class_name);
+	if (ret) {
+		pr_err("%s %s(): Error- nvme_sysfs_init() failed\n",
+		       __FILE__, __func__);
+		goto err3;
+	}
+
+	pr_info("%s %s() exited with %d\n",
+		__FILE__, __func__, ret);
+	return ret;
+err3:
+	nvme_common_exit();
+err2:
+	return ret;
 }
-EXPORT_SYMBOL_GPL(nvme_register_fabric);
+EXPORT_SYMBOL_GPL(nvme_fabric_register);
 
 /*
- * Public function that unregisters this module as a new NVMe fabric
- * driver.
- *
- * @TODO: TODO DUH!!
+ * Public function that unregisters this module as a new NVMe fabric driver.
  *
  * Return Value:
  *      O for success,
  *      Any other value, error
  *
- * Big Caveats: This function could go away in favor of a
- * "nvme_fabric_dev_dealloc()" function that will initialize
- * a new nvme_fabric device, or this could go away all together
- * and stuff like nvme_fabric_operations gets initialized in the driver.
+ * Notes: Goal here is the function is keeping everything in order on what
+ * to shutdown and cleanup: first fabric specific stuff with the specific
+ * driver through host_fabric_ops file-visible variable, then sysfs stuff
+ * that is related to nvme-fabric generic stuff, then generic nvme
+ * standard stuff.
  */
-int nvme_unregister_fabric(int TODO)
+int nvme_fabric_unregister(int TODO)
 {
 	NVME_UNUSED(TODO);
+	pr_info("%s: %s()\n", __FILE__, __func__);
+
+	/*
+	 * TODO, FIXME: The parameter in stop_destroy_queues is WIP
+	 */
+	host_fabric_ops->stop_destroy_queues(0);
+	host_fabric_ops = NULL;
+	nvme_sysfs_exit();
+	nvme_common_exit();
 	return 0;
 }
-EXPORT_SYMBOL_GPL(nvme_unregister_fabric);
+EXPORT_SYMBOL_GPL(nvme_fabric_unregister);

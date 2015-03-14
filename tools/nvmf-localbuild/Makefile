@@ -1,13 +1,13 @@
-FABRIC_DIR = ../nvm/linux-mainline/drivers/block/nvme-fabrics 
+FABRIC_DIR = ../../drivers/block/nvme-fabrics 
 PWD = $(shell pwd)/$(FABRIC_DIR)
-INC = $(shell pwd)/../nvm/linux-mainline/include/linux
-INCFAB = $(shell pwd)/../nvm/linux-mainline/include/linux/nvme-fabrics
+INC = $(shell pwd)/../../include/linux
+INCFAB = $(shell pwd)/../../include/linux/nvme-fabrics
 EXTRA_CFLAGS += -I$(INCFAB)
 ccflags-y += -I$(INCFAB)
 
 ifneq ($(KERNELRELEASE),)
 	obj-m := nvme-rdma.o 
-	nvme-rdma-objs := $(PWD)/nvme-fabrics.o $(PWD)/nvme-fabrics-rdma.o
+	nvme-rdma-objs := $(PWD)/nvme-fabrics.o $(PWD)/nvme-fabrics-rdma.o nvme-common.o nvme-sysfs.o
 
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
