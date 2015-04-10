@@ -23,14 +23,14 @@
  * used to carry out the protocol.
  */
 
-#include <linux/bio.h>
 #include <linux/nvme-fabrics/nvme-common.h>
 #include <linux/nvme-fabrics/nvme-fabrics.h>
 #include <linux/errno.h>
-#include <linux/in.h>
-#include <linux/inet.h>
 
 #define NVME_UNUSED(x) ((void)x)
+
+/*TODO: Change this to fabric instance...*/
+int instance;
 
 /*
  * WIP: The vision here is on a nvme_fabric_register(), at
@@ -70,54 +70,187 @@ static inline void _nvme_check_size(void)
 }
 
 /*
- * Public function that starts a target discovery
+ * Public function that adds an NVMe remote Subsystem
+ *
+ * So:
+ *      -nvme_sysfs_init() registers files
+ *      -do_add_subsystem() gets called
+ *      -do_add_subsystem() calls this function (nvme_fabric_add_subsystem)
+ *       this function, nvme_fabric_add_subsystem,
+ *		establishes an AQ connection to the remote EP
+ *		issues a login request to the EP AQ Ctrlr Login/Auth Service.
+ *       This function is complete when it:
+ *              for each subsystem in the form of:
+ *			SubsystemName {CtlrNme/Addr/Port/fabricType, ...}
+ *				- obtains an Administrative Connection
+ *				- logs into the AQ on the remote EP
+ *				- obtains I/O information
+ *				- obtains the proper I/O Connections
+ *				- sets up the drives properly
+ *
+ *      this function gets called either:
+ *		directly from sysfs "do_add_subsystem" or
+ *		indirectly from sysfs "do_add_endpoint"
+ *	once for each subsystem.  This function, nvme_fabric_add_subsystem:
+ *		initializes memory to hold a list of controller connections
+ *		calls fops->nvme_connect_create_queue() which obtains an AQ
+ *		Conn logs into the Administration Queue on the remote EP
+ *		obtains I/O information
+ *		obtains the proper I/O Connections
+ *		sets up the drives properly
+ *
+ * @subsystem_name:
+ * @ctrlr_name:
+ * @fabric:  The type of fabric used for the connection.
+ * @address: The fabric address used for the discovery connection.
+ * @port:    The port on the machine used for the discovery connection.
+ * Return Value:
+ *      O for success,
+ *	Any other value, error
+ */
+int nvme_fabric_add_subsystem(char *subsystem_name, char *ctrlr_name,
+			      int fabric, char *address, int port)
+{
+	int			 ret;
+	struct nvme_conn	*conn = NULL;
+
+	pr_info("%s: %s()\n", __FILE__, __func__);
+
+	conn = kzalloc(sizeof(*conn), GFP_KERNEL);
+	if (!conn) {
+		ret = -ENOMEM;
+		goto err1;
+	}
+
+	/*Connect/Create an AQ Connection*/
+	ret = host_fabric_ops->connect_create_queue(address, port, fabric,
+			conn, CONN_AQ);
+	if (ret) {
+		pr_err("%s %s(): Error %d trying to create AQ\n",
+		       __FILE__, __func__, ret);
+		goto err2;
+	}
+
+	/*TODO: Log into EP via AQ conn using AQ login capsule and info
+	 *	returned by discovery capsules
+	 */
+	if (ret) {
+		pr_err("%s %s(): Error %d trying to log into AQ\n",
+		       __FILE__, __func__, ret);
+		goto err2;
+	}
+	/*...*/
+
+	return ret;
+
+err2:
+	kfree(conn);
+err1:
+	return ret;
+}
+EXPORT_SYMBOL_GPL(nvme_fabric_add_subsystem);
+
+/*
+ * Public function that starts a ep discovery
  *
  * THIS NEEDS TO BE A CAPSULE FUNCTION
  *
  * TODO, WIP, FIXME: The current guts of this function
- *		is actually the start of the
- *		rdma-specific probe() call, so this code will get
- *		moved to nvme-fabric-rdma.c.
+ *              is actually the start of the
+ *              rdma-specific probe() call, so this code will get
+ *              moved to nvme-fabric-rdma.c.
  *
  * So:
  *      -nvme_sysfs_init() registers files
- *      -do_add_target() gets called
- *      -do_add_target() calls this function (generic code).
- *       then this function, nvme_fabric_discovery,
- *       calls fops->probe() which will
- *       call the specific-probe/discovery code for the
- *       specific fabric (in this case, nvme-fabric-rdma.c
- *       and the function nvme_rdma_probe())
+ *      -do_add_endpoint() gets called
+ *      -do_add_endpoint() calls this (generic) func (nvme_fabric_discovery)
+ *       this function, nvme_fabric_discovery,  calls fops->probe() which
+ *		calls the specific-probe/discovery code for the specific
+ *		fabric. establishes a "discovery" connection to the remote EP
+ *		issues a login request to the Discover Ctrlr Login/Auth
+ *		service.
+ *       This function is complete when it:
+ *              obtains a Discovery Connection
+ *              logs into the Discovery service on the remote EP
+ *              obtains controller information
+	 * SubsystemName CtlrNme/Addr/Port/fabricType Ctlr_name/Addr/Port ...
+ *              for each subsystem in the form of:
+ *			SubsystemName {CtlrNme/Addr/Port/fabricType, ...}
+ *				- obtains an Administrative Connection
+ *				- logs into the AQ on the remote EP
+ *				- obtains I/O information
+ *				- obtains the proper I/O Connections
+ *				- sets up the drives properly
  *
  * @address: The fabric address used for the discovery connection.
  * @port:    The port on the machine used for the discovery connection.
  * @fabric:  The type of fabric used for the connection.
  * Return Value:
  *      O for success,
- *	Any other value, error
+ *      Any other value, error
  */
-int nvme_fabric_discovery(char *address, int port, int fabric)
+int nvme_fabric_discovery(char *address, int port, int fabric_type)
 {
-	struct sockaddr		dstaddr;
-	struct sockaddr_in	*dstaddr_in;
+	int	ret;
+	char	subsystem_name[FABRIC_STRING_MAX] = "";
+	char	ctrlr_name[FABRIC_STRING_MAX] = "";
+	char	ctrlr_address[ADDRSIZE] = "";
+	int	ctrlr_port = 0;
+	void	*conn = NULL;
 
 	pr_info("%s: %s()\n", __FILE__, __func__);
 
-	dstaddr_in = (struct sockaddr_in *) &dstaddr;
-	memset(dstaddr_in, 0, sizeof(*dstaddr_in));
-	dstaddr_in->sin_family = AF_INET;
+	/*Create entry for this remote EP and connect/create for Discovery */
+	ret = host_fabric_ops->connect_create_queue(address, port, fabric_type,
+			conn, CONN_DISCOVER);
 
-	dstaddr_in->sin_addr.s_addr = in_aton(address);
+	/* ret = host_fabric_ops->probe(address, port, fabric_type, conn);
+	 */
+	if (ret) {
+		pr_err("%s %s(): fabric probe function returned %d\n",
+		       __FILE__, __func__, ret);
+		goto err1;
+	}
 
-	dstaddr_in->sin_port = cpu_to_be16(port);
-	NVME_UNUSED(fabric);
+	/*TODO: Log into remote EP via discovery conn returned from probe and
+	 * using disc login capsule*/
 
-	return 0;
+	/*TODO: Use discovery conn returned by probe to send Disc req capsule
+	 * asking for EP NVMe subsystem info - which returns list resembling:
+	 * SubsystemName CtlrNme/Addr/Port/fabricType Ctlr_name/Addr/Port ...
+	 * SubsystemName CtlrName/Addr/Port/fabricType
+	 * SubsystemName CtlrName/Addr/Port/fabricType Ctlr_name/Addr/Port ...
+	 */
+
+	/* Disconnect the Discovery connection and clean up fabric memory */
+	host_fabric_ops->disconnect(address, port, fabric_type);
+
+	/*TODO: Iterate over the list of subsystems returned.
+	 *	IF: a given subsystem has >1 ctrlr have to deal with multipath.
+	 *
+	 *	For each Ctlr returned, Connect/Create the AQs, IOQs, ...
+	 */
+	ret = nvme_fabric_add_subsystem(subsystem_name, ctrlr_name,
+					fabric_type, ctrlr_address,
+					ctrlr_port);
+	if (ret) {
+		pr_err("%s %s(): Error %d trying to create AQ\n",
+		       __FILE__, __func__, ret);
+		goto err2;
+	}
+
+	return ret;
+
+err2:
+	/*TODO: CAYTONCAYTON - what do we do if subsystem creation fails? */
+err1:
+	/*TODO: CAYTONCAYTON - what do we do if discovery connection fails? */
+	return ret;
 }
 EXPORT_SYMBOL_GPL(nvme_fabric_discovery);
 
 /*
- * Public function that starts the target removal process
+ * Public function that starts a single ep's removal process
  *
  * THIS NEEDS TO BE A CAPSULE FUNCTION
  *
@@ -127,23 +260,15 @@ EXPORT_SYMBOL_GPL(nvme_fabric_discovery);
  *      O for success,
  *	Any other value, error
  */
-int nvme_fabric_remove_target(char *address,
-			      int port, int fabric)
+int nvme_fabric_remove_endpoint(char *address, int port, int fabric)
 {
-	struct sockaddr dstaddr;
-	struct sockaddr_in *dstaddr_in;
-
 	pr_info("%s: %s()\n", __FILE__, __func__);
 
-	dstaddr_in = (struct sockaddr_in *) &dstaddr;
-	memset(dstaddr_in, 0, sizeof(*dstaddr_in));
-	dstaddr_in->sin_family = AF_INET;
-	dstaddr_in->sin_port = cpu_to_be16(port);
-	dstaddr_in->sin_addr.s_addr  = in_aton(address);
+	host_fabric_ops->disconnect(address, port, fabric);
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(nvme_fabric_remove_target);
+EXPORT_SYMBOL_GPL(nvme_fabric_remove_endpoint);
 
 /*
  * Public function that registers this module as a new NVMe fabric driver.
@@ -162,6 +287,7 @@ int nvme_fabric_register(char *nvme_class_name,
 
 	pr_info("%s: %s()\n", __FILE__, __func__);
 
+	instance = 0;
 	/*
 	 * TODO: Basic check, may change if host_fabric_ops changes
 	 * as we further implement this stuff.
@@ -172,7 +298,7 @@ int nvme_fabric_register(char *nvme_class_name,
 		pr_err("%s %s(): host_fabric_ops/API already registered!\n",
 		       __FILE__, __func__);
 		ret = -EBUSY;
-	    goto err2;
+		goto err2;
 	}
 
 	ret = nvme_common_init();
@@ -214,11 +340,10 @@ EXPORT_SYMBOL_GPL(nvme_fabric_register);
  */
 int nvme_fabric_unregister(int TODO)
 {
-	NVME_UNUSED(TODO);
 	pr_info("%s: %s()\n", __FILE__, __func__);
 
 	/*
-	 * TODO, FIXME: The parameter in stop_destroy_queues is WIP
+	 * TODO, FIXME: Parameter in stop_destroy_queues should be a "ep"
 	 */
 	host_fabric_ops->stop_destroy_queues(0);
 	host_fabric_ops = NULL;

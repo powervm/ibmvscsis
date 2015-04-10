@@ -43,10 +43,49 @@
 #define CTYPE_FABRIC_AGNOSTIC	1
 #define CTYPE_FABRIC_SPECIFIC	2
 
+#define FABRIC_STRING_MAX	50 /* CAYTONCAYTON - this should be 1K! */
+#define ADDRSIZE		128
+
+
 enum nvme_fabric_type {
 	NVME_FABRIC_PCIE = 0,	/* PCIe Fabric */
-	NVME_FABRIC_RDMA = 1,	/* RDMA Family Fabrics; IBA, iWARP, ROCE, ... */
+	NVME_FABRIC_RDMA = 1,	/* RDMA Fabrics; IBA, iWARP, ROCE, ... */
 	/* Future NVMe Fabrics */
+};
+
+enum nvme_conn_stage {
+	CONN_DISCOVER = 0,
+	CONN_AQ,
+	CONN_IOQ,
+	CONN_FULLY_INIT,
+	CONN_ERROR,
+};
+
+extern char hostname[FABRIC_STRING_MAX];
+
+extern int                              instance;
+
+struct aq {
+	/* struct *nvme_aq_stuff */
+	void	 *fabric_aq_conn;
+};
+
+struct ioq {
+	/* This should be a "list" of IOQs
+	  struct *nvme_ioq_stuff
+	*/
+	void	 *fabric_ioq_conn;
+};
+
+struct nvme_conn {
+	struct list_head	node; /*List of all active connections*/
+	int			state; /*CONN_PROBE, CONN_AQ, CONN_IOQ, ... */
+	char			*ctrlrname[FABRIC_STRING_MAX];
+	char			*subsysname[FABRIC_STRING_MAX];
+	char			*Address[ADDRSIZE];
+	int			port;
+	struct aq		*aq;
+	struct ioq		*ioq;
 };
 
 /* TODO: Add sizeof BUILD_BUG_ON() checks to these struct sizes
@@ -189,7 +228,7 @@ struct nvme_fabric_dev {
 
 	/*
 	 * there needs to be a way to go between the local (host)
-	 * nvme device and the remote (target) nvme device.  Host
+	 * nvme device and the remote (ep) nvme device.  Host
 	 * will think it's the nvme device but this tells it
 	 * 'to go here instead'.
 	 */
@@ -250,7 +289,7 @@ struct nvme_fabric_host_operations {
 	 *		other than it was needed in
 	 *		the demo.
 	 * @cmd:	NVMe I/O command to be sent over the fabric to
-	 *		the target.
+	 *		the ep.
 	 * @len:	The leftover byte count after subtracting from
 	 *		a base quantity byte size (like 4k for example).
 	 *
@@ -263,9 +302,9 @@ struct nvme_fabric_host_operations {
 	 *      of the demo.
 	 */
 	int (*prepsend_io_cmd)(struct nvme_fabric_dev *dev,
-			__u16 queue_num,
-			struct nvme_command *cmd,
-			__u32 len);
+			       __u16 queue_num,
+			       struct nvme_command *cmd,
+			       __u32 len);
 
 	/*
 	 * The NVMe fabric discover function responsible for
@@ -280,13 +319,17 @@ struct nvme_fabric_host_operations {
 		-structure that keeps # of ns for each dev,
 		 name of each controller, fabric address for each controller
 	*/
-	int (*probe)(int FINISHME);
+	int (*probe)(char *address, int port,
+		     int fabric, struct nvme_conn *disc_conn);
+
+	/*TODO*/
+	void (*disconnect)(char *address, int port, int fabric);
 
 	/*
 	 * Function that establishes a fabric-specific connection with
-	 * the target, as well as create the send work queue and the receive
+	 * the ep, as well as create the send work queue and the receive
 	 * work queue to establish a queue pair for the host to use
-	 * to communicate NVMe capsules with the target.
+	 * to communicate NVMe capsules with the ep.
 	 *
 	 *  @conn: The connection session description construct
 	 *         of the host fabric device.
@@ -301,7 +344,8 @@ struct nvme_fabric_host_operations {
 	 *      actually make a connection first, then create
 	 *      the queues.
 	 */
-	int (*connect_create_queues)(int TODO);
+	int (*connect_create_queue)(char *addr, int port, int fabric,
+				    struct nvme_conn *nvme_conn, int stage);
 
 	/*
 	 * Function that stops processing queues and destroys
@@ -331,17 +375,34 @@ int nvme_fabric_register(char *nvme_class_name,
 			 struct nvme_fabric_host_operations *new_fabric);
 int nvme_fabric_unregister(int TODO);
 int nvme_fabric_discovery(char *address, int port, int fabric);
-int nvme_fabric_remove_target(char *address, int port, int fabric);
+int nvme_fabric_add_subsystem(char *subsystem_name, char *ctrlr_name,
+			      int fabric, char *address, int port);
+int nvme_fabric_remove_endpoint(char *address, int port, int fabric);
+
+/******** nvme-sysfs.c function prototype definitions *********/
+
 int nvme_sysfs_init(char *nvme_class_name);
 void nvme_sysfs_exit(void);
-ssize_t nvme_sysfs_do_add_target(struct class *class,
-				struct class_attribute *attr,
-				const char *buf, size_t count);
-ssize_t nvme_sysfs_show_add_target(struct class *class,
-			struct class_attribute *attr,
-			char *buf);
-ssize_t nvme_sysfs_do_remove_target(struct class *class,
-			struct class_attribute *attr,
-			const char *buf, size_t count);
+ssize_t nvme_sysfs_do_add_endpoint(struct class *class,
+				   struct class_attribute *attr,
+				   const char *buf, size_t count);
+ssize_t nvme_sysfs_do_add_subsystem(struct class *class,
+				    struct class_attribute *attr,
+				    const char *buf, size_t count);
+ssize_t nvme_sysfs_show_add_endpoint(struct class *class,
+				     struct class_attribute *attr,
+				     char *buf);
+ssize_t nvme_sysfs_do_remove_endpoint(struct class *class,
+				      struct class_attribute *attr,
+				      const char *buf, size_t count);
+ssize_t nvme_sysfs_do_set_hostname(struct class *class,
+				   struct class_attribute *attr,
+				   const char *buf, size_t count);
+ssize_t nvme_sysfs_show_set_hostname(struct class *class,
+				     struct class_attribute *attr,
+				     char *buf);
+ssize_t nvme_sysfs_show_add_subsystem(struct class *class,
+				      struct class_attribute *attr,
+				      char *buf);
 
 #endif  /* _LINUX_NVME_FABRICS_H */

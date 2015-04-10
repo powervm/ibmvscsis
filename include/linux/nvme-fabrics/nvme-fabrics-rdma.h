@@ -29,6 +29,11 @@
 #ifndef _LINUX_NVME_FABRICS_RDMA_H
 #define _LINUX_NVME_FABRICS_RDMA_H
 
+#include <rdma/rdma_cm.h>
+#include <rdma/ib_verbs.h>
+#include <rdma/ib_fmr_pool.h>
+#include <linux/list.h>
+#include <linux/wait.h>
 #define NVME_UNUSED(x)		((void)x)
 #define TODO			NULL
 
@@ -46,39 +51,68 @@
 #define CQ_SIZE(depth)          (depth * sizeof(struct nvme_completion))
 #define NVMF_CLASS		"nvme_rdma"
 
+static inline char *addr2str(struct sockaddr_in *dst)
+{
+	static char     addr[64];
+
+	sprintf(addr, "%pI4:%d", &dst->sin_addr.s_addr, dst->sin_port);
+	return addr;
+}
+
+enum {
+	STATE_NOT_CONNECTED = 0,
+	STATE_CONNECTED,
+	STATE_DISCONNECTING,
+	STATE_DRAINING,
+	STATE_CLOSING,
+	STATE_ERROR = -1,
+	STATE_TIMEDOUT = -2,
+};
+
+/*TODO: Can this be combined with ep? */
+struct xport_conn {
+	struct rdma_conn_param  conn_params;
+	struct rdma_cm_id       *cm_id;
+	struct ib_cq            *cq;
+	struct ib_wc            wc;
+};
+
+/*
+ * Points to an individual remote node
+ * ALL ctrlrs on a node get a pointer to a common ep struct
+ */
+/*TODO: Does some of this need to be pulled into xport_conn?*/
+struct ep {
+	struct list_head	node;
+	struct sockaddr_in      dst;
+	int			instance;
+	struct ib_device        *ib_dev;
+	struct ib_pd            *pd;
+	struct ib_mr            *mr;
+	int			max_qp_init_rd_atom;
+	int			max_qp_rd_atom;
+	struct list_head	connections; /* all AQ + IOQs */
+};
+
 /*
  * struct that describes the fabric connection session the host
- * is using to communicate with the target.
- *
- * TODO: Needs to be completed and filled out
+ * is using to communicate with the ep.
  */
-struct nvme_rdma_connection {
-
-	/*
-	 * set when the target accepts our login request
-	 */
-	__u32 session_id;
-
-	/*
-	 * holds the size of the send queue
-	 */
-	__u16  send_depth;
-
-	/*
-	 * holds the size of the receive queue
-	 */
-	__u16 receive_depth;
-	/*
-	 * according to the demo code, there were specific structs
-	 * used to establish the specific fabric connection that
-	 * were embedded in the more generic connection struct
-	 */
-	void *xport_connection;
-
-	/*
-	 * More to fill out...
-	 */
-	void *WIP;
+struct nvme_fabric_conn {
+	struct ep		*ep; /* Remote node info */
+	struct xport_conn	xport_conn;
+	int                     state;
+	int                     stage;
+	struct list_head        node;
+	u16			port;
+	u32                     session_id;
+	u16                     rx_depth;
+	u16                     tx_depth;
+	struct rx_desc          *rx_desc_table;
+	struct tx_desc          *tx_desc_table;
+	struct completion       comp;
+	wait_queue_head_t       sem;
+	struct nvme_queue       *nvmeq;
 };
 
 #endif  /* _LINUX_NVME_FABRICS_RDMA_H */
