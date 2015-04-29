@@ -643,4 +643,4 @@ module_exit(nvme_rdma_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Phil Cayton, Jay Freyensee");
 MODULE_DESCRIPTION("NVMe host driver implementation over RDMA fabric");
-MODULE_VERSION("0.000000001");
+MODULE_VERSION("0.000000002");

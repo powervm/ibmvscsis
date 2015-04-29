@@ -80,7 +80,8 @@ static struct task_struct *nvme_thread;
 static wait_queue_head_t nvme_kthread_wait;
 static struct workqueue_struct *nvme_workq;
 
-int nvme_ioctl(struct block_device *bdev, fmode_t mode, unsigned int cmd,
+int nvme_common_ioctl(struct block_device *bdev, fmode_t mode,
+			unsigned int cmd,
 			unsigned long arg)
 {
 	NVME_UNUSED(bdev);
@@ -91,14 +92,14 @@ int nvme_ioctl(struct block_device *bdev, fmode_t mode, unsigned int cmd,
 }
 
 void nvme_common_free_iod(struct nvme_common_dev *dev,
-			  struct nvme_iod *iod)
+			  struct nvme_common_iod *iod)
 {
 	NVME_UNUSED(dev);
 	NVME_UNUSED(iod);
 }
 
 int nvme_common_setup_prps(struct nvme_common_dev *dev,
-			   struct nvme_iod *iod,
+			   struct nvme_common_iod *iod,
 			   int total_len, gfp_t gfp)
 {
 	NVME_UNUSED(dev);
@@ -111,7 +112,7 @@ int nvme_common_setup_prps(struct nvme_common_dev *dev,
 void nvme_common_submit_discard(struct nvme_common_queue *nvmeq,
 				       struct nvme_common_ns *ns,
 				       struct request *req,
-				       struct nvme_iod *iod)
+				       struct nvme_common_iod *iod)
 {
 	NVME_UNUSED(nvmeq);
 	NVME_UNUSED(ns);

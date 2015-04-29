@@ -29,28 +29,680 @@
 #ifndef _LINUX_NVME_FABRICS_H
 #define _LINUX_NVME_FABRICS_H
 
-#include <linux/bio.h>
 #include <linux/nvme-fabrics/nvme-common.h>
 #include <linux/moduleparam.h>
 
 /*
- * ctype values for a command capsule header. Defines
- * what type of 64-byte command is being sent.  Part
- * of the Command Capsule Format being proposed in
- * NVMe Org proposal "Fabrics TP 002".
+ * Capsule Command Type opcodes.  In a NVMe Fabric
+ * capsule, there can be commands that are related to
+ * normal NVMe commands, or there can be commands that are
+ * related specifically to an NVMe fabric property.
+ * Part of NVMe Org proposal "Fabrics TP 002".
  */
-#define CTYPE_NVME_CMD		0
-#define CTYPE_FABRIC_AGNOSTIC	1
-#define CTYPE_FABRIC_SPECIFIC	2
+#define CCTYPE_NVME_CMD			0x0
+#define CCTYPE_NVME_RSP			0x1
+#define CCTYPE_PROPERTY_SET_CMD		0x2
+#define CCTYPE_PROPERTY_SET_RSP		0x3
+#define CCTYPE_PROPERTY_GET_CMD		0x4
+#define CCTYPE_PROPERTY_GET_RSP		0x5
+#define CCTYPE_CPLQUEUE_UPDATE_CMD	0x6
+#define CCTYPE_CPLQUEUE_UPDATE_RSP	0x7
+#define CCTYPE_CONNECT_CMD		0x8
+#define CCTYPE_CONNECT_RSP		0x9
+#define CCTYPE_DISCOVER_CMD		0xA
+#define CCTYPE_DISCOVER_RSP		0xB
+#define CCTYPE_DISCOVER_GETINFO_CMD	0xC
+#define CCTYPE_DISCOVER_GETINFO_RSP	0xD
+
+/*
+ * For property values, i.e. "virtual registers",
+ * they can either hole 4 byte values or 8 byte
+ * values.  Thus, the 'attrib' variable in
+ * Set/Get Property commands defines the size of
+ * the value to be written to a given property.
+ * Part of NVMe Org proposal "Fabrics TP 002".
+ */
+#define PROPERTY_ATTRIB_4BYTES		0x0
+#define PROPERTY_ATTRIB_8BYTES		0x1
 
 #define FABRIC_STRING_MAX	50 /* CAYTONCAYTON - this should be 1K! */
 #define ADDRSIZE		128
 
+#define NVME_FABRIC_IQN_MINLEN	16
+#define NVME_FABRIC_IQN_MAXLEN	1024
 
 enum nvme_fabric_type {
-	NVME_FABRIC_PCIE = 0,	/* PCIe Fabric */
-	NVME_FABRIC_RDMA = 1,	/* RDMA Fabrics; IBA, iWARP, ROCE, ... */
+	NVME_FABRIC_PCIE = 0,     /* PCIe Fabric */
+	NVME_FABRIC_RDMA = 1,     /* RDMA Fabrics; IBA, iWARP, ROCE, ... */
+	NVME_FABRIC_FC   = 2,     /* Fibre Channel Fabric */
+	NVME_FABRIC_OMNIPATH = 3, /* Intel OMNI PATH RDMA technology */
 	/* Future NVMe Fabrics */
+};
+
+/* struct used to capture dns network address */
+struct dns_addr_type {
+	__u8 octet[255];
+	__u16 tcp_udp_port;
+};
+
+/* struct used to capture ipv4 network address */
+struct ipv4_addr_type {
+	__u8 octet[4];
+	__u16 tcp_udp_port;
+};
+
+/* struct used to capture ipv6 network address */
+struct ipv6_addr_type {
+	__u8 octet[16];
+	__u16 tcp_udp_port;
+};
+
+/* struct used to capture a MAC address */
+struct emac_addr_type {
+	__u8 octet[6];
+};
+
+/* struct used to capture an infiniband address */
+struct iba_addr_type {
+	__u8 octet[16];
+};
+
+/* struct used to capture a fibre channel address */
+struct fc_addr_type {
+	/*
+	 * this represents an 8 or 16 byte wwn or
+	 * wwpn for fibre channel devices
+	 */
+	__u8 octet[16];
+};
+
+enum nvme_fabric_addr_type {
+	NVME_FABRIC_DNS  = 0,
+	NVME_FABRIC_IP4  = 1,
+	NVME_FABRIC_IP6  = 2,
+	NVME_FABRIC_EMAC = 3,
+	NVME_FABRIC_IBA  = 4,
+	NVME_FABRIC_WWID = 5,
+};
+
+/* generic nvme fabric address data struct */
+struct nvme_fabric_addr {
+	__u8 what_fabric_type;
+
+	struct fabric_type {
+		union {
+			struct dns_addr_type dns_addr;
+			struct ipv4_addr_type ipv4_addr;
+			struct ipv6_addr_type ipv6_addr;
+			struct emac_addr_type emac_addr;
+			struct iba_addr_type iba_addr;
+			struct fc_addr_type fc_addr;
+		};
+	} addr;
+};
+
+/*
+ * This is the Capsule Header field which is part
+ * of the Command Capsule Format being proposed in
+ * NVMe Org proposal "Fabrics TP 002".
+ *
+ */
+struct nvme_capsule_header {
+
+	/*
+	 * capsule opcode. Depending on the opcode is what
+	 * struct is used in the union defined below.
+	 */
+
+
+	struct capsule_type {
+		union {
+			/*
+			 * capsule hdr iff cctype == 0x0h,
+			 * NVMe command.
+			 */
+			struct {
+				__u8 cctype;
+				__u8 rsvd[7];
+
+				/*
+				 * specifies sub queue # for this
+				 * command packet.  0 is Admin.
+				 */
+				__le16 sqidf;
+
+				/*
+				 * If the value in this field is different
+				 * than the submission queue tail value
+				 * contained in the queue 'sqidf' (value
+				 * in sqidf), then the tail value to be
+				 * written to 'this' submission queue
+				 * is held in this field, 'sqt'.
+				 */
+				__le16 sqt;
+
+				/*
+				 * specifices the cplqueue # head doorbell
+				 * to be written. 0 is the Admin queue.
+				 */
+				__le16 cqidf;
+
+				/*
+				 * If this field contains a value that is
+				 * different from the cpl queue # Header Dbell
+				 * specified in CQHf, then cpl queue # Tail
+				 * Dbell shall be written with the value
+				 * specified after the cmd in the capsule is
+				 * processed.
+				 */
+				__le16 cqh;
+			} nvme_cmd;
+
+			/*
+			 * capsule hdr iff cctype == 0x01h,
+			 * NVMe response.
+			 */
+			struct {
+				__u8 cctype;
+				__u8 rsvd[11];
+
+				/*
+				 * cpl queue # which this
+				 * completion was successful
+				 */
+				__le16 cqidf;
+
+				__u8 rsvd2[2];
+			} nvme_rsp;
+
+			/*
+			 * capsule hdr iff cctype == 0x02h,
+			 * property set command.
+			 */
+			struct {
+				__u8 cctype;
+				/*
+				 * bits 7:3 are rsvd and
+				 * should be 0. This field
+				 * represents the size
+				 * in bytes of the value the property
+				 * (i.e., 'virtual register') saves.
+				 */
+				__u8 attrib;
+
+				__le16 rsvd;
+
+				/* Since this struct is used to represent a
+				 *'virtual register', i.e. a property, this
+				 * represents the offset property in the
+				 * 'virtual BAR' to set.
+				 */
+				__le32 ofst;
+
+				/*
+				 * value to be written to the property
+				 * location. if attrib == 1, then it's an
+				 * 8 byte value,
+				 * otherwise it is a 4 byte value.
+				 */
+				__le64 valu;
+
+			} prpset_cmd;
+
+			/*
+			 * capsule hdr iff cctype == 0x03h,
+			 * property set response.
+			 */
+			struct {
+				__u8 cctype;
+				/*
+				 * return status of a property set command
+				 * ('successful', offset out-of-range error,
+				 * etc.
+				 */
+				__u8 sts;
+				__u8 rsvd[14];
+			} prpset_rsp;
+
+			/*
+			 * capsule hdr iff cctype == 0x04h,
+			 * property get command
+			 */
+			struct {
+				__u8 cctype;
+				/*
+				 * bits 7:3 are rsvd and
+				 * should be 0. This represents the size
+				 * in bytes of the value the property
+				 * (i.e., 'virtual register') saves.
+				 */
+				__u8 attrib;
+				__le16 rsvd;
+
+				/* Since this struct is used to represent a
+				 *'virtual register', i.e. a property, this
+				 * represents the offset property in the
+				 * 'virtual BAR' to read.
+				 */
+				__le32 ofst;
+				__le64 rsvd2;
+			} prpget_cmd;
+
+			/*
+			 * capsule hdr iff cctype == 0x05h,
+			 * property get response.
+			 */
+			struct {
+				__u8 cctype;
+				/*
+				 * return status of a property set command
+				 * ('successful', offset out-of-range error,
+				 * etc.
+				 */
+				__u8 sts;
+				__u8 rsvd[6];
+
+				/*
+				 * value returned from the property
+				 * read.  byte size (width) of the value
+				 * is determined by the width of the
+				 * 'property' and the 'attrib' parameter.
+				*/
+				__le64 valu;
+			} prpget_rsp;
+
+			/*
+			 * capsule hdr iff cctype == 0x06h,
+			 * completion queue update command.
+			 */
+			struct {
+				__u8 cctype;
+				__u8 rsvd[11];
+
+				/*
+				 * This field specifies which completion
+				 * queue # of head doorbell value to
+				 * be written.
+				 */
+				__le16 cqidf;
+
+				/*
+				 * The value of cqidf's tail doorbell
+				 * to be written.
+				 */
+				__le16 cqh;
+			} cplqueue_cmd;
+
+			/*
+			 * capsule hdr iff cctype == 0x07h,
+			 * completion queue update command.
+			 */
+			struct {
+				__u8 cctype;
+
+				/* cpl capsule packet response */
+				__u8 sts;
+				__u8 rsvd[14];
+			} cplqueue_rsp;
+
+			/*
+			 * capsule hdr iff cctype == 0x08h, connect command.
+			 */
+			struct {
+				__u8 cctype;
+
+				/*
+				 * Specifies type of connection to be
+				 * established-
+				 * 0h - NVMe discovery connection
+				 * 1h - NVMe Admin queue connection
+				 * 2h - NVMe IOQ pair connection
+				 * any other value is rsvd
+				 */
+				__u8 cntype;
+
+				/*
+				 * indicates next capsule will be a
+				 * security_send capsule.
+				 */
+				__u8 ioqsse;
+
+				__u8 rsvd;
+
+				/*
+				 * Set to value 0 for discovery and admin
+				 * cntype. For NVMe IOQ pair, field must
+				 * match the QID value used in an earlier,
+				 * successful NVMe Create I/O Submission
+				 * Queue Admin cmd.  Otherwise, it's
+				 * an CSQID Does Not Exist error.
+				 */
+				__le16 csqid;
+
+				/*
+				 * Set to value 0 for discovery & admin
+				 * cntype. For NVMe IOQ pair, field must
+				 * match the QID value set by an earlier
+				 * Create I/O completion queue Admin cmd.
+				 * Otherwise, it is a CCQID Does Not Exist
+				 * error.
+				 */
+				__le16 ccqid;
+
+				/*
+				 * This field contains an NVMe controller
+				 * session unique identifier.  The following
+				 * cases determine the value of this field:
+				 *
+				 * discovery session           = 0
+				 * new admin QP connection     = 0
+				 * current admin QP connection = non-zero
+				 *				 value
+				 *				 created from
+				 *				 Admin QP
+				 *				 connection.
+				 * new IO QP connection        = non-zero
+				 *				 value created
+				 *				 from Admin QP
+				 *				 connection.
+				 */
+				__le32 cnsid;
+
+				__le32 rsvd2;
+			} connect_cmd;
+
+			/*
+			 * capsule hdr iff cctype == 0x09h,
+			 * connect response command.
+			 */
+			struct {
+				__u8 cctype;
+				/*
+				 * return success or error status on
+				 * Connect cmd.
+				 */
+				__u8 sts;
+
+				/*
+				 * This field contains an NVMe controller
+				 * session unique identifier.  The following
+				 * cases determine the value of this field:
+				 *
+				 * discovery session             = 0
+				 * new or current admin QP conn. = non-zero
+				 *				 value
+				 *				 created from
+				 *				 Admin QP
+				 *				 connection.
+				 * new IO QP connection          = non-zero
+				 *				 value created
+				 *				 from Admin QP
+				 *				 connection.
+				 */
+				/*
+				 * BUG?/TODO? There seems to be problem
+				 * w/using __le32 here, it
+				 * makes the union 8 bytes bigger!?!
+				 * Cannot figure it out...long effort
+				 * to pinpoint this...
+				 */
+				__u8 cnsid[4];
+
+				__u8 rsvd[10];
+			} connect_rsp;
+
+			/*
+			 * capsule hdr iff cctype == 0x0Ah,
+			 * discover command.
+			 */
+			struct {
+				__u8 cctype;
+				/*
+				 * defines type of discovery info requested:
+				 *      0h: Request discovery info
+				 *          on all subsystems
+				 *      1h: Request discovery info
+				 *          on NVMe subsystem IQN
+				 *      2h: Request discovery info
+				 *          on NVMe controller IQN
+				 */
+				__u8 dirg;
+				__u8 rsvd[14];
+			} discovery_cmd;
+
+			/*
+			 * capsule hdr iff cctype == 0x0Bh,
+			 * discover response command.
+			 */
+			struct {
+				__u8 cctype;
+
+				/* return status for the discovery response */
+				__u8 sts;
+
+				__le16 rsvd;
+
+				/*
+				 * # of total bytes of info available.
+				 * 0 means nothing is available.
+				 */
+				__le32 dilen;
+
+				/*
+				 * max # of bytes returned in a single
+				 * discovery get info response capsule.
+				 */
+				__le16 dicsz;
+				__u8 rsvd2[6];
+			} discovery_rsp;
+
+			/*
+			 * capsule hdr iff cctype == 0x0Ch,
+			 * discover get info command.
+			 */
+			struct {
+				__u8 cctype;
+				__u8 rsvd[15];
+			} discovery_info_cmd;
+
+			/*
+			 * capsule hdr iff cctype == 0x0Dh,
+			 * discover get info rsp command.
+			 */
+			struct {
+				__u8 cctype;
+				__u8 rsvd[15];
+			} discover_info_rsp;
+		}; /* union */
+	} capsule;
+
+};
+
+/*
+ * NVMe command "child struct" of nvme_capsule_packet.
+ * An object of this struct will be pointed by 'child'
+ * in the base struct nvme_capsule_packet.
+ */
+struct nvme_cmd_capsule {
+
+	struct nvme_common_command capsule_body;
+
+	/* This is set to NULL if no data is associated w/the command */
+	void *data;
+};
+
+/*
+ * NVMe response "child struct" of nvme_capsule_packet.
+ * An object of this struct will be pointed by 'child'
+ * in the base struct nvme_capsule_packet.
+ */
+struct nvme_rsp_capsule {
+	struct nvme_common_completion capsule_body;
+
+	/* This is set to NULL if no data is associate w/the command */
+	void *data;
+};
+
+/*
+ * Connect cmd "child struct" of nvme_capsule_packet.
+ * An object of this struct will be pointed by 'child'
+ * in the base struct nvme_capsule_packet.
+ */
+struct connect_cmd_capsule {
+	struct {
+		/*
+		 * Part of TP 002, this is the host NVMe session
+		 * Globally Unique Identifier.  This is a host-generated
+		 * 128 bit value using RFC-4122 UUID format.
+		 */
+		__u8 hnsid[16];
+
+		/*
+		 * Part of TP 002, This is an NVMe Data block SGL that
+		 * describes the in-capsule offset location from byte 0 of
+		 * the "Host IQN Name String". The length value must be
+		 * between NVME_FABRIC_IQN_MINLEN - NVME_FABRIC_IQN_MAXLEN.
+		 */
+		struct nvme_common_sgl_dblk hnsgl;
+
+		/*
+		 * Part of TP 002, this is the NVMe Data Block SGL that
+		 * describes the in-capsule offest location from byte 0
+		 * of the Controller IQN Name String field.  The length
+		 * value must be between
+		 * NVME_FABRIC_IQN_MINLEN - NVME_FABRIC_IQN_MAXLEN.
+		 */
+		struct nvme_common_sgl_dblk cnsgl;
+
+		/*
+		 * Part of TP 002, string that uniquely identifies the host.
+		 * String should be terminated with a '\0'. Thus size
+		 * of the entry will really be NVME_FABRIC_IQN_MAXLEN - 1
+		 * because of the '\0' (and we don't want to make it
+		 * NVME_FABRIC_IQN_MAXLEN + 1 and get the bytes
+		 * out-of-alignment). Note that IQN spec says max is
+		 * 223.
+		 */
+		char host_iqn_name[NVME_FABRIC_IQN_MAXLEN];
+
+		/*
+		 * Part of TP 002, string that uniquely identifies the host.
+		 * String should be terminated with a '\0'. Thus size
+		 * of the entry will really be NVME_FABRIC_IQN_MAXLEN - 1
+		 * because of the '\0' (and we don't want to make it
+		 * NVME_FABRIC_IQN_MAXLEN + 1 and get the bytes
+		 * out-of-alignment). Note that IQN spec says max is
+		 * 223.
+		 */
+		char ctrl_iqn_name[NVME_FABRIC_IQN_MAXLEN];
+	} capsule_body;
+};
+
+/*
+ * Connect rsp "child struct" of nvme_capsule_packet.
+ * An object of this struct will be pointed by 'child'
+ * in the base struct nvme_capsule_packet.
+ */
+struct connect_rsp_capsule {
+	struct {
+		/*
+		 * Part of TP 002, this is the host NVMe session
+		 * Globally Unique Identifier.  This is a host-generated
+		 * 128 bit value using RFC-4122 UUID format.
+		 */
+		__u8 hnsid[16];
+
+		/*
+		 * Part of TP 002, this is the fabric address the
+		 * host should use instead for a discovery sequence
+		 * (it's the referral network address).
+		 */
+		struct nvme_fabric_addr rfad;
+	} capsule_body;
+};
+
+/*
+ * Discover cmd "child struct" of nvme_capsule_packet.
+ * An object of this struct will be pointed by 'child'
+ * in the base struct nvme_capsule_packet.
+ */
+struct discover_cmd_capsule {
+	struct {
+		/*
+		 * NVMe data block sgl that describes the in-capsule
+		 * offset location from byte 0 of host iqn string.
+		 * SGL length must be a value between
+		 * NVME_FABRIC_IQN_MINLEN - NVME_FABRIC_IQN_MAXLEN
+		 * (IQN spec states the max is really 223).
+		 */
+		struct nvme_common_sgl_dblk dhnsgl;
+
+		/*
+		 * NVMe data block sgl that describes the in-capsule
+		 * offset location from byte 0 of host iqn string.
+		 * SGL length must be a value between
+		 * NVME_FABRIC_IQN_MINLEN - NVME_FABRIC_IQN_MAXLEN
+		 * (IQN spec states the max is really 223).
+		 *
+		 * This field is rsvd if dirg field = 0h.
+		 */
+		struct nvme_common_sgl_dblk dsnsgl;
+
+		/*
+		 * NVMe data block sgl that describes the in-capsule
+		 * offset location from byte 0 of host iqn string.
+		 * SGL length must be a value between
+		 * NVME_FABRIC_IQN_MINLEN - NVME_FABRIC_IQN_MAXLEN
+		 * (IQN spec states the max is really 223).
+		 *
+		 * This field is rsvd if dirg field is NOT equal to 02h.
+		 */
+		struct nvme_common_sgl_dblk dcnsgl;
+
+		/*
+		 * NVME_FABRIC_IQN_MINLEN through NVME_FABRIC_IQN_MAXLEN-1
+		 * size unique string to identify the host.
+		 * '\0' needs to terminate the string (hence
+		 * NVME_FABRIC_IQN_MAXLEN-1).
+		 */
+		char host_iqn_name[NVME_FABRIC_IQN_MAXLEN];
+
+		/*
+		 * NVME_FABRIC_IQN_MINLEN through NVME_FABRIC_IQN_MAXLEN-1
+		 * size unique string to identify the subsystem.
+		 * '\0' needs to terminate the string.
+		 */
+		char subsys_iqn_name[NVME_FABRIC_IQN_MAXLEN];
+
+		/*
+		 * NVME_FABRIC_IQN_MINLEN through NVME_FABRIC_IQN_MAXLEN-1
+		 * size unique string to identify the controller.
+		 * '\0' needs to terminate the string.
+		 */
+		char ctrl_iqn_name[NVME_FABRIC_IQN_MAXLEN];
+	} capsule_body;
+};
+
+
+/*
+ * Fundamental packet type for NVMe over Fabrics, TP 002.
+ * Consider this as the "base class" (base struct).
+ */
+struct nvme_capsule_packet {
+
+	/*
+	 * Every nvme_capsule_packet has a 16 byte header which contains
+	 * an overview of what type of command is embedded within it.
+	 */
+	struct nvme_capsule_header hdr;
+
+	/*
+	 * The rest of the capsule packet can look pretty different
+	 * depending the cctype. child points to these differences.
+	 * This is set to NULL if this is a capsule_header only
+	 * nvme_capsule_packet.
+	 */
+	void *child;
 };
 
 enum nvme_conn_stage {
@@ -63,7 +715,7 @@ enum nvme_conn_stage {
 
 extern char hostname[FABRIC_STRING_MAX];
 
-extern int                              instance;
+extern int instance;
 
 struct aq {
 	/* struct *nvme_aq_stuff */
@@ -93,122 +745,13 @@ struct nvme_conn {
  */
 
 /*
- * This is the Queue Information field which is part
- * of the Command Capsule Format being proposed in
- * NVMe Org proposal "Fabrics TP 002".
- */
-struct capsule_queue_info {
-	union {
-		struct {
-			__le16 sqidf;
-			__le16 sqt;
-			__le16 cqidf;
-			__le16 cqh;
-
-		} qinfo;
-		__le64	qw;
-	};
-};
-
-/*
- * This is the Capsule Header field which is part
- * of the Command Capsule Format being proposed in
- * NVMe Org proposal "Fabrics TP 002".
- *
- * Note the bits mean something different if the capsule
- * is a command capsule or response capsule.
- */
-struct capsule_header {
-	union {
-		struct {
-			__u8 ctype :3;
-			__u8 cattr :5;
-			__u8 rsvd;
-
-		} cmd_hdr;
-		struct {
-			__le16 cqidf;
-		} cmd_resp;
-	};
-};
-
-/*
- * This is the Command Capsule Format being proposed in
- * NVMe Org proposal "Fabrics TP 002".
- */
-struct nvme_cmd_capsule {
-
-	/* normal 64-byte nvme cmd submission */
-	struct nvme_common_command sub;
-
-	/*
-	 * specifies if the 'sub' parameter in the command
-	 * information area of the capsule is:
-	 *
-	 * 1. an NVMe command
-	 * 2. a specific fabric-centric command
-	 * 3. a fabric agnostic command.
-	 */
-	struct capsule_header hdr;
-
-	/* contains sub/cpl queue doorbell info */
-	struct capsule_queue_info info;
-
-	/* This is specific to the NVMe command.
-	 * If DPTR of NVMe cmd is SGL1
-	 * and
-	 * bit 0 of byte 15 of DPTR/SGL1 is 0, then
-	 * this entry will be set to NULL.  Otherwise,
-	 * if DPTR of NVMe cmd is SGL1
-	 * and
-	 * bit 0 of byte 15 DPTR/SGL1 is 1, then
-	 * it will point to one of the SGL struct types
-	 * defined in Figure 19 of the NVMe 1.2 spec.
-	 */
-	void *data_section;
-};
-
-/*
- * This is the Command Capsule Format being proposed in
- * NVMe Org proposal "Fabrics TP 002".
- *
- * nvme_rsp_capsule is the response to a
- * nvme_cmd_capsule packet sent.
- */
-struct nvme_rsp_capsule {
-
-	/* normal 16-byte nvme completion packet */
-	struct nvme_completion resp;
-
-	/*
-	 * this field will specify the completion queue
-	 * associated with the completion.
-	 */
-	struct capsule_header hdr;
-
-	/* contains sub/cpl queue doorbell info */
-	struct capsule_queue_info info;
-
-	/*
-	 * TODO: I believe the same rules apply here as for
-	 * '*data_section' in nvme_cmd_capsule struct
-	 * but not sure??
-	 */
-	void *data_section;
-};
-
-/*
  * This struct would be used to embed more than 1 sgl descriptors
  * with a data block and have that pointed by
- * '*data_section' in the nvme_*_capsule structs.
+ * '*data' in the nvme capsule structs.
  *
- * For capsule commands that just use SGL1 in the actual
- * NVMe submission command, the '*data_section' variable
- * could still be used without the need for a
- * nvme_sgl_data_capsule struct defined below.
  */
 struct nvme_sgl_data_capsule {
-	struct nvme_sgl_descriptor sgllist[NVME_SGL_SEGMENT_MAXSIZE];
+	struct nvme_common_sgl_desc sgllist[NVME_SGL_SEGMENT_MAXSIZE];
 	void *data;
 };
 

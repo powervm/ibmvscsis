@@ -22,7 +22,6 @@
  * makes no assumption that a technology like PCIe or RDMA is being
  * used to carry out the protocol.
  */
-
 #include <linux/nvme-fabrics/nvme-common.h>
 #include <linux/nvme-fabrics/nvme-fabrics.h>
 #include <linux/errno.h>
@@ -54,19 +53,24 @@ static struct nvme_fabric_host_operations *host_fabric_ops;
  */
 static inline void _nvme_check_size(void)
 {
-	BUILD_BUG_ON(sizeof(struct nvme_rw_command) != 64);
-	BUILD_BUG_ON(sizeof(struct nvme_create_cq) != 64);
-	BUILD_BUG_ON(sizeof(struct nvme_create_sq) != 64);
-	BUILD_BUG_ON(sizeof(struct nvme_delete_queue) != 64);
-	BUILD_BUG_ON(sizeof(struct nvme_features) != 64);
-	BUILD_BUG_ON(sizeof(struct nvme_format_cmd) != 64);
-	BUILD_BUG_ON(sizeof(struct nvme_abort_cmd) != 64);
-	BUILD_BUG_ON(sizeof(struct nvme_command) != 64);
-	BUILD_BUG_ON(sizeof(struct nvme_id_ctrl) != 4096);
-	BUILD_BUG_ON(sizeof(struct nvme_id_ns) != 4096);
-	BUILD_BUG_ON(sizeof(struct nvme_lba_range_type) != 64);
-	BUILD_BUG_ON(sizeof(struct nvme_smart_log) != 512);
-	BUILD_BUG_ON(sizeof(struct nvme_completion) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_common_rw_cmd) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_common_create_cq) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_common_create_sq) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_common_delete_queue) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_common_features) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_common_format_cmd) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_common_abort_cmd) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_cmd) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_common_cmd) != 64);
+	BUILD_BUG_ON(sizeof(struct nvme_common_id_ctrl) != 4096);
+	BUILD_BUG_ON(sizeof(struct nvme_common_id_ns) != 4096);
+	BUILD_BUG_ON(sizeof(struct nvme_common_completion) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_capsule_header) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_desc) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_dblk) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_bbkt) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_seg) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_lseg) != 16);
 }
 
 /*
@@ -285,9 +289,12 @@ int nvme_fabric_register(char *nvme_class_name,
 {
 	int ret = -EINVAL;
 
-	pr_info("%s: %s()\n", __FILE__, __func__);
+	/* TODO: BUILD CHECK! Take out when dev of structs done */
+	_nvme_check_size();
 
+	pr_info("%s: %s()\n", __FILE__, __func__);
 	instance = 0;
+
 	/*
 	 * TODO: Basic check, may change if host_fabric_ops changes
 	 * as we further implement this stuff.
