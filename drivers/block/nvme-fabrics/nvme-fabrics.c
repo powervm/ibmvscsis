@@ -593,7 +593,9 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 		ret = -ENODATA;
 		goto err1;
 		 */
-	}
+	} else
+		pr_info("\n\n%s(): received VALID cntlid %d from target\n",
+			__func__, rsp.connect.hdr.cntlid);
 
 	/* Now that we have a valid controller id for the subsystem,
 	 * optionally inform the implementation of the value.
@@ -604,10 +606,11 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 
 	spin_lock_irqsave(&subsystem->ctrl_list_lock, flags);
 	new_ctrl->cntlid = rsp.connect.hdr.cntlid;
-	if (!nvme_host->fops->finalize_cntlid) {
+	pr_info("%s(): ctrl's cntlid in subsystem %s set to %d\n",
+		__func__, subsystem->subsiqn, new_ctrl->cntlid);
+	if (nvme_host->fops->finalize_cntlid != NULL)
 		ret = nvme_host->fops->finalize_cntlid(subsystem->subsiqn,
 						       new_ctrl->cntlid);
-	}
 	spin_unlock_irqrestore(&subsystem->ctrl_list_lock, flags);
 
 err1:

@@ -945,12 +945,14 @@ static int nvme_rdma_finalize_ctrl(char *subsys_name, __u16 cntlid)
 	 * something is really screwed up.
 	 */
 	ctrl = find_ctrl(subsys_name, NVME_FABRIC_INIT_CNTLID);
-	if (ctrl) {
+	if (ctrl == NULL) {
 		pr_err("%s(): Error, could not find ctrl %x in subsys %s\n",
 		       __func__, NVME_FABRIC_INIT_CNTLID, subsys_name);
 		ret = -ENXIO;
 	} else
 		ctrl->cntlid = cntlid;
+		pr_info("%s(): rdma_ctrl cntlid in subsystem %s set to %d\n",
+		__func__, subsys_name, ctrl->cntlid);
 
 	return ret;
 
