@@ -46,12 +46,14 @@ static inline void _nvme_check_size(void)
 	BUILD_BUG_ON(sizeof(struct nvme_common_id_ctrl) != 4096);
 	BUILD_BUG_ON(sizeof(struct nvme_common_id_ns) != 4096);
 	BUILD_BUG_ON(sizeof(struct nvme_common_completion) != 16);
-	BUILD_BUG_ON(sizeof(struct nvme_capsule_header) != 16);
 	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_desc) != 16);
 	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_dblk) != 16);
 	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_bbkt) != 16);
 	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_seg) != 16);
 	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_lseg) != 16);
+
+	BUILD_BUG_ON(sizeof(struct nvme_connect_capsule) != 1024);
+	BUILD_BUG_ON(sizeof(struct nvme_connect_rsp_capsule) != 16);
 }
 
 /*
@@ -160,26 +162,20 @@ static int does_ctrl_exist(struct nvme_fabric_subsystem *conn, __u16 cntlid)
 }
 */
 
-static int
-nvme_create_nvme_capsule_rsp(struct nvme_capsule_packet *capsule,
-			     struct nvme_common_cmd *cmd,
-			     int queue_type, __u32 queue_num,
-			     __u32 *len)
+static union nvme_capsule_rsp *
+create_nvme_capsule_rsp(struct nvme_common_cmd *cmd,
+			int queue_type, __u32 queue_num,
+			__u32 *len)
 {
-	int ret = 0;
 
-
-	return ret;
+	return NULL;
 }
 
-/*From the redundant department of redundant function names department*/
-/*From the redundant department of redundant function names department*/
-static int nvme_create_nvme_capsule(struct nvme_capsule_packet *capsule,
-				    struct nvme_common_cmd *cmd,
-				    int queue_type, __u32 queue_num,
-				    __u32 *len)
+static union nvme_capsule_cmd *
+create_nvme_capsule(struct nvme_common_cmd *cmd,
+		    int queue_type, __u32 queue_num,
+		    __u32 *len)
 {
-	int ret = 0;
 
 	/*IF this command is for the AQ:
 		Build a capsule in which the SGL uses "SGL Last segment"
@@ -187,28 +183,28 @@ static int nvme_create_nvme_capsule(struct nvme_capsule_packet *capsule,
 		Copy the NVMe command contents to the capsule
 	*/
 
-	return ret;
+	return NULL;
 }
 
 /* This replaces nvme_core's __nvme_submit_cmd() for agnostic code */
 static int nvme_fabric_submit_admin_cmd(struct nvme_common_queue *nvmeq,
 					struct nvme_common_cmd *cmd)
 {
-	int			    ret = 0;
-	__u32			    len = 0;
-	__u32			    rsp_len = 0;
-	struct nvme_capsule_packet *capsule = NULL;
-	struct nvme_capsule_packet *rsp = NULL;
+	int ret 			= 0;
+	__u32 len			= 0;
+	__u32 rsp_len			= 0;
+	union nvme_capsule_cmd *capsule	= NULL;
+	union nvme_capsule_rsp *rsp	= NULL;
 
-	ret = nvme_create_nvme_capsule(capsule, cmd, NVME_AQ, 0, &len);
-	if (ret < 0)
+	capsule = create_nvme_capsule(cmd, NVME_AQ, 0, &len);
+	if (!capsule)
 		goto err1;
 
 	/* TODO: revisit.  NOTE creating union of responses so dont
 			   need response length
 	*/
-	ret = nvme_create_nvme_capsule_rsp(rsp, cmd, NVME_AQ, 0, &rsp_len);
-	if (ret < 0)
+	rsp = create_nvme_capsule_rsp(cmd, NVME_AQ, 0, &rsp_len);
+	if (!rsp)
 		goto err2;
 
 	/* TODO:
@@ -370,7 +366,7 @@ EXPORT_SYMBOL_GPL(nvme_fabric_remove_host_treenode);
  * TODO: Make sure subsys_name really is a subsys_name
  * and not the old ctrlname from last TP002 version
  */
-static int nvme_create_connect_capsule(struct nvme_capsule_packet *capsule,
+static int create_connect_capsule(union nvme_capsule_cmd *capsule,
 				       __u8   queue_type,
 				       __u16  cntlid,
 				       __le16 queue_number,
@@ -378,70 +374,61 @@ static int nvme_create_connect_capsule(struct nvme_capsule_packet *capsule,
 				       char   *hostname,
 				       char   *subsys_name)
 {
-	struct connect_cmd_capsule *connect_cmd_capsule = NULL;
 
-	capsule->hdr.capsule.connect_cmd.cctype = CCTYPE_CONNECT_CMD;
-	capsule->hdr.capsule.connect_cmd.authpr = 0;
-	memcpy(capsule->hdr.capsule.connect_cmd.vs, nvme_host->vs,
-	       NVME_FABRIC_VS_LEN);
+
+	capsule->connect.hdr.cctype = CCTYPE_CONNECT_CMD;
+	capsule->connect.hdr.authpr = 0;
+	memcpy(capsule->connect.hdr.vs, nvme_host->vs, NVME_FABRIC_VS_LEN);
 	if (queue_type == NVME_AQ) {
-		capsule->hdr.capsule.connect_cmd.sqid  = 0;
-		capsule->hdr.capsule.connect_cmd.cqid  = 0;
+		capsule->connect.hdr.sqid  = 0;
+		capsule->connect.hdr.cqid  = 0;
 	} else {
-		capsule->hdr.capsule.connect_cmd.sqid  = queue_number;
-		capsule->hdr.capsule.connect_cmd.cqid  = queue_number;
+		capsule->connect.hdr.sqid  = queue_number;
+		capsule->connect.hdr.cqid  = queue_number;
 	}
-
-	connect_cmd_capsule = kzalloc(sizeof(struct connect_cmd_capsule),
-				      GFP_KERNEL);
-	if (!connect_cmd_capsule)
-		return -ENOMEM;
 
 	if (hnsid) {
-		memcpy(connect_cmd_capsule->capsule_body.hnsid,
-		       hnsid, HNSID_LEN);
+		memcpy(capsule->connect.body.hnsid, hnsid, HNSID_LEN);
 	}
 
 	if (queue_type == NVME_AQ) {
-		connect_cmd_capsule->capsule_body.cntlid = 0xFFFF;
+		capsule->connect.body.cntlid = 0xFFFF;
 	} else {
 		pr_err("%s: TODO: Connect via IOQ WIP\n", __func__);
 		return -EINVAL;
 	}
-	connect_cmd_capsule->capsule_body.authpr = 0;
+	capsule->connect.body.authpr = 0;
 
 	if (subsys_name) {
-		strncpy(connect_cmd_capsule->capsule_body.subsiqn,
+		strncpy(capsule->connect.body.subsiqn,
 			subsys_name, NVME_FABRIC_IQN_MAXLEN);
 	}
 	if (hostname) {
-		strncpy(connect_cmd_capsule->capsule_body.hostiqn,
+		strncpy(capsule->connect.body.hostiqn,
 			hostname, NVME_FABRIC_IQN_MAXLEN);
 	}
-	capsule->child = connect_cmd_capsule;
 
 	pr_info("\n===%s Created Connect Capsule ===\n", __func__);
 	pr_info("cctype:  %#x      authpr: %d\n",
-		capsule->hdr.capsule.connect_cmd.cctype,
-		capsule->hdr.capsule.connect_cmd.authpr);
+		capsule->connect.hdr.cctype,
+		capsule->connect.hdr.authpr);
 	pr_info("vs[3]: %x vs[2]: %x vs[1]: %x vs[0]: %x\n",
-		capsule->hdr.capsule.connect_cmd.vs[3],
-		capsule->hdr.capsule.connect_cmd.vs[2],
-		capsule->hdr.capsule.connect_cmd.vs[1],
-		capsule->hdr.capsule.connect_cmd.vs[0]);
+		capsule->connect.hdr.vs[3],
+		capsule->connect.hdr.vs[2],
+		capsule->connect.hdr.vs[1],
+		capsule->connect.hdr.vs[0]);
 	pr_info("sqid:    %d        cqid:   %d\n",
-		capsule->hdr.capsule.connect_cmd.sqid,
-		capsule->hdr.capsule.connect_cmd.cqid);
-	pr_info("hnsid:   %pUX\n", connect_cmd_capsule->capsule_body.hnsid);
+		capsule->connect.hdr.sqid,
+		capsule->connect.hdr.cqid);
+	pr_info("hnsid:   %pUX\n", capsule->connect.body.hnsid);
 	pr_info("cntlid:  %#x   authpr: %d\n",
-		connect_cmd_capsule->capsule_body.cntlid,
-		connect_cmd_capsule->capsule_body.authpr);
-	pr_info("subsiqn: %s\n", connect_cmd_capsule->capsule_body.subsiqn);
-	pr_info("hostiqn: %s\n", connect_cmd_capsule->capsule_body.hostiqn);
+		capsule->connect.body.cntlid,
+		capsule->connect.body.authpr);
+	pr_info("subsiqn: %s\n", capsule->connect.body.subsiqn);
+	pr_info("hostiqn: %s\n", capsule->connect.body.hostiqn);
 	pr_info("========================\n");
 
 	return 0;
-
 }
 
 /*
@@ -451,18 +438,16 @@ static int nvme_create_connect_capsule(struct nvme_capsule_packet *capsule,
  *    *KEEP THIS FUNCTION UNTIL NVME FABRIC SPEC BECOMES MORE STABLE.
  *     THEN IT CAN BE DECIDED IF THIS IS STILL NEEDED.
  */
-static int nvme_create_connect_rsp_capsule(
-	struct nvme_capsule_packet *capsule)
+static int create_connect_capsule_rsp(union nvme_capsule_rsp *rsp)
 {
 	/*
 	 * These values are illegal for a controller to send back to the
 	 * host, so this is a good initial value to set to catch
 	 * bugs.
 	 */
-	capsule->hdr.capsule.connect_rsp.cctype = 255;
-	capsule->hdr.capsule.connect_rsp.sts    = 69;
-	capsule->hdr.capsule.connect_rsp.cntlid = 0xFFFF;
-	capsule->child = NULL;
+	rsp->connect.hdr.cctype = 255;
+	rsp->connect.hdr.sts    = 69;
+	rsp->connect.hdr.cntlid = 0xFFFF;
 	return 0;
 }
 
@@ -518,8 +503,8 @@ static int
 nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 			     struct nvme_fabric_subsystem *subsystem)
 {
-	struct nvme_capsule_packet	 nvme_capsule;
-	struct nvme_capsule_packet	 nvme_capsule_rsp;
+	union nvme_capsule_cmd		 capsule;
+	union nvme_capsule_rsp		 rsp;
 	int				 ret;
 	unsigned long			 flags = 0;
 
@@ -549,44 +534,44 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 			__func__, new_ctrl->aq_conn);
 	}
 
-	ret =  nvme_create_connect_capsule(&nvme_capsule,
-					   NVME_AQ,
-					   new_ctrl->cntlid,
-					   0,
-					   nvme_host->hnsid,
-					   nvme_host->hostname,
-					   subsystem->subsiqn);
+	ret =  create_connect_capsule(&capsule,
+				      NVME_AQ,
+				      new_ctrl->cntlid,
+				      0,
+				      nvme_host->hnsid,
+				      nvme_host->hostname,
+				      subsystem->subsiqn);
 	if (ret)
 		goto err1;
 
-	ret = nvme_create_connect_rsp_capsule(&nvme_capsule_rsp);
+	ret = create_connect_capsule_rsp(&rsp);
 	if (ret) {
 		pr_err("%s %s(): Error %d creating connect capsule\n",
 		       __FILE__, __func__, ret);
-		goto err2;
+		goto err1;
 	};
 	ret = nvme_host->fops->send_connect_capsule(
 		      new_ctrl->aq_conn,
-		      &nvme_capsule,
-		      &nvme_capsule_rsp);
+		      &capsule,
+		      &rsp,
+		      sizeof(struct nvme_connect_rsp_capsule));
 	if (ret) {
 		pr_err("%s(): Error send_capsule() returned %d\n",
 		       __func__, ret);
-		goto err2;
+		goto err1;
 	}
 
-	if ((nvme_capsule_rsp.hdr.capsule.connect_rsp.cctype !=
-	     CCTYPE_CONNECT_RSP) ||
-	    (nvme_capsule_rsp.hdr.capsule.connect_rsp.cntlid == 0xFFFF) ||
-	    (nvme_capsule_rsp.hdr.capsule.connect_rsp.sts != 0)) {
+	if ((rsp.connect.hdr.cctype != CCTYPE_CONNECT_RSP) ||
+	    (rsp.connect.hdr.cntlid == 0xFFFF) ||
+	    (rsp.connect.hdr.sts != 0)) {
 		pr_err("%s(): Error! Unexpected Connect response values!\n",
 		       __func__);
 		pr_err("connect rsp cctype: %d (must be '5')\n",
-		       nvme_capsule_rsp.hdr.capsule.connect_rsp.cctype);
+		       rsp.connect.hdr.cctype);
 		pr_err("connect rsp cntlid: %#x (cannot be 0xFFFF)\n",
-		       nvme_capsule_rsp.hdr.capsule.connect_rsp.cntlid);
+		       rsp.connect.hdr.cntlid);
 		pr_err("connect rsp sts:    %d (should be 0)\n\n",
-		       nvme_capsule_rsp.hdr.capsule.connect_rsp.sts);
+		       rsp.connect.hdr.sts);
 
 		/*
 		 * TODO: Add this in when send_capsule() RDMA code is fully
@@ -594,7 +579,7 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 		 * coming from the controller.
 		 *
 		ret = -ENODATA;
-		goto err2;
+		goto err1;
 		 */
 	}
 
@@ -606,14 +591,13 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 	 */
 
 	spin_lock_irqsave(&subsystem->ctrl_list_lock, flags);
-	new_ctrl->cntlid = nvme_capsule_rsp.hdr.capsule.connect_rsp.cntlid;
+	new_ctrl->cntlid = rsp.connect.hdr.cntlid;
 	if (!nvme_host->fops->finalize_cntlid) {
 		ret = nvme_host->fops->finalize_cntlid(subsystem->subsiqn,
 						       new_ctrl->cntlid);
 	}
 	spin_unlock_irqrestore(&subsystem->ctrl_list_lock, flags);
-err2:
-	kfree(nvme_capsule.child);
+
 err1:
 	return ret;
 }

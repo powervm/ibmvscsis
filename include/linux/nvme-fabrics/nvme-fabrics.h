@@ -200,6 +200,116 @@ struct nvme_fabric_addr {
 	} addr;
 };
 
+struct nvme_connect_capsule {
+	struct {
+		__u8 cctype;
+
+		/*
+		 * specifies authentication protocol.
+		 * 0 means no authentication required.
+		 */
+		__u8 authpr;
+		__u8 rsvd[6];
+
+		/*
+		 * version number, as defined and formatted
+		 * in the VS register of the NVMe spec
+		 */
+		__u8 vs[NVME_FABRIC_VS_LEN];
+
+		/*
+		 * Set to value 0 for discovery and admin
+		 * cntype. For NVMe IOQ pair, field must
+		 * match the QID value used in an earlier,
+		 * successful NVMe Create I/O Submission
+		 * Queue Admin cmd.  Otherwise, it's
+		 * an CSQID Does Not Exist error.
+		 */
+		__le16 sqid;
+
+		/*
+		 * Set to value 0 for discovery & admin
+		 * cntype. For NVMe IOQ pair, field must
+		 * match the QID value set by an earlier
+		 * Create I/O completion queue Admin cmd.
+		 * Otherwise, it is a CCQID Does Not Exist
+		 * error.
+		 */
+		__le16 cqid;
+	} hdr;
+	struct {
+		/*
+		 * Part of TP 002, this is the host NVMe session
+		 * Globally Unique Identifier.  This is a host-generated
+		 * 128 bit value using RFC-4122 UUID format.
+		 */
+		__u8 hnsid[HNSID_LEN];
+
+		/*
+		 * Specifies the controller ID requested.  It is the same
+		 * field as returned in a identify controller data structure.
+		 * Value FFFFh is for admin request, which then the controller
+		 * will return the responding controller.
+		 */
+		__u16 cntlid;
+
+		/*
+		 * Specifies authentication protocol & attributes to be used
+		 * for this connection. Bits 7:2 are reserved.
+		 */
+		__u8 authpr;
+
+		__u8 rsvd[221];
+
+		/*
+		 * iSCSI Qualified Name (IQN) that uniquely identifies
+		 * an NVM subsystem.  Minimimum of NVME_FABRIC_IQN_MINLEN
+		 * bytes.
+		 */
+		char subsiqn[NVME_FABRIC_IQN_MAXLEN];
+
+		/*
+		 * iSCSI Qualified Name (IQN) that uniquely identifies the
+		 * host.  Minimum of NVME-FABRIC_IQN_MINLEN.
+		 */
+		char hostiqn[NVME_FABRIC_IQN_MAXLEN];
+
+		__u8 rsvd2[256];
+	} body;
+};
+
+struct nvme_connect_rsp_capsule {
+	struct {
+		__u8 cctype;
+		/*
+		 * return success or error status on
+		 * Connect cmd.
+		 */
+		__u8 sts;
+
+		__u8 rsvd[2];
+
+		/* specifies the controller ID value
+		 * allocated to the host on a connect
+		 * command.  It's the same field as
+		 * defined in the identify controller
+		 * data structure.
+		 */
+		__u16 cntlid;
+
+		__u8 rsvd2[10];
+	} hdr;
+};
+
+union nvme_capsule_cmd {
+	struct nvme_connect_capsule connect;
+};
+
+union nvme_capsule_rsp {
+	struct nvme_connect_rsp_capsule connect;
+};
+
+#if 0
 /*
  * This is the Capsule Header field which is part
  * of the Command Capsule Format being proposed in
@@ -401,70 +511,13 @@ struct nvme_capsule_header {
 				__u8 rsvd[14];
 			} cplqueue_rsp;
 
-			/*
-			 * capsule hdr iff cctype == 0x04h, connect command.
-			 */
-			struct {
-				__u8 cctype;
-
-				/*
-				 * specifies authentication protocol.
-				 * 0 means no authentication required.
-				 */
-				__u8 authpr;
-				__u8 rsvd[6];
-
-				/*
-				 * version number, as defined and formatted
-				 * in the VS register of the NVMe spec
-				 */
-				__u8 vs[NVME_FABRIC_VS_LEN];
-
-				/*
-				 * Set to value 0 for discovery and admin
-				 * cntype. For NVMe IOQ pair, field must
-				 * match the QID value used in an earlier,
-				 * successful NVMe Create I/O Submission
-				 * Queue Admin cmd.  Otherwise, it's
-				 * an CSQID Does Not Exist error.
-				 */
-				__le16 sqid;
-
-				/*
-				 * Set to value 0 for discovery & admin
-				 * cntype. For NVMe IOQ pair, field must
-				 * match the QID value set by an earlier
-				 * Create I/O completion queue Admin cmd.
-				 * Otherwise, it is a CCQID Does Not Exist
-				 * error.
-				 */
-				__le16 cqid;
-
-			} connect_cmd;
 
 			/*
 			 * capsule hdr iff cctype == 0x05h,
 			 * connect response command.
 			 */
 			struct {
-				__u8 cctype;
-				/*
-				 * return success or error status on
-				 * Connect cmd.
-				 */
-				__u8 sts;
 
-				__u8 rsvd[2];
-
-				/* specifies the controller ID value
-				 * allocated to the host on a connect
-				 * command.  It's the same field as
-				 * defined in the identify controller
-				 * data structure.
-				 */
-				__u16 cntlid;
-
-				__u8 rsvd2[10];
 			} connect_rsp;
 
 			/*
@@ -565,43 +618,6 @@ struct nvme_rsp_capsule {
  */
 struct connect_cmd_capsule {
 	struct {
-		/*
-		 * Part of TP 002, this is the host NVMe session
-		 * Globally Unique Identifier.  This is a host-generated
-		 * 128 bit value using RFC-4122 UUID format.
-		 */
-		__u8 hnsid[HNSID_LEN];
-
-		/*
-		 * Specifies the controller ID requested.  It is the same
-		 * field as returned in a identify controller data structure.
-		 * Value FFFFh is for admin request, which then the controller
-		 * will return the responding controller.
-		 */
-		__u16 cntlid;
-
-		/*
-		 * Specifies authentication protocol & attributes to be used
-		 * for this connection. Bits 7:2 are reserved.
-		 */
-		__u8 authpr;
-
-		__u8 rsvd[221];
-
-		/*
-		 * iSCSI Qualified Name (IQN) that uniquely identifies
-		 * an NVM subsystem.  Minimimum of NVME_FABRIC_IQN_MINLEN
-		 * bytes.
-		 */
-		char subsiqn[NVME_FABRIC_IQN_MAXLEN];
-
-		/*
-		 * iSCSI Qualified Name (IQN) that uniquely identifies the
-		 * host.  Minimum of NVME-FABRIC_IQN_MINLEN.
-		 */
-		char hostiqn[NVME_FABRIC_IQN_MAXLEN];
-
-		__u8 rsvd2[256];
 
 	} capsule_body;
 };
@@ -701,6 +717,8 @@ struct nvme_capsule_packet {
 	 */
 	void *child;
 };
+
+#endif
 
 enum nvme_conn_stage {
 	CONN_DISCOVER = 0,
@@ -847,6 +865,10 @@ struct nvme_fabric_host_operations {
 	 * @rsp:      Expected response capsule to the capsule that is being
 	 *	      sent.  This will be returned by the fabric specific
 	 *            layer's response completion routine.
+	 *
+	 * @expected_size: The number of bytes the host should expect
+	 *      	   to receive from the target.
+	 * 
 	 *  Return Value:
 	 *      0 for Success
 	 *      Any other value, error
@@ -860,8 +882,9 @@ struct nvme_fabric_host_operations {
 	 *      broken out in it's own function.
 	 */
 	int (*send_connect_capsule)(void *fabric_context,
-				    struct nvme_capsule_packet *capsule,
-				    struct nvme_capsule_packet *rsp);
+				    union nvme_capsule_cmd *capsule,
+				    union nvme_capsule_rsp *rsp,
+				    __u32 expected_size);
 #if 0
 	/*
 	 * Function that takes the specific fabric transport and

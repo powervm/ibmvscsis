@@ -950,8 +950,9 @@ static int nvme_rdma_finalize_ctrl(char *subsys_name, __u16 cntlid)
 }
 
 static int nvme_rdma_submit_connect_capsule(void *fabric_context,
-		struct nvme_capsule_packet *capsule,
-		struct nvme_capsule_packet *rsp)
+		union nvme_capsule_cmd *capsule,
+		union nvme_capsule_rsp *rsp,
+		__u32 expected_size)
 {
 	int			 ret = 0;
 	struct rdma_cm_id	*cm_id;
