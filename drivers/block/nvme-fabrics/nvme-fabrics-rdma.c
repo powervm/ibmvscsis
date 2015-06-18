@@ -23,6 +23,7 @@
  *
  * This is the device driver implementation of NVMe over RDMA fabric.
  */
+#define NO_TARGET
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -692,9 +693,11 @@ static void nvme_rdma_shutdown_connection(struct nvme_rdma_conn *fabric_conn)
 
 	pr_info("%s: %s()\n", __FILE__, __func__);
 
-	/* TEMPORARY - REMOVE WHEN WE GET A TARGET */
+	/* TODO TEMPORARY - REMOVE WHEN WE GET A TARGET */
+	#ifdef NO_TARGET
 	return;
 	/* TEMPORARY - REMOVE WHEN WE GET A TARGET */
+	#endif
 
 	if (fabric_conn->state == STATE_CONNECTED) {
 		ret = rdma_disconnect(cm_id);
@@ -764,10 +767,12 @@ static void nvme_rdma_disconnect(char *subsys_name, __u16 cntlid,
 		kfree(fabric_conn);
 	}
 
-	/* THIS IS TEMPORARY UNTIL WE GET A TARGET
+	/* TODO THIS IS TEMPORARY UNTIL WE GET A TARGET */
+	#ifndef NO_TARGET
 		ib_dereg_mr(ctrl->mr);
 		ib_dealloc_pd(ctrl->pd);
-	  THIS IS TEMPORARY UNTIL WE GET A TARGET */
+	#endif
+	/* THIS IS TEMPORARY UNTIL WE GET A TARGET */
 
 	spin_lock_irqsave(&nvme_ctrl_list_lock, flags);
 	list_del(&ctrl->node);
@@ -815,9 +820,11 @@ static int connect_to_rdma_ctrl(struct nvme_rdma_conn *fabric_conn)
 	pr_info("%s(): fabric_conn %p -> ctrlr %p Connecting to %s\n",
 		__func__, fabric_conn, rdma_ctrl, addr2str(&dst_in));
 
-	/* THIS IS TEMPORARY UNTIL WE GET A TARGET */
+	/* TODO THIS IS TEMPORARY UNTIL WE GET A TARGET */
+	#ifdef NO_TARGET
 	pr_err("\n\n%s - HERE BE DRAGONS\n\n", __func__);
 	return 0;  /* FIXME */
+	#endif
 	/* THIS IS TEMPORARY UNTIL WE GET A TARGET */
 
 	ret = rdma_resolve_addr(cm_id, NULL, dst, fabric_timeout);
