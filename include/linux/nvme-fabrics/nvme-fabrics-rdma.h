@@ -31,9 +31,9 @@
 
 #include <rdma/rdma_cm.h>
 #include <rdma/ib_verbs.h>
-#include <rdma/ib_fmr_pool.h>
 #include <linux/list.h>
 #include <linux/wait.h>
+
 #define NVME_UNUSED(x)		((void)x)
 
 /*TODO: Figure out all these defines below */
@@ -45,6 +45,7 @@
 #define MAX_INLINE_DATA		0
 #define NVME_RDMA_POLLSIZE	1
 
+#define DISCOVER_POOL_DEPTH	0
 #define DISCOVER_SQ_SIZE	1
 #define DISCOVER_RQ_SIZE	1
 #define MAX_DISCOVER_SEND_WR	DISCOVER_SQ_SIZE
@@ -52,6 +53,7 @@
 #define MAX_DISCOVER_SEND_SGE	1
 #define MAX_DISCOVER_RECV_SGE	1
 
+#define AQ_POOL_DEPTH		0
 #define AQ_SQ_SIZE		1
 #define AQ_RQ_SIZE		1
 #define MAX_AQ_SEND_WR		AQ_SQ_SIZE
@@ -59,6 +61,7 @@
 #define MAX_AQ_SEND_SGE		1
 #define MAX_AQ_RECV_SGE		1
 
+#define IOQ_POOL_DEPTH		0
 #define IOQ_SQ_SIZE		40
 #define IOQ_RQ_SIZE		40
 #define MAX_IOQ_SEND_WR		128
@@ -125,7 +128,11 @@ struct nvme_rdma_conn {
 	struct rdma_ctrl		*rdma_ctrl; /* main ctrl struct */
 	struct xport_conn		 xport_conn;
 	int				 state;
+	spinlock_t			 lock;
+	struct list_head		 rx_desc_pool;
 	int				 stage;
+	int				 rx_depth;
+	int				 tx_depth;
 	struct sockaddr_in		 dst;
 	u32				 session_id;
 	struct completion		 comp;
@@ -137,19 +144,8 @@ struct xport_sge {
 	struct ib_sge	sgl;
 };
 
-/*TODO: Decide if we are going to use a "common" rx/tx_desc for
- * all discovery/aq/ioq connections (in which case we have a
- * minor inefficiency in that discovery and aq will have more
- * sgl entries than needed...
- * OR
- * separate them out which will greatly expand the code length
- * due to functions to handle each...  Pick your poison.
- */
-
-/*FINISH ME! - all the rx/tx_depth structures need love*/
-
-#if 1
 struct rx_desc {
+	struct list_head	node;
 	struct nvme_rdma_conn	*fabric_conn;
 	struct xport_sge	 xport[MAX_IOQ_RECV_SGE];
 };
@@ -157,41 +153,6 @@ struct rx_desc {
 struct tx_desc {
 	struct nvme_rdma_conn	*fabric_conn;
 	struct xport_sge	 xport[MAX_IOQ_SEND_SGE];
-	u8			 in_use;
 };
-#else
-struct discovery_rx_desc {
-	struct nvme_rdma_conn	*fabric_conn;
-	struct xport_sge	 xport[MAX_DISCOVER_RECV_SGE];
-};
-
-struct discovery_tx_desc {
-	struct nvme_rdma_conn	*fabric_conn;
-	struct xport_sge	 xport[MAX_DISCOVER_SEND_SGE];
-	u8			 in_use;
-};
-
-struct aq_rx_desc {
-	struct nvme_rdma_conn	*fabric_conn;
-	struct xport_sge	 xport[MAX_AQ_RECV_SGE];
-};
-
-struct aq_tx_desc {
-	struct nvme_rdma_conn	*fabric_conn;
-	struct xport_sge	 xport[MAX_AQ_SEND_SGE];
-	u8			 in_use;
-};
-
-struct ioq_rx_desc {
-	struct nvme_rdma_conn	*fabric_conn;
-	struct xport_sge	 xport[MAX_IOQ_RECV_SGE];
-};
-
-struct ioq_tx_desc {
-	struct nvme_rdma_conn	*fabric_conn;
-	struct xport_sge	 xport[MAX_IOQ_SEND_SGE];
-	u8			 in_use;
-};
-#endif /* descriptor structs */
 
 #endif  /* _LINUX_NVME_FABRICS_RDMA_H */

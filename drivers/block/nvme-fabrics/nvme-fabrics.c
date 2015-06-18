@@ -562,11 +562,10 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 		       __FILE__, __func__, ret);
 		goto err1;
 	};
-	ret = nvme_host->fops->send_connect_capsule(
+	ret = nvme_host->fops->send_admin_cmd(
 		      new_ctrl->aq_conn,
 		      &capsule,
-		      &rsp,
-		      sizeof(struct nvme_connect_rsp_capsule));
+		      &rsp);
 	if (ret) {
 		pr_err("%s(): Error send_capsule() returned %d\n",
 		       __func__, ret);
@@ -741,7 +740,6 @@ int nvme_fabric_discovery(struct nvme_fabric_addr *address, int fabric_type,
 }
 EXPORT_SYMBOL_GPL(nvme_fabric_discovery);
 
-
 /*
  * Retrieves the IQN name of the fabric host.
  *
@@ -803,11 +801,6 @@ static struct nvme_common_host_operations nvme_common_ops = {
  */
 int nvme_fabric_register(char *nvme_class_name,
 			 struct nvme_fabric_host_operations *new_fabric)
-/*
- * TODO: Remove the export as this will be an internal module function
- * debate...why???  Fabric-specific transport has to register w/the
- * fabric agnostic layer somehow.
- */
 {
 	int ret = -EINVAL;
 
@@ -830,9 +823,11 @@ int nvme_fabric_register(char *nvme_class_name,
 		goto err1;
 
 	nvme_host->fops = new_fabric;
+
+	/* TODO: Remove before upstreaming?*/
 	if ((nvme_host->fops->connect_create_queue == NULL) ||
 			(nvme_host->fops->disconnect == NULL)           ||
-			(nvme_host->fops->send_connect_capsule == NULL)  ||
+			(nvme_host->fops->send_admin_cmd == NULL)  ||
 			(nvme_host->fops->build_admin_sglist == NULL)) {
 		pr_err("%s(): Error, a fabric function not implemented!\n",
 		       __func__);
@@ -880,9 +875,6 @@ EXPORT_SYMBOL_GPL(nvme_fabric_register);
  * Return Value:
  *      O for success,
  *      Any other value, error
- */
-/*
- * TODO: Remove the export as this will be an internal module function
  */
 int nvme_fabric_unregister(struct nvme_fabric_subsystem *conn)
 {

@@ -57,6 +57,21 @@ module_param(io_retry_count, byte, 0644);
 MODULE_PARM_DESC(io_retry_count,
 		 "Number of times sender will retry for IOQ connection");
 
+unsigned char discover_pool_depth = DISCOVER_POOL_DEPTH;
+module_param(discover_pool_depth, byte, 0644);
+MODULE_PARM_DESC(discover_pool_depth,
+		 "Number of pre allocated RX descriptors for the disc conn");
+
+unsigned char aq_pool_depth = AQ_POOL_DEPTH;
+module_param(aq_pool_depth, byte, 0644);
+MODULE_PARM_DESC(aq_pool_depth,
+		 "Number of pre allocated RX descriptors for the aq conn");
+
+unsigned char ioq_pool_depth = IOQ_POOL_DEPTH;
+module_param(ioq_pool_depth, byte, 0644);
+MODULE_PARM_DESC(ioq_pool_depth,
+		 "Number of pre allocated RX descriptors for the ioq conn");
+
 static DEFINE_SPINLOCK(nvme_ctrl_list_lock);
 static DEFINE_SPINLOCK(nvme_fabric_list_lock);
 
@@ -178,8 +193,8 @@ static void aq_comp_handler(struct ib_cq *cq, void *context)
 	complete(&fabric_conn->comp);
 }
 
-inline int send_nvme_capsule(struct nvme_rdma_conn *fabric_conn,
-			     struct tx_desc *tx_desc, int len, int num_sge)
+inline int post_send(struct nvme_rdma_conn *fabric_conn,
+		     struct tx_desc *tx_desc, int len, int num_sge)
 {
 	struct ib_send_wr	 snd;
 	struct ib_send_wr	*bad;
@@ -224,9 +239,6 @@ static void process_ioq_wc(struct nvme_rdma_conn *fabric_conn,
 			   int cnt, struct ib_wc *wc)
 {
 	struct nvme_common_queue	*nvmeq = fabric_conn->nvmeq;
-	struct rx_desc			*rx_desc;
-	unsigned long			 flags;
-	int				 ret = 0;
 
 	NVME_UNUSED(nvmeq);
 
@@ -242,26 +254,12 @@ static void process_ioq_wc(struct nvme_rdma_conn *fabric_conn,
 			continue;
 		case IB_WC_RECV:
 			pr_info("RDMA_IB_WC_RECV completion\n");
-			rx_desc = (struct rx_desc *) wc->wr_id;
-
-			spin_lock_irqsave(&nvmeq->q_lock, flags);
-			/*TODO - Milestone 3: FINISH ME!*/
-			/*memcopy from the rx_desc to the nvmeq->cqe tail
-			 *deal with any wrap-around queue tail issues
-			 */
-			spin_unlock_irqrestore(&nvmeq->q_lock, flags);
-
-			/*TODO - Milestone 3: FINISH ME!*/
-			/*Deal with putting on right queue?*/
-
-			ret = post_recv(fabric_conn,
-					(struct rx_desc *)wc->wr_id);
-			if (ret)
-				pr_err("post_recv returned %d\n", ret);
 			continue;
 		default:
 			pr_info("Unexpected completion %x\n", wc->opcode);
 		}
+
+		/* TODO: Put receive back on proper queue */
 	}
 }
 
@@ -323,7 +321,8 @@ static int setup_cq(struct nvme_rdma_conn *fabric_conn,
 	return 0;
 }
 
-static int setup_qp(struct nvme_rdma_conn *fabric_conn)
+static int setup_qp(struct nvme_rdma_conn *fabric_conn, int max_send_wr,
+		    int max_recv_wr, int max_send_sge, int max_recv_sge)
 {
 	struct rdma_ctrl	*rdma_ctrl = fabric_conn->rdma_ctrl;
 	struct ib_qp_init_attr	 attr;
@@ -335,34 +334,16 @@ static int setup_qp(struct nvme_rdma_conn *fabric_conn)
 
 	attr.event_handler	= event_handler;
 	attr.send_cq		=
-		attr.recv_cq		= fabric_conn->xport_conn.cq;
+	attr.recv_cq		= fabric_conn->xport_conn.cq;
 	attr.qp_type		= IB_QPT_RC;
 	attr.qp_context		= fabric_conn;
 	attr.sq_sig_type	= IB_SIGNAL_ALL_WR;
+	attr.cap.max_inline_data= MAX_INLINE_DATA;
+	attr.cap.max_send_wr	= max_send_wr;
+	attr.cap.max_recv_wr	= max_recv_wr;
+	attr.cap.max_send_sge	= max_send_sge;
+	attr.cap.max_recv_sge	= max_recv_sge;
 
-	/*CAYTONCAYTON - Finish me: are disc and AQ attributes the same? */
-	if (fabric_conn->stage == CONN_DISCOVER) {
-		attr.cap.max_inline_data = MAX_INLINE_DATA;
-		attr.cap.max_send_wr	 = MAX_DISCOVER_SEND_WR;
-		attr.cap.max_recv_wr	 = MAX_DISCOVER_RECV_WR;
-		attr.cap.max_send_sge	 = MAX_DISCOVER_SEND_SGE;
-		attr.cap.max_recv_sge	 = MAX_DISCOVER_RECV_SGE;
-	} else if (fabric_conn->stage == CONN_AQ) {
-		attr.cap.max_inline_data = MAX_INLINE_DATA;
-		attr.cap.max_send_wr	 = MAX_AQ_SEND_WR;
-		attr.cap.max_recv_wr	 = MAX_AQ_RECV_WR;
-		attr.cap.max_send_sge	 = MAX_AQ_SEND_SGE;
-		attr.cap.max_recv_sge	 = MAX_AQ_RECV_SGE;
-	} else if (fabric_conn->stage == CONN_IOQ) {
-		attr.cap.max_inline_data = MAX_INLINE_DATA;
-		attr.cap.max_send_wr	 = MAX_IOQ_SEND_WR;
-		attr.cap.max_recv_wr	 = MAX_IOQ_RECV_WR;
-		attr.cap.max_send_sge	 = MAX_IOQ_SEND_SGE;
-		attr.cap.max_recv_sge	 = MAX_IOQ_RECV_SGE;
-	} else {
-		pr_err("setup QP on invalid stage\n");
-		return -EINVAL;
-	}
 
 	ret = rdma_create_qp(fabric_conn->xport_conn.cm_id,
 			     rdma_ctrl->pd, &attr);
@@ -370,6 +351,86 @@ static int setup_qp(struct nvme_rdma_conn *fabric_conn)
 		pr_err("rdma_create_qp returned %d\n", ret);
 
 	return ret;
+}
+
+static void destroy_rx_bufs(struct nvme_rdma_conn *fabric_conn)
+{
+	/* TODO: Walk the list: dma unmap and kfree */
+}
+
+static int create_rx_buf(struct nvme_rdma_conn *fabric_conn)
+{
+	struct rdma_ctrl	*rdma_ctrl;
+	struct rx_desc          *rx_desc;
+	struct ib_device        *ib_dev;
+	int                      ret = 0;
+
+	pr_info("%s: %s()\n", __FILE__, __func__);
+
+	rdma_ctrl = fabric_conn->rdma_ctrl;
+	ib_dev = rdma_ctrl->ib_dev;
+
+	rx_desc = kzalloc(sizeof(struct rx_desc), GFP_KERNEL);
+	if (!rx_desc) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	list_add(&rx_desc->node, &fabric_conn->rx_desc_pool);
+#if 0
+	dma_addr = ib_dma_map_single(ib_dev, &rx_desc->u.aq_msg, len,
+				     DMA_FROM_DEVICE);
+
+	ret = ib_dma_mapping_error(ib_dev, dma_addr);
+	if (ret) {
+		print_err("ib_dma_map_single returned %d\n", ret);
+		goto out;
+	}
+
+	sgl                     = &rx_desc->xport[0].sgl;
+	sgl->length             = length;
+	sgl->addr               = dma_addr;
+	sgl->lkey               = rdma_ctrl->mr->lkey;
+#endif
+
+	rx_desc->fabric_conn	= fabric_conn;
+
+out:
+	return ret;
+}
+
+static struct rx_desc *get_rx_desc(struct nvme_rdma_conn *fabric_conn)
+{
+        struct rx_desc		*desc;
+        unsigned long		 flags;
+	int			 ret;
+
+        spin_lock_irqsave(&fabric_conn->lock, flags);
+
+	if (list_empty(&(fabric_conn->rx_desc_pool))) {
+		ret = create_rx_buf(fabric_conn);
+		if (ret)
+			return ERR_PTR(ret);
+	}
+
+	desc = list_first_entry(&fabric_conn->rx_desc_pool, struct rx_desc,
+				node);
+	list_del(&desc->node);
+
+        spin_unlock_irqrestore(&fabric_conn->lock, flags);
+
+        return desc;
+}
+
+void put_rx_desc(struct nvme_rdma_conn *fabric_conn, struct rx_desc *desc)
+{
+        unsigned long flags;
+
+        spin_lock_irqsave(&fabric_conn->lock, flags);
+
+        list_add(&desc->node, &fabric_conn->rx_desc_pool);
+
+        spin_unlock_irqrestore(&fabric_conn->lock, flags);
 }
 
 static inline void setup_rdma_ctrl(struct rdma_ctrl *rdma_ctrl,
@@ -400,6 +461,8 @@ static int setup_discover_params(struct nvme_rdma_conn *fabric_conn)
 	struct ib_device	*ib_dev;
 	struct ib_device_attr	 attr;
 	ib_comp_handler		 comp_handler;
+        unsigned long		 flags;
+	int			 i;
 	int			 ret;
 
 	pr_info("%s: %s()\n", __FILE__, __func__);
@@ -447,13 +510,29 @@ static int setup_discover_params(struct nvme_rdma_conn *fabric_conn)
 		goto err2;
 	}
 
-	ret = setup_qp(fabric_conn);
+	fabric_conn->tx_depth = fabric_conn->rx_depth = discover_pool_depth;
+
+        spin_lock_irqsave(&fabric_conn->lock, flags);
+        for (i = 0; i < discover_pool_depth; i++) {
+		/* CAYTONCAYTON - create union based on capsule queue type */
+		ret = create_rx_buf(fabric_conn);
+		if (ret) {
+			spin_unlock_irqrestore(&fabric_conn->lock, flags);
+			goto err3;
+		}
+	}
+        spin_unlock_irqrestore(&fabric_conn->lock, flags);
+
+	ret = setup_qp(fabric_conn, MAX_DISCOVER_SEND_WR, MAX_DISCOVER_RECV_WR,
+		       MAX_DISCOVER_SEND_SGE, MAX_DISCOVER_RECV_SGE);
 	if (ret)
 		goto err3;
 
 	return 0;
+
 err3:
 	ib_dereg_mr(rdma_ctrl->mr);
+	destroy_rx_bufs(fabric_conn);
 err2:
 	ib_destroy_cq(fabric_conn->xport_conn.cq);
 err1:
@@ -470,6 +549,8 @@ static int setup_aq_params(struct nvme_rdma_conn *fabric_conn)
 	struct ib_device	*ib_dev;
 	struct ib_device_attr	 attr;
 	ib_comp_handler		 comp_handler;
+        unsigned long		 flags;
+	int			 i;
 	int			 ret;
 
 	pr_info("%s: %s()\n", __FILE__, __func__);
@@ -519,7 +600,21 @@ static int setup_aq_params(struct nvme_rdma_conn *fabric_conn)
 		goto err2;
 	}
 
-	ret = setup_qp(fabric_conn);
+	fabric_conn->tx_depth = fabric_conn->rx_depth = aq_pool_depth;
+
+        spin_lock_irqsave(&fabric_conn->lock, flags);
+        for (i = 0; i < aq_pool_depth; i++) {
+		/* CAYTONCAYTON - create union based on capsule queue type */
+		ret = create_rx_buf(fabric_conn);
+		if (ret) {
+			spin_unlock_irqrestore(&fabric_conn->lock, flags);
+			goto err3;
+		}
+	}
+        spin_unlock_irqrestore(&fabric_conn->lock, flags);
+
+	ret = setup_qp(fabric_conn, MAX_AQ_SEND_WR, MAX_AQ_RECV_WR,
+		       MAX_AQ_SEND_SGE, MAX_AQ_RECV_SGE);
 	if (ret)
 		goto err3;
 
@@ -527,6 +622,7 @@ static int setup_aq_params(struct nvme_rdma_conn *fabric_conn)
 
 err3:
 	ib_dereg_mr(rdma_ctrl->mr);
+	destroy_rx_bufs(fabric_conn);
 err2:
 	ib_destroy_cq(fabric_conn->xport_conn.cq);
 err1:
@@ -540,6 +636,8 @@ static int setup_ioq_params(struct nvme_rdma_conn *fabric_conn)
 	struct rdma_ctrl	*rdma_ctrl = fabric_conn->rdma_ctrl;
 	struct rdma_conn_param	*parms = &fabric_conn->xport_conn.conn_params;
 	ib_comp_handler		 comp_handler;
+        unsigned long		 flags;
+	int			 i;
 	int			 ret;
 
 	pr_info("%s: %s()\n", __FILE__, __func__);
@@ -559,12 +657,28 @@ static int setup_ioq_params(struct nvme_rdma_conn *fabric_conn)
 	if (ret)
 		goto err1;
 
-	ret = setup_qp(fabric_conn);
+	fabric_conn->tx_depth = fabric_conn->rx_depth = ioq_pool_depth;
+
+        spin_lock_irqsave(&fabric_conn->lock, flags);
+        for (i = 0; i < ioq_pool_depth; i++) {
+		/* CAYTONCAYTON - create union based on capsule queue type */
+		ret = create_rx_buf(fabric_conn);
+		if (ret) {
+			goto err3;
+			spin_unlock_irqrestore(&fabric_conn->lock, flags);
+		}
+	}
+        spin_unlock_irqrestore(&fabric_conn->lock, flags);
+
+	ret = setup_qp(fabric_conn, MAX_IOQ_SEND_WR, MAX_IOQ_RECV_WR,
+		       MAX_IOQ_SEND_SGE, MAX_IOQ_RECV_SGE);
 	if (ret)
 		goto err2;
 
 	return ret;
 
+err3:
+	destroy_rx_bufs(fabric_conn);
 err2:
 	ib_destroy_cq(fabric_conn->xport_conn.cq);
 err1:
@@ -772,7 +886,7 @@ static void nvme_rdma_disconnect(char *subsys_name, __u16 cntlid,
 		ib_dereg_mr(ctrl->mr);
 		ib_dealloc_pd(ctrl->pd);
 	#endif
-	/* THIS IS TEMPORARY UNTIL WE GET A TARGET */
+	/* TODO: THIS IS TEMPORARY UNTIL WE GET A TARGET */
 
 	spin_lock_irqsave(&nvme_ctrl_list_lock, flags);
 	list_del(&ctrl->node);
@@ -825,7 +939,7 @@ static int connect_to_rdma_ctrl(struct nvme_rdma_conn *fabric_conn)
 	pr_err("\n\n%s - HERE BE DRAGONS\n\n", __func__);
 	return 0;  /* FIXME */
 	#endif
-	/* THIS IS TEMPORARY UNTIL WE GET A TARGET */
+	/* TODO: THIS IS TEMPORARY UNTIL WE GET A TARGET */
 
 	ret = rdma_resolve_addr(cm_id, NULL, dst, fabric_timeout);
 	if (ret) {
@@ -860,10 +974,10 @@ err1:
 	return ret;
 }
 
-#if 0
 static struct rx_desc *wait_on_msg(struct nvme_rdma_conn *fabric_conn)
 {
 	struct rx_desc		*rx_desc = NULL;
+#if 0
 	struct ib_cq		*cq = fabric_conn->xport_conn.cq;
 	struct ib_wc		 wc;
 	int			 ret;
@@ -892,9 +1006,9 @@ static struct rx_desc *wait_on_msg(struct nvme_rdma_conn *fabric_conn)
 			; /*TODO: Free the capsule...somehow*/
 	} while (rx_desc == NULL);
 out:
+#endif
 	return rx_desc;
 }
-#endif
 
 /* TODO: implement nvme_rdma_build_admin_sglist() */
 static	int nvme_rdma_build_admin_sglist(void *prp1, void *prp2,
@@ -911,15 +1025,13 @@ static	int nvme_rdma_build_admin_sglist(void *prp1, void *prp2,
 #if 0
 	/* If prp1 != 0
 		rdma_offset is an OUT param
-		Call RDMA_Agnostic rkey = gen_rkey(prp1, 4k,
-						   &rdma_offset);
+		rkey = gen_rkey(prp1, 4k, &rdma_offset);
 		sglist[0].datablk.addr = rdma_offset;
 		sglist[0].datablk.len_key.len = 4k;
 		sglist[0].datablk.len_key.key = rkey;
 
 	  If prp2 != 0
-		Call RDMA_Agnostic rkey2 = gen_rkey(prp2, 4k,
-						    &rdma_offset2);
+		rkey2 = gen_rkey(prp2, 4k, &rdma_offset2);
 		sglist[1].datablk.addr = rdma_offset2;
 		sglist[1].datablk.len_key.len = 4k;
 		sglist[1].datablk.len_key.key = rkey2;
@@ -958,76 +1070,61 @@ static int nvme_rdma_finalize_ctrl(char *subsys_name, __u16 cntlid)
 
 }
 
-static int nvme_rdma_submit_connect_capsule(void *fabric_context,
-		union nvme_capsule_cmd *capsule,
-		union nvme_capsule_rsp *rsp,
-		__u32 expected_size)
+static int nvme_rdma_submit_aq_cmd(void *fabric_context,
+				   union nvme_capsule_cmd *cmd,
+				   union nvme_capsule_rsp *rsp)
 {
-	int			 ret = 0;
+	int			 ret = -ENOMEM;
 	struct rdma_cm_id	*cm_id;
 	struct rdma_ctrl	*rdma_ctrl;
 	struct nvme_rdma_conn	*fabric_conn;
+	struct ib_device	*ib_dev;
+	struct rx_desc		*rx_desc;
+	struct tx_desc		 tx_desc;
 
 	pr_info("%s: %s()\n", __FILE__, __func__);
 
 	fabric_conn	= (struct nvme_rdma_conn *)fabric_context;
 	cm_id		= fabric_conn->xport_conn.cm_id;
 	rdma_ctrl	= fabric_conn->rdma_ctrl;
+	ib_dev		= rdma_ctrl->ib_dev;
 
-	/*
-		ret = post_recv(fabric_conn, rx_desc);
-		if (ret)
-			pr_err("post_recv returned %d\n", ret);
+	rx_desc = get_rx_desc(fabric_conn);
+	ret = post_recv(fabric_conn, rx_desc);
+	if (ret) {
+		pr_err("post_recv returned %d\n", ret);
+		goto out;
+	}
 
-		ret = send_nvme_capsule(fabric_conn, tx_desc, sizeof(*msg), 1);
-		if (ret) {
-			pr_err("error: %d\n", ret);
+	/* TODO: figure out tx_desc */
+	ret = post_send(fabric_conn, &tx_desc, sizeof(*cmd), 1);
+	if (ret) {
+		pr_err("error: %d\n", ret);
+		goto out;
+	}
 
-			return -EFAULT;
-		}
-
-		rx_desc = wait_on_msg(fabric_conn);
-		if (!rx_desc) {
-			pr_err("message times out\n");
-			return -ETIMEDOUT;
-		}
-	*/
+	rx_desc = wait_on_msg(fabric_conn);
+	if (!rx_desc) {
+		pr_err("message times out\n");
+		ret = -ETIMEDOUT;
+	}
+out:
 	return ret;
 }
 
 #if 0
-static int nvme_rdma_submit_io_cmd(struct nvme_common_queue *nvmeq,
-				   struct nvme_command *cmd, __u32 len)
+static int nvme_rdma_submit_io_cmd(void *fabric_context,
+				   union nvme_capsule_cmd *cmd)
 {
 	struct nvme_rdma_conn	*fabric_conn;
-	int			*msg;
+	struct rdma_cm_id	*cm_id;
 	struct rdma_ctrl	*rdma_ctrl;
-	struct tx_desc		*tx_desc;
-	struct ib_sge		*sgl;
-	int			 num_sge = 1;
 	int			 ret = 0;
 
 	pr_info("%s: %s()\n", __FILE__, __func__);
 
-	/*CAYTONCAYTON - Move this to agnostic code*/
-	switch (cmd->rw.opcode) {
-	case nvme_cmd_flush:
-		pr_info("send NVMe 'flush' command\n");
-		break;
-	case nvme_cmd_write:
-		pr_info("send NVMe 'write' command\n");
-		break;
-	case nvme_cmd_read:
-		pr_info("send NVMe 'read' command\n");
-		break;
-	case nvme_cmd_compare:
-		pr_info("send NVMe 'compare' command\n");
-		break;
-	default:
-		pr_info("send some other command...\n");
-	}
-
-	fabric_conn	= nvmeq->context;
+	fabric_conn	= (struct nvme_rdma_conn *)fabric_context;
+	cm_id		= fabric_conn->xport_conn.cm_id;
 	rdma_ctrl	= fabric_conn->rdma_ctrl;
 
 	tx_desc = get_free_tx_desc(fabric_conn);
@@ -1037,17 +1134,6 @@ static int nvme_rdma_submit_io_cmd(struct nvme_common_queue *nvmeq,
 	}
 
 	sgl = &tx_desc->xport[0].sgl;
-
-	/*TODO: Fill in the msg: see nvmerp_submit_aq_cmd() from
-	 * xport_rdma.c from * demo for idea how it should work.
-	 */
-
-	/*
-	    rdma_specific_function();
-	    create_cmd_capsule();
-
-	    ...Have to deal with read, write, flush, compare, write_uncor, ...
-	*/
 
 	ret = send_msg(fabric_conn, tx_desc, sizeof(*msg), num_sge);
 	if (ret) {
@@ -1196,7 +1282,7 @@ static struct nvme_fabric_host_operations nvme_rdma_ops = {
 	.owner			= THIS_MODULE,
 	.disconnect		= nvme_rdma_disconnect,
 	.connect_create_queue	= nvme_rdma_connect_create_queue,
-	.send_connect_capsule	= nvme_rdma_submit_connect_capsule,
+	.send_admin_cmd		= nvme_rdma_submit_aq_cmd,
 	.build_admin_sglist	= nvme_rdma_build_admin_sglist,
 	.finalize_cntlid	= nvme_rdma_finalize_ctrl,
 #if 0

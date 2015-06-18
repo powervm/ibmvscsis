@@ -786,11 +786,10 @@ struct nvme_fabric_host_operations {
 	 *      NVMe capsule command is simple, thus, it can be
 	 *      broken out in it's own function.
 	 */
-	int (*send_connect_capsule)(void *fabric_context,
-				    union nvme_capsule_cmd *capsule,
-				    union nvme_capsule_rsp *rsp,
-				    __u32 expected_size);
-#if 0
+	int (*send_admin_cmd)(void *fabric_context,
+				    union nvme_capsule_cmd *cmd,
+				    union nvme_capsule_rsp *rsp);
+
 	/*
 	 * Function that takes the specific fabric transport and
 	 * an NVMe I/O command and packages the contents (in say,
@@ -814,9 +813,9 @@ struct nvme_fabric_host_operations {
 	 *      of the demo.
 	 *
 	*/
-	int (*prepsend_io_cmd)(struct nvme_common_queue *nvmeq,
-			       struct nvme_command *cmd, __u32 len);
-#endif
+	int (*send_io_cmd)(void *fabric_context,
+			   union nvme_capsule_cmd *cmd);
+
 	/*
 	 * Function that shuts down a fabric connection.
 	 *
