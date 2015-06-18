@@ -35,17 +35,37 @@
 #include <linux/list.h>
 #include <linux/wait.h>
 #define NVME_UNUSED(x)		((void)x)
-#define TODO			NULL
 
-/* This is used for both Admin submission and completion queue depth;
- * This can be broken out to separate sub/cpl sizes if needed
- */
-#define NVME_RDMA_AQ_DEPTH	64
+/*TODO: Figure out all these defines below */
+/*SWAG #1: Current definitions are based on the POC */
+/*SWAG #2: It may be that not all of these are used/needed.*/
+/*-------------------------------------------------------------------------*/
 
-/* Max NVMe IO queue size, loosely based on CAP.MQES register definition
- * of the NVMe spec.
- */
-#define NVME_RDMA_IOQ_DEPTH	4096
+#define DEFAULT_HOSTNAME	"org.nvmeexpress.rdmahost"
+#define MAX_INLINE_DATA		0
+#define NVME_RDMA_POLLSIZE	1
+
+#define DISCOVER_SQ_SIZE	1
+#define DISCOVER_RQ_SIZE	1
+#define MAX_DISCOVER_SEND_WR	DISCOVER_SQ_SIZE
+#define MAX_DISCOVER_RECV_WR	DISCOVER_RQ_SIZE
+#define MAX_DISCOVER_SEND_SGE	1
+#define MAX_DISCOVER_RECV_SGE	1
+
+#define AQ_SQ_SIZE		1
+#define AQ_RQ_SIZE		1
+#define MAX_AQ_SEND_WR		AQ_SQ_SIZE
+#define MAX_AQ_RECV_WR		AQ_RQ_SIZE
+#define MAX_AQ_SEND_SGE		1
+#define MAX_AQ_RECV_SGE		1
+
+#define IOQ_SQ_SIZE		40
+#define IOQ_RQ_SIZE		40
+#define MAX_IOQ_SEND_WR		128
+#define MAX_IOQ_RECV_WR		128
+#define MAX_IOQ_SEND_SGE	3
+#define MAX_IOQ_RECV_SGE	1
+/*-------------------------------------------------------------------------*/
 
 #define SQ_SIZE(depth)          (depth * sizeof(struct nvme_command))
 #define CQ_SIZE(depth)          (depth * sizeof(struct nvme_completion))
@@ -69,50 +89,109 @@ enum {
 	STATE_TIMEDOUT = -2,
 };
 
-/*TODO: Can this be combined with ep? */
+/*CAYTONCAYTON: Can this be combined with rdma_ctrl? */
 struct xport_conn {
-	struct rdma_conn_param  conn_params;
+	struct rdma_conn_param	 conn_params;
 	struct rdma_cm_id       *cm_id;
 	struct ib_cq            *cq;
-	struct ib_wc            wc;
+	struct ib_wc		 wc;
 };
 
 /*
  * Points to an individual remote node
- * ALL ctrlrs on a node get a pointer to a common ep struct
+ * ALL queues on a ctrl get a pointer to a common ctrl struct
  */
-/*TODO: Does some of this need to be pulled into xport_conn?*/
-struct ep {
-	struct list_head	node;
-	struct sockaddr_in      dst;
-	int			instance;
+struct rdma_ctrl {
+	struct list_head	 node;
+	char			 subsys_name[NVME_FABRIC_IQN_MAXLEN];
+	__u16			 cntlid;
+	__u8			 uuid[HNSID_LEN];
+	__u8			 uuid_len;
+	int			 instance;
 	struct ib_device        *ib_dev;
 	struct ib_pd            *pd;
 	struct ib_mr            *mr;
-	int			max_qp_init_rd_atom;
-	int			max_qp_rd_atom;
-	struct list_head	connections; /* all AQ + IOQs */
+	int			 max_qp_init_rd_atom;
+	int			 max_qp_rd_atom;
+	struct list_head	 connections; /* ctrl AQ + IOQs */
 };
 
 /*
- * struct that describes the fabric connection session the host
- * is using to communicate with the ep.
+ * struct that describes a fabric connection session the host
+ * is using to communicate with an individual queue (IOQ/AQ/DQ) .
  */
-struct nvme_fabric_conn {
-	struct ep		*ep; /* Remote node info */
-	struct xport_conn	xport_conn;
-	int                     state;
-	int                     stage;
-	struct list_head        node;
-	u16			port;
-	u32                     session_id;
-	u16                     rx_depth;
-	u16                     tx_depth;
-	struct rx_desc          *rx_desc_table;
-	struct tx_desc          *tx_desc_table;
-	struct completion       comp;
-	wait_queue_head_t       sem;
-	struct nvme_queue       *nvmeq;
+struct nvme_rdma_conn {
+	struct list_head		 node;
+	struct rdma_ctrl		*rdma_ctrl; /* main ctrl struct */
+	struct xport_conn		 xport_conn;
+	int				 state;
+	int				 stage;
+	struct sockaddr_in		 dst;
+	u32				 session_id;
+	struct completion		 comp;
+	wait_queue_head_t		 sem;
+	struct nvme_common_queue	*nvmeq;
 };
+
+struct xport_sge {
+	struct ib_sge	sgl;
+};
+
+/*TODO: Decide if we are going to use a "common" rx/tx_desc for
+ * all discovery/aq/ioq connections (in which case we have a
+ * minor inefficiency in that discovery and aq will have more
+ * sgl entries than needed...
+ * OR
+ * separate them out which will greatly expand the code length
+ * due to functions to handle each...  Pick your poison.
+ */
+
+/*FINISH ME! - all the rx/tx_depth structures need love*/
+
+#if 1
+struct rx_desc {
+	struct nvme_rdma_conn	*fabric_conn;
+	struct xport_sge	 xport[MAX_IOQ_RECV_SGE];
+};
+
+struct tx_desc {
+	struct nvme_rdma_conn	*fabric_conn;
+	struct xport_sge	 xport[MAX_IOQ_SEND_SGE];
+	u8			 in_use;
+};
+#else
+struct discovery_rx_desc {
+	struct nvme_rdma_conn	*fabric_conn;
+	struct xport_sge	 xport[MAX_DISCOVER_RECV_SGE];
+};
+
+struct discovery_tx_desc {
+	struct nvme_rdma_conn	*fabric_conn;
+	struct xport_sge	 xport[MAX_DISCOVER_SEND_SGE];
+	u8			 in_use;
+};
+
+struct aq_rx_desc {
+	struct nvme_rdma_conn	*fabric_conn;
+	struct xport_sge	 xport[MAX_AQ_RECV_SGE];
+};
+
+struct aq_tx_desc {
+	struct nvme_rdma_conn	*fabric_conn;
+	struct xport_sge	 xport[MAX_AQ_SEND_SGE];
+	u8			 in_use;
+};
+
+struct ioq_rx_desc {
+	struct nvme_rdma_conn	*fabric_conn;
+	struct xport_sge	 xport[MAX_IOQ_RECV_SGE];
+};
+
+struct ioq_tx_desc {
+	struct nvme_rdma_conn	*fabric_conn;
+	struct xport_sge	 xport[MAX_IOQ_SEND_SGE];
+	u8			 in_use;
+};
+#endif /* descriptor structs */
 
 #endif  /* _LINUX_NVME_FABRICS_RDMA_H */

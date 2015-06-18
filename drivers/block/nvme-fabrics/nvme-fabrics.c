@@ -25,32 +25,13 @@
 #include <linux/nvme-fabrics/nvme-common.h>
 #include <linux/nvme-fabrics/nvme-fabrics.h>
 #include <linux/errno.h>
+#include <linux/random.h>
 
 #define NVME_UNUSED(x) ((void)x)
 
-/*TODO: Change this to fabric instance...*/
-int instance;
+static struct nvme_fabric_host *nvme_host;
 
-/*
- * WIP: The vision here is on a nvme_fabric_register(), at
- * minimum we register the nvme_fabric_host_operations defined
- * for the specific driver into this nvme-fabric middle layer.
- * The middle layer will call the generic function pointer
- * ops API in the appropriate order so specific drivers don't
- * have to worry about stuff that this and to hopefully make
- * it easier to write new host fabric drivers.
- *
- * TODO: A single static variable may not be right (may
- * want an array of variables for example), but for
- * now, practical purposes we can assume a single machine will
- * be a single fabric host. We may also need to register
- * more than the nvme_fabric_host_operations.
- */
-static struct nvme_fabric_host_operations *host_fabric_ops;
-
-/*
- * Check we didin't inadvertently grow the command struct
- */
+/* TODO: Remove before upstreaming: Check we didn't grow the command struct */
 static inline void _nvme_check_size(void)
 {
 	BUILD_BUG_ON(sizeof(struct nvme_common_rw_cmd) != 64);
@@ -74,205 +55,742 @@ static inline void _nvme_check_size(void)
 }
 
 /*
- * Public function that adds an NVMe remote Subsystem
+ * Function that fills in the values for an nvme_fabric_addr struct.
  *
- * So:
- *      -nvme_sysfs_init() registers files
- *      -do_add_subsystem() gets called
- *      -do_add_subsystem() calls this function (nvme_fabric_add_subsystem)
- *       this function, nvme_fabric_add_subsystem,
- *		establishes an AQ connection to the remote EP
- *		issues a login request to the EP AQ Ctrlr Login/Auth Service.
- *       This function is complete when it:
- *              for each subsystem in the form of:
- *			SubsystemName {CtlrNme/Addr/Port/fabricType, ...}
- *				- obtains an Administrative Connection
- *				- logs into the AQ on the remote EP
- *				- obtains I/O information
- *				- obtains the proper I/O Connections
- *				- sets up the drives properly
+ * @address_type: parameter that describes what type of fabric
+ *		  address was passed into the function.
+ * @address: Fabric address
+ * @port: port value of the fabric address, if valid (FC addresses
+ *        don't have a port, for example)
  *
- *      this function gets called either:
- *		directly from sysfs "do_add_subsystem" or
- *		indirectly from sysfs "do_add_endpoint"
- *	once for each subsystem.  This function, nvme_fabric_add_subsystem:
- *		initializes memory to hold a list of controller connections
- *		calls fops->nvme_connect_create_queue() which obtains an AQ
- *		Conn logs into the Administration Queue on the remote EP
- *		obtains I/O information
- *		obtains the proper I/O Connections
- *		sets up the drives properly
+ * @fabric_addr: An OUT parameter that expects an allocated struct
+ *		 of nvme_fabric_addr that will be filled out properly
+ *		 based on address_type, address, and port.
  *
- * @subsystem_name:
- * @ctrlr_name:
- * @fabric:  The type of fabric used for the connection.
- * @address: The fabric address used for the discovery connection.
- * @port:    The port on the machine used for the discovery connection.
+ * Returns:
+ *      the value of 'address_type' or -EINVAL on error.
+ *
+ * Caveats:
+ *	if fabric_addr is NULL, function will return w/error.
+ */
+/*
+ * TODO: Create new file with these external APIs.  This will enable
+ *      any "manager" (including sysfs) to call.
+ */
+int nvme_fabric_parse_addr(int address_type, char *address, int port,
+			   struct nvme_fabric_addr *fabric_addr)
+{
+	int ret = 0;
+
+	fabric_addr->what_addr_type = address_type;
+
+	switch (address_type) {
+	case NVME_FABRIC_DNS:
+		memcpy(fabric_addr->addr.dns_addr.octet,
+		       address, DNS_ADDR_SIZE);
+		fabric_addr->addr.dns_addr.tcp_udp_port = (__u16) port;
+		break;
+	case NVME_FABRIC_IP4:
+		memcpy(fabric_addr->addr.ipv4_addr.octet, address,
+		       IPV4_ADDR_SIZE);
+		fabric_addr->addr.ipv4_addr.tcp_udp_port = (__u16) port;
+		break;
+	case NVME_FABRIC_IP6:
+		memcpy(fabric_addr->addr.ipv6_addr.octet, address,
+		       IPV6_ADDR_SIZE);
+		fabric_addr->addr.ipv6_addr.tcp_udp_port = (__u16) port;
+		break;
+	case NVME_FABRIC_EMAC:
+		memcpy(fabric_addr->addr.emac_addr.octet, address,
+		       EMAC_ADDR_SIZE);
+		break;
+	case NVME_FABRIC_IBA:
+		memcpy(fabric_addr->addr.iba_addr.octet, address,
+		       IBA_ADDR_SIZE);
+		break;
+	case NVME_FABRIC_WWID:
+		memcpy(fabric_addr->addr.fc_addr.octet, address,
+		       FC_ADDR_SIZE);
+		break;
+	default:
+		pr_err("Unsupported address type %d\n", address_type);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(nvme_fabric_parse_addr);
+
+/*
+ * Helper function to return the existing target subsystem if
+ * it exists (which is ok, as there can be many controllers under a target.
+ */
+static struct nvme_fabric_subsystem *find_subsystem(char *subsys_name)
+{
+	struct list_head	     *i;
+	struct list_head	     *q;
+	struct nvme_fabric_subsystem *ret;
+
+	list_for_each_safe(i, q, &nvme_host->subsystem_list) {
+		ret = list_entry(i, struct nvme_fabric_subsystem, node);
+		if ((!strcmp(subsys_name, ret->subsiqn)))
+			return ret;
+	}
+	return NULL;
+}
+
+/*
+ * Helper function to see if a ctrlr already exists in a known target ss
+ * (which is not ok, as ctrlr names should be unique per subsystem).
+ *
+ * Currently not used; commented out or the compiler will complain.
+ *
+static int does_ctrl_exist(struct nvme_fabric_subsystem *conn, __u16 cntlid)
+{
+	struct list_head *i, *q;
+	struct nvme_fabric_ctrl *iter;
+
+	list_for_each_safe(i, q, &conn->ctrl_list) {
+		iter = list_entry(i, struct nvme_fabric_ctrl, node);
+		if (cntlid == iter->cntlid)
+			return -EEXIST;
+	}
+	return 0;
+}
+*/
+
+static int
+nvme_create_nvme_capsule_rsp(struct nvme_capsule_packet *capsule,
+			     struct nvme_common_cmd *cmd,
+			     int queue_type, __u32 queue_num,
+			     __u32 *len)
+{
+	int ret = 0;
+
+
+	return ret;
+}
+
+/*From the redundant department of redundant function names department*/
+/*From the redundant department of redundant function names department*/
+static int nvme_create_nvme_capsule(struct nvme_capsule_packet *capsule,
+				    struct nvme_common_cmd *cmd,
+				    int queue_type, __u32 queue_num,
+				    __u32 *len)
+{
+	int ret = 0;
+
+	/*IF this command is for the AQ:
+		Build a capsule in which the SGL uses "SGL Last segment"
+		Allocate that capsule for two in-capsule data block SGLs.
+		Copy the NVMe command contents to the capsule
+	*/
+
+	return ret;
+}
+
+/* This replaces nvme_core's __nvme_submit_cmd() for agnostic code */
+static int nvme_fabric_submit_admin_cmd(struct nvme_common_queue *nvmeq,
+					struct nvme_common_cmd *cmd)
+{
+	int			    ret = 0;
+	__u32			    len = 0;
+	__u32			    rsp_len = 0;
+	struct nvme_capsule_packet *capsule = NULL;
+	struct nvme_capsule_packet *rsp = NULL;
+
+	ret = nvme_create_nvme_capsule(capsule, cmd, NVME_AQ, 0, &len);
+	if (ret < 0)
+		goto err1;
+
+	/* TODO: revisit.  NOTE creating union of responses so dont
+			   need response length
+	*/
+	ret = nvme_create_nvme_capsule_rsp(rsp, cmd, NVME_AQ, 0, &rsp_len);
+	if (ret < 0)
+		goto err2;
+
+	/* TODO:
+		If prp1 is !0:
+			Call fops->build_admin_sglist (with prp1, prp2,
+			pointer to SGL created in nvme_create_nvme_capsule
+			If prp2 is 0
+				length is 4KB
+			Else if prp2 is !0
+				length is 8KB
+		else
+			No reason to build SGL. Do nothing
+
+		nvme_host->fops->send_fabric_capsule(nvmeq->context,
+						     capsule,
+						     rsp,
+						      expected_bytes);
+
+	NOTE: For now fabric layer will complete this when it
+	      has confirmation of send completion and therefore
+	      we can free the command capsule.  For perf opt phase
+	      explore async callback to free command capsule
+	*/
+
+	goto out;
+err1:
+
+err2:
+
+out:
+	return ret;
+}
+
+/*
+ * TODO - Milestone 2: Flush out what is instance?!
+ */
+int nvme_fabric_set_instance(void)
+{
+	return (nvme_host->instance)++;
+}
+EXPORT_SYMBOL_GPL(nvme_fabric_set_instance);
+
+/*
+ * TODO - Milestone 2: Guessing this is ok w/new use of nvme_fabric_host...
+ * DO NOT CONSIDER REMOVING UNTIL MILESTONE 3 IS SOLIDIFIED AT LEAST.
+ */
+void *nvme_fabric_get_xport_context(void)
+{
+	return nvme_host->xport_context;
+}
+EXPORT_SYMBOL_GPL(nvme_fabric_get_xport_context);
+
+static void nvme_fabric_destroy_ctrl(struct nvme_fabric_subsystem *subsys,
+				     struct nvme_fabric_ctrl *ctrl)
+{
+	pr_info("%s: Removing controller %d @ subsys %s\n",
+		__func__, ctrl->cntlid, subsys->subsiqn);
+
+	nvme_host->fops->disconnect(subsys->subsiqn,
+				    ctrl->cntlid,
+				    &subsys->address);
+	list_del(&ctrl->node);
+	subsys->num_ctrl--;
+	kfree(ctrl);
+	ctrl = NULL;
+}
+
+/*
+ * Public function that starts a single controller's removal process.
+ * Tells the fabric specific code to shutdown all connections
+ * associated with that controller and clean up associated lists.
+ *
+ * @subsys_name:  Name of the subsystem name to remove from the
+ *		  host's data tree (if cntlid == NULL), or
+ *		  name of the subsystem to look for the controller
+ *		  name we want to remove.
+ *
+ * @cntlid:       If 0xFFFF, which is an illegal value for NVMe
+ *		  Controllers in Fabrics, the subsystem
+ *		  (and everything under it)
+ *		  will get removed.  Otherwise, remove just the
+ *		  controller from the host's data structure tree.
+ *
  * Return Value:
  *      O for success,
  *	Any other value, error
  */
-int nvme_fabric_add_subsystem(char *subsystem_name, char *ctrlr_name,
-			      int fabric, char *address, int port)
+/*
+ * TODO: Add to new "API" file - see earlier TODO
+ */
+int nvme_fabric_remove_host_treenode(char *subsys_name, __u16 cntlid)
 {
-	int			 ret;
-	struct nvme_conn	*conn = NULL;
+	struct nvme_fabric_subsystem	*subsys;
+	struct nvme_fabric_ctrl		*ctrl;
+	struct list_head		*ictrl;
+	struct list_head		*tmpctrl;
+	unsigned long			 flags;
+	int				 ret = -ENXIO;
 
 	pr_info("%s: %s()\n", __FILE__, __func__);
 
-	conn = kzalloc(sizeof(*conn), GFP_KERNEL);
-	if (!conn) {
-		ret = -ENOMEM;
+	subsys = find_subsystem(subsys_name);
+	if (!subsys) {
+		pr_err("%s: Did not find subsys %s\n", __func__, subsys_name);
+		return -ENXIO;
+	}
+
+	spin_lock_irqsave(&nvme_host->subsystem_list_lock, flags);
+
+	/*
+	 * This value is illegal for an NVMe controller's cntlid to have,
+	 * so we use it as a way to get this function to remove all
+	 * controllers in a subsystem.
+	 */
+	if (cntlid != 0xFFFF) {
+		/* delete just the one controller in the subsystem */
+		list_for_each_safe(ictrl, tmpctrl,  &subsys->ctrl_list) {
+			ctrl = list_entry(ictrl,
+					  struct nvme_fabric_ctrl, node);
+			if (cntlid == ctrl->cntlid) {
+				nvme_fabric_destroy_ctrl(subsys, ctrl);
+				subsys->num_ctrl--;
+				ret = 0;
+				break;
+			}
+		}
+	} else {
+		/* delete all controllers in subsystem */
+		list_for_each_safe(ictrl, tmpctrl,  &subsys->ctrl_list) {
+			ctrl = list_entry(ictrl,
+					  struct nvme_fabric_ctrl, node);
+			nvme_fabric_destroy_ctrl(subsys, ctrl);
+		}
+
+		if (unlikely(subsys->num_ctrl))
+			pr_err("%s: Ctrl count in subsys %s should be 0: %d\n",
+			       __func__, subsys->subsiqn,
+			       subsys->num_ctrl);
+
+		pr_info("%s: Removing subsys %s\n", __func__,
+			subsys->subsiqn);
+
+		/* Now remove the subsystem */
+		list_del(&subsys->node);
+		nvme_host->num_subsystems--;
+		kfree(subsys);
+
+		ret = 0;
+	}
+
+	spin_unlock_irqrestore(&nvme_host->subsystem_list_lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(nvme_fabric_remove_host_treenode);
+
+/*
+ * Creates an NVMe Connect Capsule Packet.
+ *
+ * TODO: Make sure subsys_name really is a subsys_name
+ * and not the old ctrlname from last TP002 version
+ */
+static int nvme_create_connect_capsule(struct nvme_capsule_packet *capsule,
+				       __u8   queue_type,
+				       __u16  cntlid,
+				       __le16 queue_number,
+				       __u8   *hnsid,
+				       char   *hostname,
+				       char   *subsys_name)
+{
+	struct connect_cmd_capsule *connect_cmd_capsule = NULL;
+
+	capsule->hdr.capsule.connect_cmd.cctype = CCTYPE_CONNECT_CMD;
+	capsule->hdr.capsule.connect_cmd.authpr = 0;
+	memcpy(capsule->hdr.capsule.connect_cmd.vs, nvme_host->vs,
+	       NVME_FABRIC_VS_LEN);
+	if (queue_type == NVME_AQ) {
+		capsule->hdr.capsule.connect_cmd.sqid  = 0;
+		capsule->hdr.capsule.connect_cmd.cqid  = 0;
+	} else {
+		capsule->hdr.capsule.connect_cmd.sqid  = queue_number;
+		capsule->hdr.capsule.connect_cmd.cqid  = queue_number;
+	}
+
+	connect_cmd_capsule = kzalloc(sizeof(struct connect_cmd_capsule),
+				      GFP_KERNEL);
+	if (!connect_cmd_capsule)
+		return -ENOMEM;
+
+	if (hnsid) {
+		memcpy(connect_cmd_capsule->capsule_body.hnsid,
+		       hnsid, HNSID_LEN);
+	}
+
+	if (queue_type == NVME_AQ) {
+		connect_cmd_capsule->capsule_body.cntlid = 0xFFFF;
+	} else {
+		pr_err("%s: TODO: Connect via IOQ WIP\n", __func__);
+		return -EINVAL;
+	}
+	connect_cmd_capsule->capsule_body.authpr = 0;
+
+	if (subsys_name) {
+		strncpy(connect_cmd_capsule->capsule_body.subsiqn,
+			subsys_name, NVME_FABRIC_IQN_MAXLEN);
+	}
+	if (hostname) {
+		strncpy(connect_cmd_capsule->capsule_body.hostiqn,
+			hostname, NVME_FABRIC_IQN_MAXLEN);
+	}
+	capsule->child = connect_cmd_capsule;
+
+	pr_info("\n===%s Created Connect Capsule ===\n", __func__);
+	pr_info("cctype:  %#x      authpr: %d\n",
+		capsule->hdr.capsule.connect_cmd.cctype,
+		capsule->hdr.capsule.connect_cmd.authpr);
+	pr_info("vs[3]: %x vs[2]: %x vs[1]: %x vs[0]: %x\n",
+		capsule->hdr.capsule.connect_cmd.vs[3],
+		capsule->hdr.capsule.connect_cmd.vs[2],
+		capsule->hdr.capsule.connect_cmd.vs[1],
+		capsule->hdr.capsule.connect_cmd.vs[0]);
+	pr_info("sqid:    %d        cqid:   %d\n",
+		capsule->hdr.capsule.connect_cmd.sqid,
+		capsule->hdr.capsule.connect_cmd.cqid);
+	pr_info("hnsid:   %pUX\n", connect_cmd_capsule->capsule_body.hnsid);
+	pr_info("cntlid:  %#x   authpr: %d\n",
+		connect_cmd_capsule->capsule_body.cntlid,
+		connect_cmd_capsule->capsule_body.authpr);
+	pr_info("subsiqn: %s\n", connect_cmd_capsule->capsule_body.subsiqn);
+	pr_info("hostiqn: %s\n", connect_cmd_capsule->capsule_body.hostiqn);
+	pr_info("========================\n");
+
+	return 0;
+
+}
+
+/*
+ * Creates an NVMe Connect Response Packet.
+ *
+ * Notes:
+ *    *KEEP THIS FUNCTION UNTIL NVME FABRIC SPEC BECOMES MORE STABLE.
+ *     THEN IT CAN BE DECIDED IF THIS IS STILL NEEDED.
+ */
+static int nvme_create_connect_rsp_capsule(
+	struct nvme_capsule_packet *capsule)
+{
+	/*
+	 * These values are illegal for a controller to send back to the
+	 * host, so this is a good initial value to set to catch
+	 * bugs.
+	 */
+	capsule->hdr.capsule.connect_rsp.cctype = 255;
+	capsule->hdr.capsule.connect_rsp.sts    = 69;
+	capsule->hdr.capsule.connect_rsp.cntlid = 0xFFFF;
+	capsule->child = NULL;
+	return 0;
+}
+
+/* TODO - Milestone 2: Define function to "discover disks" */
+/* Once the Administrative Queue for a given subsystem has been connected,
+ * logged in, and info exchanged, this function calls the subsytem via
+ * administrative capsules to obtain subsystem info to discover and configure
+ * the NS on that subsystem and creates/connects IOQs
+ */
+static int nvme_fabric_initialize_disks(struct nvme_fabric_subsystem *conn)
+{
+	int                      ret = 0;
+
+	pr_info("%s: %s()\n", __FILE__, __func__);
+
+	NVME_UNUSED(conn);
+
+	return ret;
+}
+
+/* spinlock enabled function that adds a new subsystem to the fabric
+ * host's data tree
+ */
+static struct nvme_fabric_subsystem *
+nvme_fabric_add_subsystem(char *subsys_name,
+			  struct nvme_fabric_addr *address,
+			  int fabric, int conn)
+{
+	unsigned long			 flags = 0;
+	struct nvme_fabric_subsystem	 *subsystem;
+
+	subsystem = kzalloc(sizeof(struct nvme_fabric_subsystem), GFP_KERNEL);
+	if (!subsystem)
+		return NULL;
+
+	strncpy(subsystem->subsiqn, subsys_name, NVME_FABRIC_IQN_MAXLEN);
+	memcpy(&subsystem->address, address, sizeof(struct nvme_fabric_addr));
+	subsystem->conn_type = conn;
+	subsystem->fabric = fabric;
+	subsystem->num_ctrl = 0;
+	INIT_LIST_HEAD(&subsystem->ctrl_list);
+	spin_lock_init(&subsystem->ctrl_list_lock);
+
+	spin_lock_irqsave(&nvme_host->subsystem_list_lock, flags);
+	subsystem->reference_num = nvme_host->num_subsystems++;
+	list_add_tail(&subsystem->node, &nvme_host->subsystem_list);
+	spin_unlock_irqrestore(&nvme_host->subsystem_list_lock, flags);
+
+	return subsystem;
+}
+
+static int
+nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
+			     struct nvme_fabric_subsystem *subsystem)
+{
+	struct nvme_capsule_packet	 nvme_capsule;
+	struct nvme_capsule_packet	 nvme_capsule_rsp;
+	int				 ret;
+	unsigned long			 flags = 0;
+
+	/* TODO - Milestone 2: Deal with this hnsid/uuid crap - gets
+	 * weird on a reconnect Connect/Create an Fabric specific (not NVMe)
+	 * AQ Connection
+	 */
+	ret = nvme_host->fops->connect_create_queue(subsystem,
+			new_ctrl->cntlid,
+			nvme_host->hnsid,
+			CONN_AQ,
+			&(new_ctrl->aq_conn));
+
+	if (ret) {
+		pr_err("%s(): Error connect_create_queue(AQ) %d\n",
+		       __func__, ret);
 		goto err1;
 	}
 
-	/*Connect/Create an AQ Connection*/
-	ret = host_fabric_ops->connect_create_queue(address, port, fabric,
-			conn, CONN_AQ);
+	if (new_ctrl->aq_conn == NULL) {
+		pr_err("%s(): Error! aq_conn NULL from *_create_queue()\n",
+		       __func__);
+		ret = -ENODEV;
+		goto err1;
+	} else {
+		pr_info("%s(): aq_conn ptr has been set to %p\n",
+			__func__, new_ctrl->aq_conn);
+	}
+
+	ret =  nvme_create_connect_capsule(&nvme_capsule,
+					   NVME_AQ,
+					   new_ctrl->cntlid,
+					   0,
+					   nvme_host->hnsid,
+					   nvme_host->hostname,
+					   subsystem->subsiqn);
+	if (ret)
+		goto err1;
+
+	ret = nvme_create_connect_rsp_capsule(&nvme_capsule_rsp);
 	if (ret) {
-		pr_err("%s %s(): Error %d trying to create AQ\n",
+		pr_err("%s %s(): Error %d creating connect capsule\n",
 		       __FILE__, __func__, ret);
+		goto err2;
+	};
+	ret = nvme_host->fops->send_connect_capsule(
+		      new_ctrl->aq_conn,
+		      &nvme_capsule,
+		      &nvme_capsule_rsp);
+	if (ret) {
+		pr_err("%s(): Error send_capsule() returned %d\n",
+		       __func__, ret);
 		goto err2;
 	}
 
-	/*TODO: Log into EP via AQ conn using AQ login capsule and info
-	 *	returned by discovery capsules
+	if ((nvme_capsule_rsp.hdr.capsule.connect_rsp.cctype !=
+	     CCTYPE_CONNECT_RSP) ||
+	    (nvme_capsule_rsp.hdr.capsule.connect_rsp.cntlid == 0xFFFF) ||
+	    (nvme_capsule_rsp.hdr.capsule.connect_rsp.sts != 0)) {
+		pr_err("%s(): Error! Unexpected Connect response values!\n",
+		       __func__);
+		pr_err("connect rsp cctype: %d (must be '5')\n",
+		       nvme_capsule_rsp.hdr.capsule.connect_rsp.cctype);
+		pr_err("connect rsp cntlid: %#x (cannot be 0xFFFF)\n",
+		       nvme_capsule_rsp.hdr.capsule.connect_rsp.cntlid);
+		pr_err("connect rsp sts:    %d (should be 0)\n\n",
+		       nvme_capsule_rsp.hdr.capsule.connect_rsp.sts);
+
+		/*
+		 * TODO: Add this in when send_capsule() RDMA code is fully
+		 * written to check for wacky connect response errors
+		 * coming from the controller.
+		 *
+		ret = -ENODATA;
+		goto err2;
+		 */
+	}
+
+	/* Now that we have a valid controller id for the subsystem,
+	 * optionally inform the implementation of the value.
+	 * This is implementation specific, so the specific fabric
+	 * transport does not have to fill this function out if
+	 * it does not need it.
 	 */
-	if (ret) {
-		pr_err("%s %s(): Error %d trying to log into AQ\n",
-		       __FILE__, __func__, ret);
-		goto err2;
+
+	spin_lock_irqsave(&subsystem->ctrl_list_lock, flags);
+	new_ctrl->cntlid = nvme_capsule_rsp.hdr.capsule.connect_rsp.cntlid;
+	if (!nvme_host->fops->finalize_cntlid) {
+		ret = nvme_host->fops->finalize_cntlid(subsystem->subsiqn,
+						       new_ctrl->cntlid);
 	}
-	/*...*/
-
-	return ret;
-
+	spin_unlock_irqrestore(&subsystem->ctrl_list_lock, flags);
 err2:
-	kfree(conn);
+	kfree(nvme_capsule.child);
 err1:
 	return ret;
 }
-EXPORT_SYMBOL_GPL(nvme_fabric_add_subsystem);
+/*
+ * Public function that adds an NVMe remote Subsystem by do_add_subsystem or
+ * nvme_fabric_discovery
+ *
+ *	it initializes memory to hold a list of controller connections
+ *	calls fops->connect_create_queue() which obtains an AQ
+ *	Conn logs into the Administration Queue on the remote ctrlr
+ *	obtains I/O information
+ *	obtains the proper I/O Connections
+ *	sets up the drives properly
+ *
+ * @subsys_name: Name of the subsystem
+ * @cntlid:      Name of the controller we will add.  This is the NVMe
+ *               Identify Controller parameter cntlid.
+ * @fabric_type: The type of fabric used for the connection.
+ * @conn_type:   The type of connection (e.g., RC/RD) used
+ * @address:     address of the controller (address + port)
+ * Return Value:
+ *      O for success,
+ *	Any other value, error
+ */
+int nvme_fabric_add_controller(char *subsys_name,
+			       int fabric_type, int conn_type,
+			       struct nvme_fabric_addr *address)
+{
+	struct nvme_fabric_ctrl		*new_ctrl;
+	struct nvme_fabric_subsystem	*subsystem;
+	unsigned long			 flags = 0;
+	int				 ret   = 0;
+
+	pr_info("%s: %s()\n", __FILE__, __func__);
+
+	subsystem = find_subsystem(subsys_name);
+	if (!subsystem) {
+		pr_info("%s: Creating subsystem %s.\n", __func__, subsys_name);
+		subsystem = nvme_fabric_add_subsystem(subsys_name, address,
+						      fabric_type, conn_type);
+		if (!subsystem)
+			goto err1;
+	}
+
+	new_ctrl = kzalloc(sizeof(struct nvme_fabric_ctrl), GFP_KERNEL);
+	if (!new_ctrl) {
+		ret = -ENOMEM;
+		goto err1;
+	}
+	new_ctrl->cntlid	= NVME_FABRIC_INIT_CNTLID;
+	new_ctrl->state		= CONN_AQ;
+
+	ret = nvme_fabric_connect_login_aq(new_ctrl, subsystem);
+	if (ret)
+		goto err2;
+
+	/* finish filling out ctrl info and adding it to subsys list
+	 * as it is now a valid ctrl by this point
+	 */
+	new_ctrl->state  = CONN_IOQ;
+	new_ctrl->host	 = nvme_host;
+
+	spin_lock_irqsave(&subsystem->ctrl_list_lock, flags);
+	list_add_tail(&new_ctrl->node, &subsystem->ctrl_list);
+	subsystem->num_ctrl++;
+	spin_unlock_irqrestore(&subsystem->ctrl_list_lock, flags);
+
+	ret = nvme_fabric_initialize_disks(subsystem);
+	if (ret)
+		goto err3;
+
+	new_ctrl->state  = CONN_FULLY_INIT;
+
+	return ret;
+err3:
+	/* TODO/FIXME: add the following cleanup: shutdown the ctrl node fabric
+	 * connections, remove new_ctrl->node from list, and decrement
+	 * subsystem->num_ctrl
+	 */
+err2:
+	kfree(new_ctrl);
+err1:
+	return ret;
+}
+EXPORT_SYMBOL_GPL(nvme_fabric_add_controller);
 
 /*
- * Public function that starts a ep discovery
+ * Public function that starts a discovery
  *
- * THIS NEEDS TO BE A CAPSULE FUNCTION
+ * @address:     struct nvme_fabric_addr that contains the fabric address
+ *               to use on a discovery operation (of a controller).
+ * @fabric_type: What specific fabric we are operating on (RDMA, FC, etc)
+ * @dry_run:     If non-zero value, then go through the motions of discovering
+ *               a controller, but don't actually add to the fabric host's
+ *               data tree and connect to it.
+ *               (synonymous to 'patch --dry-run' command)
  *
- * TODO, WIP, FIXME: The current guts of this function
- *              is actually the start of the
- *              rdma-specific probe() call, so this code will get
- *              moved to nvme-fabric-rdma.c.
- *
- * So:
- *      -nvme_sysfs_init() registers files
- *      -do_add_endpoint() gets called
- *      -do_add_endpoint() calls this (generic) func (nvme_fabric_discovery)
- *       this function, nvme_fabric_discovery,  calls fops->probe() which
- *		calls the specific-probe/discovery code for the specific
- *		fabric. establishes a "discovery" connection to the remote EP
- *		issues a login request to the Discover Ctrlr Login/Auth
- *		service.
- *       This function is complete when it:
- *              obtains a Discovery Connection
- *              logs into the Discovery service on the remote EP
- *              obtains controller information
-	 * SubsystemName CtlrNme/Addr/Port/fabricType Ctlr_name/Addr/Port ...
- *              for each subsystem in the form of:
- *			SubsystemName {CtlrNme/Addr/Port/fabricType, ...}
- *				- obtains an Administrative Connection
- *				- logs into the AQ on the remote EP
- *				- obtains I/O information
- *				- obtains the proper I/O Connections
- *				- sets up the drives properly
- *
- * @address: The fabric address used for the discovery connection.
- * @port:    The port on the machine used for the discovery connection.
- * @fabric:  The type of fabric used for the connection.
  * Return Value:
  *      O for success,
  *      Any other value, error
  */
-int nvme_fabric_discovery(char *address, int port, int fabric_type)
+/*
+ * TODO: Add to new "API" file - see earlier TODO
+ */
+int nvme_fabric_discovery(struct nvme_fabric_addr *address, int fabric_type,
+			  int dry_run)
 {
-	int	ret;
-	char	subsystem_name[FABRIC_STRING_MAX] = "";
-	char	ctrlr_name[FABRIC_STRING_MAX] = "";
-	char	ctrlr_address[ADDRSIZE] = "";
-	int	ctrlr_port = 0;
-	void	*conn = NULL;
+	NVME_UNUSED(address);
+	NVME_UNUSED(fabric_type);
+	NVME_UNUSED(dry_run);
 
-	pr_info("%s: %s()\n", __FILE__, __func__);
-
-	/*Create entry for this remote EP and connect/create for Discovery */
-	ret = host_fabric_ops->connect_create_queue(address, port, fabric_type,
-			conn, CONN_DISCOVER);
-
-	/* ret = host_fabric_ops->probe(address, port, fabric_type, conn);
-	 */
-	if (ret) {
-		pr_err("%s %s(): fabric probe function returned %d\n",
-		       __FILE__, __func__, ret);
-		goto err1;
-	}
-
-	/*TODO: Log into remote EP via discovery conn returned from probe and
-	 * using disc login capsule*/
-
-	/*TODO: Use discovery conn returned by probe to send Disc req capsule
-	 * asking for EP NVMe subsystem info - which returns list resembling:
-	 * SubsystemName CtlrNme/Addr/Port/fabricType Ctlr_name/Addr/Port ...
-	 * SubsystemName CtlrName/Addr/Port/fabricType
-	 * SubsystemName CtlrName/Addr/Port/fabricType Ctlr_name/Addr/Port ...
-	 */
-
-	/* Disconnect the Discovery connection and clean up fabric memory */
-	host_fabric_ops->disconnect(address, port, fabric_type);
-
-	/*TODO: Iterate over the list of subsystems returned.
-	 *	IF: a given subsystem has >1 ctrlr have to deal with multipath.
+	/* TODO, REDO: This is all so screwed up it just needs to be re-done.
+	 * First, IP addresses are now subsystem-level, not controller level,
+	 * and it may actually finally stick this way with the NVMe committee
+	 * as this is what an iSCSI kernel target does.
+	 * Original guess of this function was based on
+	 * assigning a unqiue IP address to a
+	 * controller, which is not right.  Second, discovery proposals
+	 * have shifted so wildly there is no point to even guess at this
+	 * until at least Milestone 3.
 	 *
-	 *	For each Ctlr returned, Connect/Create the AQs, IOQs, ...
+	 * You want to see old crap, visit the git repo history.
 	 */
-	ret = nvme_fabric_add_subsystem(subsystem_name, ctrlr_name,
-					fabric_type, ctrlr_address,
-					ctrlr_port);
-	if (ret) {
-		pr_err("%s %s(): Error %d trying to create AQ\n",
-		       __FILE__, __func__, ret);
-		goto err2;
-	}
+	return 0;
 
-	return ret;
-
-err2:
-	/*TODO: CAYTONCAYTON - what do we do if subsystem creation fails? */
-err1:
-	/*TODO: CAYTONCAYTON - what do we do if discovery connection fails? */
-	return ret;
 }
 EXPORT_SYMBOL_GPL(nvme_fabric_discovery);
 
+
 /*
- * Public function that starts a single ep's removal process
+ * Retrieves the IQN name of the fabric host.
  *
- * THIS NEEDS TO BE A CAPSULE FUNCTION
+ * @hostname: an out variable, will contain the name of the host
+ *	      that is no longer than NVME_FABRIC_IQN_MAXLEN bytes.
  *
- * TODO, WIP, FIXME
- *
- * Return Value:
- *      O for success,
- *	Any other value, error
+ * Caveats:
+ *	if hostname is NULL, nothing will happen.
  */
-int nvme_fabric_remove_endpoint(char *address, int port, int fabric)
+/*
+ * TODO: Add to new "API" file - see earlier TODO
+ */
+void nvme_fabric_get_hostname(char *hostname)
 {
-	pr_info("%s: %s()\n", __FILE__, __func__);
-
-	host_fabric_ops->disconnect(address, port, fabric);
-
-	return 0;
+	if (hostname)
+		strncpy(hostname, nvme_host->hostname,
+			NVME_FABRIC_IQN_MAXLEN);
 }
-EXPORT_SYMBOL_GPL(nvme_fabric_remove_endpoint);
+EXPORT_SYMBOL_GPL(nvme_fabric_get_hostname);
+
+/*
+ * Sets the IQN name of the fabric host to the fabric host
+ * data structure.
+ *
+ * @hostname: an in-variable, will contain the name of the host
+ *	      that is no longer than NVME_FABRIC_IQN_MAXLEN bytes.
+ *
+ * Caveats:
+ *	if hostname is NULL, nothing will happen.
+ */
+/*
+ * TODO: Add to new "API" file - see earlier TODO
+ */
+void nvme_fabric_set_hostname(char *hostname)
+{
+	if (hostname)
+		strncpy(nvme_host->hostname, hostname,
+			NVME_FABRIC_IQN_MAXLEN);
+}
+EXPORT_SYMBOL_GPL(nvme_fabric_set_hostname);
+
+/*
+ * Fabric specific NVMe common function definitions
+ */
+static struct nvme_common_host_operations nvme_common_ops = {
+	.owner			= THIS_MODULE,
+	.submit_admin_cmd	= nvme_fabric_submit_admin_cmd,
+};
 
 /*
  * Public function that registers this module as a new NVMe fabric driver.
@@ -286,48 +804,73 @@ EXPORT_SYMBOL_GPL(nvme_fabric_remove_endpoint);
  */
 int nvme_fabric_register(char *nvme_class_name,
 			 struct nvme_fabric_host_operations *new_fabric)
+/*
+ * TODO: Remove the export as this will be an internal module function
+ * debate...why???  Fabric-specific transport has to register w/the
+ * fabric agnostic layer somehow.
+ */
 {
 	int ret = -EINVAL;
 
-	/* TODO: BUILD CHECK! Take out when dev of structs done */
+	/* BUILD CHECK! Take out when dev of structs done */
 	_nvme_check_size();
 
 	pr_info("%s: %s()\n", __FILE__, __func__);
-	instance = 0;
 
-	/*
-	 * TODO: Basic check, may change if host_fabric_ops changes
-	 * as we further implement this stuff.
-	 */
-	if (host_fabric_ops == NULL)
-		host_fabric_ops = new_fabric;
-	else {
-		pr_err("%s %s(): host_fabric_ops/API already registered!\n",
-		       __FILE__, __func__);
-		ret = -EBUSY;
-		goto err2;
+	if (fabric_used[0] == 0 || !fabric_timeout ||
+			!discover_retry_count || !admin_retry_count ||
+			!io_retry_count) {
+		pr_err("%s(): Error parameters not properly filled out!\n",
+		       __func__);
+		ret = -ENODATA;
+		goto err1;
 	}
 
-	ret = nvme_common_init();
+	nvme_host = kzalloc(sizeof(struct nvme_fabric_host), GFP_KERNEL);
+	if (!nvme_host)
+		goto err1;
+
+	nvme_host->fops = new_fabric;
+	if ((nvme_host->fops->connect_create_queue == NULL) ||
+			(nvme_host->fops->disconnect == NULL)           ||
+			(nvme_host->fops->send_connect_capsule == NULL)  ||
+			(nvme_host->fops->build_admin_sglist == NULL)) {
+		pr_err("%s(): Error, a fabric function not implemented!\n",
+		       __func__);
+		ret = -ENOSYS;
+		goto err1;
+	}
+
+	INIT_LIST_HEAD(&nvme_host->subsystem_list);
+	spin_lock_init(&nvme_host->subsystem_list_lock);
+	generate_random_uuid(nvme_host->hnsid);
+
+	/* See section "Offset 08h: VS- Version" section of NVMe spec,
+	 * at or around section 3.1.2.
+	 */
+	nvme_host->vs[1] = 3;
+	nvme_host->vs[2] = 1;
+
+	ret = nvme_common_init(&nvme_common_ops);
 	if (ret) {
 		pr_err("%s %s(): Error- nvme_common_init() failed\n",
 		       __FILE__, __func__);
-		goto err2;
+		goto err1;
 	}
 
 	ret = nvme_sysfs_init(nvme_class_name);
 	if (ret) {
 		pr_err("%s %s(): Error- nvme_sysfs_init() failed\n",
 		       __FILE__, __func__);
-		goto err3;
+		goto err2;
 	}
 
-	pr_info("%s %s() exited with %d\n",
-		__FILE__, __func__, ret);
+	pr_info("%s %s() exited with %d\n", __FILE__, __func__, ret);
 	return ret;
-err3:
-	nvme_common_exit();
+
 err2:
+	nvme_common_exit();
+err1:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(nvme_fabric_register);
@@ -338,24 +881,28 @@ EXPORT_SYMBOL_GPL(nvme_fabric_register);
  * Return Value:
  *      O for success,
  *      Any other value, error
- *
- * Notes: Goal here is the function is keeping everything in order on what
- * to shutdown and cleanup: first fabric specific stuff with the specific
- * driver through host_fabric_ops file-visible variable, then sysfs stuff
- * that is related to nvme-fabric generic stuff, then generic nvme
- * standard stuff.
  */
-int nvme_fabric_unregister(int TODO)
+/*
+ * TODO: Remove the export as this will be an internal module function
+ */
+int nvme_fabric_unregister(struct nvme_fabric_subsystem *conn)
 {
+	struct nvme_fabric_subsystem *ss;
+	struct list_head	     *pos;
+	struct list_head	     *q;
+
 	pr_info("%s: %s()\n", __FILE__, __func__);
 
-	/*
-	 * TODO, FIXME: Parameter in stop_destroy_queues should be a "ep"
-	 */
-	host_fabric_ops->stop_destroy_queues(0);
-	host_fabric_ops = NULL;
+	list_for_each_safe(pos, q, &nvme_host->subsystem_list) {
+		ss = list_entry(pos, struct nvme_fabric_subsystem, node);
+		nvme_fabric_remove_host_treenode(ss->subsiqn, 0xFFFF);
+	}
+
 	nvme_sysfs_exit();
 	nvme_common_exit();
+
+	kfree(nvme_host);
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(nvme_fabric_unregister);

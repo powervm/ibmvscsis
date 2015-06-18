@@ -29,4 +29,13 @@
 #ifndef _LINUX_NVME_FABRICS_PCIE_H
 #define _LINUX_NVME_FABRICS_PCIE_H
 
+/* TODO: This is the START of a SWAG for a PCIe transport.
+ * Goes into the xport_context in the nvme_fabric_host struct
+ */
+struct nvme_pci_transport {
+	struct dma_pool *prp_page_pool;
+	struct dma_pool *prp_small_pool;
+	__le32 db_stride;
+};
+
 #endif  /* _LINUX_NVME_FABRICS_PCIE_H */

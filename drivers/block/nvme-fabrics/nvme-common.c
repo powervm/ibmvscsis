@@ -32,7 +32,7 @@
 #include <linux/ptrace.h>
 #include <scsi/sg.h>
 
-/* TODO: Check to make sure ioctl values are good values to use and take */
+/* TODO: update Documentation/ioctl/ioctl-number.txt, patch, send to Linus */
 #define NVME_COMMON_IOCTL_ID		_IO('N', 0x66)
 #define NVME_COMMON_IOCTL_ADMIN_CMD	_IOWR('N', 0x67, struct nvme_admin_cmd)
 #define NVME_COMMON_IOCTL_SUBMIT_IO	_IOW('N', 0x68, struct nvme_user_io)
@@ -70,19 +70,18 @@ MODULE_PARM_DESC(io_retry_time, "time in seconds to retry failed I/O");
 
 static unsigned char ctrl_halt_delay = 5;
 module_param(ctrl_halt_delay, byte, 0644);
-MODULE_PARM_DESC(cltr_halt_delay, "timeout in seconds for ctlr shutdown");
-
-/* TODO: Not sure if we need this module parameter for nvme-common?? */
-static int use_threaded_interrupts;
-module_param(use_threaded_interrupts, int, 0);
+MODULE_PARM_DESC(cltr_halt_delay, "timeout in seconds for ctrl shutdown");
 
 static struct task_struct *nvme_thread;
 static wait_queue_head_t nvme_kthread_wait;
 static struct workqueue_struct *nvme_workq;
 
+/* TODO: finish the dev work and pass around as appropriate */
+static struct nvme_common_dev dev;
+/*  */
+
 int nvme_common_ioctl(struct block_device *bdev, fmode_t mode,
-			unsigned int cmd,
-			unsigned long arg)
+		      unsigned int cmd, unsigned long arg)
 {
 	NVME_UNUSED(bdev);
 	NVME_UNUSED(mode);
@@ -110,9 +109,9 @@ int nvme_common_setup_prps(struct nvme_common_dev *dev,
 }
 
 void nvme_common_submit_discard(struct nvme_common_queue *nvmeq,
-				       struct nvme_common_ns *ns,
-				       struct request *req,
-				       struct nvme_common_iod *iod)
+				struct nvme_common_ns *ns,
+				struct request *req,
+				struct nvme_common_iod *iod)
 {
 	NVME_UNUSED(nvmeq);
 	NVME_UNUSED(ns);
@@ -166,8 +165,7 @@ int nvme_common_identify(struct nvme_common_dev *dev,
 }
 
 int nvme_common_get_features(struct nvme_common_dev *dev, unsigned fid,
-			     unsigned nsid,
-			     dma_addr_t dma_addr, u32 *result)
+			     unsigned nsid, dma_addr_t dma_addr, u32 *result)
 {
 	NVME_UNUSED(dev);
 	NVME_UNUSED(fid);
@@ -177,21 +175,20 @@ int nvme_common_get_features(struct nvme_common_dev *dev, unsigned fid,
 	return -69;
 }
 
-int nvme_common_set_features(struct nvme_common_dev *dev,
-			     unsigned fid, unsigned dword11,
-			     dma_addr_t dma_addr, u32 *result)
+int nvme_common_set_features(struct nvme_common_dev *dev, unsigned fid,
+			     unsigned dword, dma_addr_t dma_addr, u32 *result)
 {
 	NVME_UNUSED(dev);
 	NVME_UNUSED(fid);
-	NVME_UNUSED(dword11);
+	NVME_UNUSED(dword);
 	NVME_UNUSED(dma_addr);
 	NVME_UNUSED(result);
 	return -69;
 }
 
-struct nvme_common_queue *nvme_common_alloc_queue(
-				struct nvme_common_dev *dev,
-				int qid, int depth, int vector)
+struct nvme_common_queue *nvme_common_alloc_queue(struct nvme_common_dev *dev,
+		int qid, int depth,
+		int vector)
 {
 
 	NVME_UNUSED(dev);
@@ -209,9 +206,9 @@ int nvme_common_create_queue(struct nvme_common_queue *nvmeq, int qid)
 }
 
 struct nvme_common_ns *nvme_common_alloc_ns(struct nvme_common_dev *dev,
-					    unsigned nsid,
-					    struct nvme_id_ns *id,
-					    struct nvme_lba_range_type *rt)
+		unsigned nsid,
+		struct nvme_id_ns *id,
+		struct nvme_lba_range_type *rt)
 {
 	NVME_UNUSED(dev);
 	NVME_UNUSED(nsid);
@@ -232,8 +229,8 @@ int nvme_common_setup_io_queues(struct nvme_common_dev *dev)
  * namespaces failed.  At the moment, these failures are silent.  TBD which
  * failures should be reported.
  */
- /* Revisit / rewrite  - figure out how to do it right */
- /*Seriously FIXME - This is a major function`*/
+/* Revisit / rewrite  - figure out how to do it right */
+/*Seriously FIXME - This is a major function`*/
 int nvme_common_dev_add(struct nvme_common_dev *dev)
 {
 	NVME_UNUSED(dev);
@@ -244,18 +241,15 @@ int nvme_common_dev_add(struct nvme_common_dev *dev)
  * Initialization function to startup the generic,
  * nvme pcie-free protocol.
  */
-int nvme_common_init(void)
+int nvme_common_init(struct nvme_common_host_operations *fops)
 {
 	int result = -ENOMEM;
 
+	dev.fops = fops;
+
 	init_waitqueue_head(&nvme_kthread_wait);
 
-	/*
-	 * TODO/INVESTIGATE: alloc_workqueue(), instead
-	 * of create_singlethread_workqueue()
-	 * Ask Matthew/Keith
-	 */
-	nvme_workq = create_singlethread_workqueue("nvme");
+	nvme_workq = alloc_workqueue("nvme", WQ_MEM_RECLAIM, 1);
 	if (!nvme_workq)
 		goto out;
 
@@ -269,15 +263,14 @@ int nvme_common_init(void)
 		__FILE__, __func__, nvme_major);
 	return 0;
 
- kill_workq:
+kill_workq:
 	pr_err("%s(): Error: register_blkdev() failed, %d\n",
 	       __func__, result);
 	destroy_workqueue(nvme_workq);
- out:
+out:
 	pr_err("%s(): Error: creating workqueue failed, %d\n",
 	       __func__, result);
 	return result;
-
 }
 
 /*

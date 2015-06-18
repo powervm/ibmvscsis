@@ -52,12 +52,6 @@
 #define NVME_SGL_SEGMENT		0x2
 #define NVME_SGL_LAST_SEGMENT		0x3
 
-/* TODO, FIXME: Need as part of the "Fabrics TP 002" proposal
- * SGL Tagged Segment and SGL Tagged Last Segment
- * #define NVME_SGL_TAGGED_SEGMENT	??
- * #define NVME_SGL_TAGGED_LAST_SEGMENT	??
- */
-
 #define NVME_SGL_TAGGED_DATA_BLOCK	0xE
 #define NVME_SGL_VENDOR_SPECIFIC	0xF
 
@@ -313,7 +307,7 @@ struct nvme_common_format_cmd {
 struct nvme_common_cmd {
 	union {
 		struct nvme_base_cmd base;
-		struct nvme_common_sgl_desc base_sgl;
+		struct nvme_common_sgl_cmd base_sgl;
 		struct nvme_common_rw_cmd rw;
 		struct nvme_common_identify identify;
 		struct nvme_common_features features;
@@ -436,6 +430,13 @@ struct nvme_common_queue {
 	spinlock_t q_lock;             /* jpf: used in initiator.c */
 	struct nvme_command *sq_cmds;
 	struct nvme_completion *cqes;
+
+	/* CAYTONCAYTON - from cmd->xport
+	   For fabrics this will be assigned to struct nvme_fabric_ctrl
+	*/
+	void *context;
+
+
 	dma_addr_t sq_dma_addr;
 	dma_addr_t cq_dma_addr;
 	wait_queue_head_t sq_full;
@@ -469,19 +470,16 @@ struct nvme_cmd_info {
 
 struct nvme_common_dev {
 	struct list_head node;
+	struct nvme_common_host_operations *fops;
 	struct nvme_common_queue **queues;
 	struct request_queue *admin_q;
 	struct blk_mq_tag_set tagset;
 	struct blk_mq_tag_set admin_tagset;
 	__le32 __iomem *dbs;
-	struct dma_pool *prp_page_pool;  /*TODO/FIXME- PCIe? */
-	struct dma_pool *prp_small_pool; /*TODO/FIXME- PCIe? */
-	int instance;
 	unsigned queue_count;
 	unsigned online_queues;
 	unsigned max_qid;
 	int q_depth;
-	__le32 db_stride;    /* TODO/FIXME- PCIe? */
 	struct msix_entry *entry;
 	struct list_head namespaces;
 	struct kref kref;
@@ -536,6 +534,13 @@ struct nvme_common_iod {
 	struct scatterlist sg[0];
 };
 
+struct nvme_common_host_operations {
+	struct module *owner;
+
+	int (*submit_admin_cmd)(struct nvme_common_queue *nvmeq,
+				struct nvme_common_cmd *cmd);
+};
+
 int nvme_common_ioctl(struct block_device *bdev, fmode_t mode,
 		      unsigned int cmd,
 		      unsigned long arg);
@@ -564,7 +569,8 @@ int nvme_common_set_features(struct nvme_common_dev *dev, unsigned fid,
 int nvme_common_setup_io_queues(struct nvme_common_dev *dev);
 int nvme_common_create_queue(struct nvme_common_queue *nvmeq, int qid);
 struct nvme_common_queue *nvme_common_alloc_queue(struct nvme_common_dev *dev,
-		int qid, int depth, int vector);
+		int qid, int depth,
+		int vector);
 struct nvme_common_ns *nvme_common_alloc_ns(struct nvme_common_dev *dev,
 		unsigned nsid,
 		struct nvme_id_ns *id,
@@ -576,7 +582,7 @@ void nvme_common_submit_discard(struct nvme_common_queue *nvmeq,
 int nvme_common_process_cq(struct nvme_common_queue *nvmeq);
 int nvme_common_dev_add(struct nvme_common_dev *dev);
 
-int nvme_common_init(void);
+int nvme_common_init(struct nvme_common_host_operations *fops);
 void nvme_common_exit(void);
 
 #endif /* _LINUX_NVME_COMMON_H */

@@ -31,6 +31,8 @@
 
 #include <linux/nvme-fabrics/nvme-common.h>
 #include <linux/moduleparam.h>
+#include <linux/list.h>
+#include <linux/wait.h>
 
 /*
  * Capsule Command Type opcodes.  In a NVMe Fabric
@@ -41,18 +43,47 @@
  */
 #define CCTYPE_NVME_CMD			0x0
 #define CCTYPE_NVME_RSP			0x1
-#define CCTYPE_PROPERTY_SET_CMD		0x2
-#define CCTYPE_PROPERTY_SET_RSP		0x3
-#define CCTYPE_PROPERTY_GET_CMD		0x4
-#define CCTYPE_PROPERTY_GET_RSP		0x5
-#define CCTYPE_CPLQUEUE_UPDATE_CMD	0x6
-#define CCTYPE_CPLQUEUE_UPDATE_RSP	0x7
-#define CCTYPE_CONNECT_CMD		0x8
-#define CCTYPE_CONNECT_RSP		0x9
-#define CCTYPE_DISCOVER_CMD		0xA
-#define CCTYPE_DISCOVER_RSP		0xB
+#define CCTYPE_DISCOVER_CMD		0x2
+#define CCTYPE_DISCOVER_RSP		0x3
+#define CCTYPE_CONNECT_CMD		0x4
+#define CCTYPE_CONNECT_RSP		0x5
+#define CCTYPE_PROPERTY_SET_CMD		0x6
+#define CCTYPE_PROPERTY_SET_RSP		0x7
+#define CCTYPE_PROPERTY_GET_CMD		0x8
+#define CCTYPE_PROPERTY_GET_RSP		0x9
+#define CCTYPE_CPLQUEUE_UPDATE_CMD	0xA
+#define CCTYPE_CPLQUEUE_UPDATE_RSP	0xB
 #define CCTYPE_DISCOVER_GETINFO_CMD	0xC
 #define CCTYPE_DISCOVER_GETINFO_RSP	0xD
+
+/*
+ * Value for the sts field of NVMe Capsule Response
+ * packets.  Part of NVMe Org proposal "Fabrics TP 002".
+ */
+#define STS_SUCCESS		0x0
+#define STS_INVALID_CMD		0x1
+#define STS_INVALID_FIELD	0x2
+#define STS_INVALID_SIZE	0x3
+#define STS_INVALID_ALIGNMENT	0x4
+#define STS_INVALID_ADDRESS	0x5
+#define STS_QUEUE_FULL		0x6
+
+/*
+ * Specific response status values for the Connect Response
+ * Capsule (sts field).  Part of NVMe Org proposal "Fabrics TP 002".
+ */
+#define STS_CONNECT_BAD_NVME_VERSION	0x50
+#define STS_CONNECT_CONNECTION_BUSY	0x51
+#define STS_CONNECT_SESSION_BUSY	0x52
+#define STS_CONNECT_INVALID_AUTH	0x53
+#define STS_CONNECT_RESTART_DISCOVERY	0x54
+
+/*
+ * Specific response status values for the Discover Response
+ * Capsule (sts field). Part of NVMe Org Proposal "Fabrics TP 002".
+ */
+#define STS_DISCOVER_BAD_NVME_VERSION	0x40
+#define STS_DISCOVER_RESTART_DISCOVERY	0x41
 
 /*
  * For property values, i.e. "virtual registers",
@@ -62,49 +93,77 @@
  * the value to be written to a given property.
  * Part of NVMe Org proposal "Fabrics TP 002".
  */
-#define PROPERTY_ATTRIB_4BYTES		0x0
-#define PROPERTY_ATTRIB_8BYTES		0x1
+#define PROPERTY_ATTRIB_4BYTES	0x0
+#define PROPERTY_ATTRIB_8BYTES	0x1
 
-#define FABRIC_STRING_MAX	50 /* CAYTONCAYTON - this should be 1K! */
-#define ADDRSIZE		128
+#define HNSID_LEN		16
+#define CNSID_LEN		4
+#define FABRIC_STRING_MAX	256
+#define MAX_CTRL_PER_SUBSYS	32
+#define NVME_FABRIC_INIT_CNTLID	0xFFFF
 
-#define NVME_FABRIC_IQN_MINLEN	16
-#define NVME_FABRIC_IQN_MAXLEN	1024
+#define NVME_FABRIC_IQN_MINLEN	16   /* Min IQN length string name */
+#define NVME_FABRIC_IQN_MAXLEN	256  /* Max IQN length string name */
+#define NVME_FABRIC_VS_LEN	4    /* length of NVMe version # */
+
+#define DNS_ADDR_SIZE	256
+#define IPV4_ADDR_SIZE	16
+#define IPV6_ADDR_SIZE	40
+#define EMAC_ADDR_SIZE	18
+#define IBA_ADDR_SIZE	19
+#define FC_ADDR_SIZE	33
+
+#define DISCOVER_RETRY          7
+#define AQ_RETRY                7
+#define IOQ_RETRY               7
+#define FABRIC_TIMEOUT          15
+
+extern char fabric_used[FABRIC_STRING_MAX];
+extern unsigned char fabric_timeout;
+extern unsigned char discover_retry_count;
+extern unsigned char admin_retry_count;
+extern unsigned char io_retry_count;
 
 enum nvme_fabric_type {
-	NVME_FABRIC_PCIE = 0,     /* PCIe Fabric */
-	NVME_FABRIC_RDMA = 1,     /* RDMA Fabrics; IBA, iWARP, ROCE, ... */
-	NVME_FABRIC_FC   = 2,     /* Fibre Channel Fabric */
-	NVME_FABRIC_OMNIPATH = 3, /* Intel OMNI PATH RDMA technology */
+	NVME_FABRIC_PCIE     = 0,     /* PCIe Fabric */
+	NVME_FABRIC_RDMA     = 1,     /* RDMA Fabrics; IBA, iWARP, ROCE, ... */
+	NVME_FABRIC_FC	     = 2,     /* Fibre Channel Fabric */
+	NVME_FABRIC_OMNIPATH = 3,     /* Intel OMNI PATH RDMA technology */
 	/* Future NVMe Fabrics */
+};
+
+enum nvme_queue_type {
+	NVME_DQ = 0,	/* 0h - NVMe discovery queue */
+	NVME_AQ,	/* 1h - NVMe Admin queue */
+	NVME_IOQ,	/* 2h - NVMe IOQ */
 };
 
 /* struct used to capture dns network address */
 struct dns_addr_type {
-	__u8 octet[255];
+	char  octet[DNS_ADDR_SIZE];
 	__u16 tcp_udp_port;
 };
 
 /* struct used to capture ipv4 network address */
 struct ipv4_addr_type {
-	__u8 octet[4];
+	char  octet[IPV4_ADDR_SIZE];
 	__u16 tcp_udp_port;
 };
 
 /* struct used to capture ipv6 network address */
 struct ipv6_addr_type {
-	__u8 octet[16];
+	char  octet[IPV6_ADDR_SIZE];
 	__u16 tcp_udp_port;
 };
 
 /* struct used to capture a MAC address */
 struct emac_addr_type {
-	__u8 octet[6];
+	char octet[EMAC_ADDR_SIZE];
 };
 
 /* struct used to capture an infiniband address */
 struct iba_addr_type {
-	__u8 octet[16];
+	char octet[IBA_ADDR_SIZE];
 };
 
 /* struct used to capture a fibre channel address */
@@ -113,7 +172,7 @@ struct fc_addr_type {
 	 * this represents an 8 or 16 byte wwn or
 	 * wwpn for fibre channel devices
 	 */
-	__u8 octet[16];
+	char octet[FC_ADDR_SIZE];
 };
 
 enum nvme_fabric_addr_type {
@@ -127,9 +186,9 @@ enum nvme_fabric_addr_type {
 
 /* generic nvme fabric address data struct */
 struct nvme_fabric_addr {
-	__u8 what_fabric_type;
+	__u8 what_addr_type;
 
-	struct fabric_type {
+	struct addr_type {
 		union {
 			struct dns_addr_type dns_addr;
 			struct ipv4_addr_type ipv4_addr;
@@ -153,7 +212,6 @@ struct nvme_capsule_header {
 	 * capsule opcode. Depending on the opcode is what
 	 * struct is used in the union defined below.
 	 */
-
 
 	struct capsule_type {
 		union {
@@ -204,7 +262,8 @@ struct nvme_capsule_header {
 			 */
 			struct {
 				__u8 cctype;
-				__u8 rsvd[11];
+				__u8 sts;
+				__u8 rsvd[10];
 
 				/*
 				 * cpl queue # which this
@@ -216,11 +275,14 @@ struct nvme_capsule_header {
 			} nvme_rsp;
 
 			/*
-			 * capsule hdr iff cctype == 0x02h,
+			 * capsule hdr iff cctype == 0x06h,
 			 * property set command.
 			 */
 			struct {
 				__u8 cctype;
+
+				__u8 rsvd[7];
+
 				/*
 				 * bits 7:3 are rsvd and
 				 * should be 0. This field
@@ -230,7 +292,7 @@ struct nvme_capsule_header {
 				 */
 				__u8 attrib;
 
-				__le16 rsvd;
+				__u8 rsvd2[3];
 
 				/* Since this struct is used to represent a
 				 *'virtual register', i.e. a property, this
@@ -239,18 +301,10 @@ struct nvme_capsule_header {
 				 */
 				__le32 ofst;
 
-				/*
-				 * value to be written to the property
-				 * location. if attrib == 1, then it's an
-				 * 8 byte value,
-				 * otherwise it is a 4 byte value.
-				 */
-				__le64 valu;
-
 			} prpset_cmd;
 
 			/*
-			 * capsule hdr iff cctype == 0x03h,
+			 * capsule hdr iff cctype == 0x07h,
 			 * property set response.
 			 */
 			struct {
@@ -265,11 +319,13 @@ struct nvme_capsule_header {
 			} prpset_rsp;
 
 			/*
-			 * capsule hdr iff cctype == 0x04h,
+			 * capsule hdr iff cctype == 0x08h,
 			 * property get command
 			 */
 			struct {
 				__u8 cctype;
+
+				__u8 rsvd[7];
 				/*
 				 * bits 7:3 are rsvd and
 				 * should be 0. This represents the size
@@ -277,7 +333,8 @@ struct nvme_capsule_header {
 				 * (i.e., 'virtual register') saves.
 				 */
 				__u8 attrib;
-				__le16 rsvd;
+
+				__u8 rsvd2[3];
 
 				/* Since this struct is used to represent a
 				 *'virtual register', i.e. a property, this
@@ -285,7 +342,6 @@ struct nvme_capsule_header {
 				 * 'virtual BAR' to read.
 				 */
 				__le32 ofst;
-				__le64 rsvd2;
 			} prpget_cmd;
 
 			/*
@@ -312,7 +368,7 @@ struct nvme_capsule_header {
 			} prpget_rsp;
 
 			/*
-			 * capsule hdr iff cctype == 0x06h,
+			 * capsule hdr iff cctype == 0x0Ah,
 			 * completion queue update command.
 			 */
 			struct {
@@ -334,8 +390,8 @@ struct nvme_capsule_header {
 			} cplqueue_cmd;
 
 			/*
-			 * capsule hdr iff cctype == 0x07h,
-			 * completion queue update command.
+			 * capsule hdr iff cctype == 0x0Bh,
+			 * completion queue update response command.
 			 */
 			struct {
 				__u8 cctype;
@@ -346,28 +402,23 @@ struct nvme_capsule_header {
 			} cplqueue_rsp;
 
 			/*
-			 * capsule hdr iff cctype == 0x08h, connect command.
+			 * capsule hdr iff cctype == 0x04h, connect command.
 			 */
 			struct {
 				__u8 cctype;
 
 				/*
-				 * Specifies type of connection to be
-				 * established-
-				 * 0h - NVMe discovery connection
-				 * 1h - NVMe Admin queue connection
-				 * 2h - NVMe IOQ pair connection
-				 * any other value is rsvd
+				 * specifies authentication protocol.
+				 * 0 means no authentication required.
 				 */
-				__u8 cntype;
+				__u8 authpr;
+				__u8 rsvd[6];
 
 				/*
-				 * indicates next capsule will be a
-				 * security_send capsule.
+				 * version number, as defined and formatted
+				 * in the VS register of the NVMe spec
 				 */
-				__u8 ioqsse;
-
-				__u8 rsvd;
+				__u8 vs[NVME_FABRIC_VS_LEN];
 
 				/*
 				 * Set to value 0 for discovery and admin
@@ -377,7 +428,7 @@ struct nvme_capsule_header {
 				 * Queue Admin cmd.  Otherwise, it's
 				 * an CSQID Does Not Exist error.
 				 */
-				__le16 csqid;
+				__le16 sqid;
 
 				/*
 				 * Set to value 0 for discovery & admin
@@ -387,32 +438,12 @@ struct nvme_capsule_header {
 				 * Otherwise, it is a CCQID Does Not Exist
 				 * error.
 				 */
-				__le16 ccqid;
+				__le16 cqid;
 
-				/*
-				 * This field contains an NVMe controller
-				 * session unique identifier.  The following
-				 * cases determine the value of this field:
-				 *
-				 * discovery session           = 0
-				 * new admin QP connection     = 0
-				 * current admin QP connection = non-zero
-				 *				 value
-				 *				 created from
-				 *				 Admin QP
-				 *				 connection.
-				 * new IO QP connection        = non-zero
-				 *				 value created
-				 *				 from Admin QP
-				 *				 connection.
-				 */
-				__le32 cnsid;
-
-				__le32 rsvd2;
 			} connect_cmd;
 
 			/*
-			 * capsule hdr iff cctype == 0x09h,
+			 * capsule hdr iff cctype == 0x05h,
 			 * connect response command.
 			 */
 			struct {
@@ -423,36 +454,21 @@ struct nvme_capsule_header {
 				 */
 				__u8 sts;
 
-				/*
-				 * This field contains an NVMe controller
-				 * session unique identifier.  The following
-				 * cases determine the value of this field:
-				 *
-				 * discovery session             = 0
-				 * new or current admin QP conn. = non-zero
-				 *				 value
-				 *				 created from
-				 *				 Admin QP
-				 *				 connection.
-				 * new IO QP connection          = non-zero
-				 *				 value created
-				 *				 from Admin QP
-				 *				 connection.
-				 */
-				/*
-				 * BUG?/TODO? There seems to be problem
-				 * w/using __le32 here, it
-				 * makes the union 8 bytes bigger!?!
-				 * Cannot figure it out...long effort
-				 * to pinpoint this...
-				 */
-				__u8 cnsid[4];
+				__u8 rsvd[2];
 
-				__u8 rsvd[10];
+				/* specifies the controller ID value
+				 * allocated to the host on a connect
+				 * command.  It's the same field as
+				 * defined in the identify controller
+				 * data structure.
+				 */
+				__u16 cntlid;
+
+				__u8 rsvd2[10];
 			} connect_rsp;
 
 			/*
-			 * capsule hdr iff cctype == 0x0Ah,
+			 * capsule hdr iff cctype == 0x02h,
 			 * discover command.
 			 */
 			struct {
@@ -471,7 +487,7 @@ struct nvme_capsule_header {
 			} discovery_cmd;
 
 			/*
-			 * capsule hdr iff cctype == 0x0Bh,
+			 * capsule hdr iff cctype == 0x03h,
 			 * discover response command.
 			 */
 			struct {
@@ -495,11 +511,10 @@ struct nvme_capsule_header {
 				__le16 dicsz;
 				__u8 rsvd2[6];
 			} discovery_rsp;
-
 			/*
-			 * capsule hdr iff cctype == 0x0Ch,
-			 * discover get info command.
-			 */
+			* capsule hdr iff cctype == 0x0Ch,
+			* discover get info command.
+			*/
 			struct {
 				__u8 cctype;
 				__u8 rsvd[15];
@@ -515,7 +530,6 @@ struct nvme_capsule_header {
 			} discover_info_rsp;
 		}; /* union */
 	} capsule;
-
 };
 
 /*
@@ -525,7 +539,7 @@ struct nvme_capsule_header {
  */
 struct nvme_cmd_capsule {
 
-	struct nvme_common_command capsule_body;
+	struct nvme_common_command sqe;
 
 	/* This is set to NULL if no data is associated w/the command */
 	void *data;
@@ -537,16 +551,17 @@ struct nvme_cmd_capsule {
  * in the base struct nvme_capsule_packet.
  */
 struct nvme_rsp_capsule {
-	struct nvme_common_completion capsule_body;
+	struct nvme_common_completion cqe;
 
 	/* This is set to NULL if no data is associate w/the command */
 	void *data;
 };
 
 /*
- * Connect cmd "child struct" of nvme_capsule_packet.
- * An object of this struct will be pointed by 'child'
- * in the base struct nvme_capsule_packet.
+ * This is the connect command capsule body pointed
+ * to by 'void *child' of 'struct nvme_capsule_packet'.
+ * Between this and the 'hdr' field of 'struct nvme_capsule_packet'
+ * gives a complete NVMe Fabric Connect Capsule cmd.
  */
 struct connect_cmd_capsule {
 	struct {
@@ -555,69 +570,51 @@ struct connect_cmd_capsule {
 		 * Globally Unique Identifier.  This is a host-generated
 		 * 128 bit value using RFC-4122 UUID format.
 		 */
-		__u8 hnsid[16];
+		__u8 hnsid[HNSID_LEN];
 
 		/*
-		 * Part of TP 002, This is an NVMe Data block SGL that
-		 * describes the in-capsule offset location from byte 0 of
-		 * the "Host IQN Name String". The length value must be
-		 * between NVME_FABRIC_IQN_MINLEN - NVME_FABRIC_IQN_MAXLEN.
+		 * Specifies the controller ID requested.  It is the same
+		 * field as returned in a identify controller data structure.
+		 * Value FFFFh is for admin request, which then the controller
+		 * will return the responding controller.
 		 */
-		struct nvme_common_sgl_dblk hnsgl;
+		__u16 cntlid;
 
 		/*
-		 * Part of TP 002, this is the NVMe Data Block SGL that
-		 * describes the in-capsule offest location from byte 0
-		 * of the Controller IQN Name String field.  The length
-		 * value must be between
-		 * NVME_FABRIC_IQN_MINLEN - NVME_FABRIC_IQN_MAXLEN.
+		 * Specifies authentication protocol & attributes to be used
+		 * for this connection. Bits 7:2 are reserved.
 		 */
-		struct nvme_common_sgl_dblk cnsgl;
+		__u8 authpr;
+
+		__u8 rsvd[221];
 
 		/*
-		 * Part of TP 002, string that uniquely identifies the host.
-		 * String should be terminated with a '\0'. Thus size
-		 * of the entry will really be NVME_FABRIC_IQN_MAXLEN - 1
-		 * because of the '\0' (and we don't want to make it
-		 * NVME_FABRIC_IQN_MAXLEN + 1 and get the bytes
-		 * out-of-alignment). Note that IQN spec says max is
-		 * 223.
+		 * iSCSI Qualified Name (IQN) that uniquely identifies
+		 * an NVM subsystem.  Minimimum of NVME_FABRIC_IQN_MINLEN
+		 * bytes.
 		 */
-		char host_iqn_name[NVME_FABRIC_IQN_MAXLEN];
+		char subsiqn[NVME_FABRIC_IQN_MAXLEN];
 
 		/*
-		 * Part of TP 002, string that uniquely identifies the host.
-		 * String should be terminated with a '\0'. Thus size
-		 * of the entry will really be NVME_FABRIC_IQN_MAXLEN - 1
-		 * because of the '\0' (and we don't want to make it
-		 * NVME_FABRIC_IQN_MAXLEN + 1 and get the bytes
-		 * out-of-alignment). Note that IQN spec says max is
-		 * 223.
+		 * iSCSI Qualified Name (IQN) that uniquely identifies the
+		 * host.  Minimum of NVME-FABRIC_IQN_MINLEN.
 		 */
-		char ctrl_iqn_name[NVME_FABRIC_IQN_MAXLEN];
+		char hostiqn[NVME_FABRIC_IQN_MAXLEN];
+
+		__u8 rsvd2[256];
+
 	} capsule_body;
 };
 
-/*
- * Connect rsp "child struct" of nvme_capsule_packet.
- * An object of this struct will be pointed by 'child'
- * in the base struct nvme_capsule_packet.
- */
-struct connect_rsp_capsule {
+struct propset_cmd_capsule {
 	struct {
 		/*
-		 * Part of TP 002, this is the host NVMe session
-		 * Globally Unique Identifier.  This is a host-generated
-		 * 128 bit value using RFC-4122 UUID format.
+		 * Specifies the value used to update the property.
+		 * If the size of the property is 4 bytes, then
+		 * the value is specified in LSB's of the field.
 		 */
-		__u8 hnsid[16];
-
-		/*
-		 * Part of TP 002, this is the fabric address the
-		 * host should use instead for a discovery sequence
-		 * (it's the referral network address).
-		 */
-		struct nvme_fabric_addr rfad;
+		__le64 valu;
+		__le64 rsvd;
 	} capsule_body;
 };
 
@@ -713,113 +710,159 @@ enum nvme_conn_stage {
 	CONN_ERROR,
 };
 
-extern char hostname[FABRIC_STRING_MAX];
-
-extern int instance;
+/* RC = Reliable Connected
+ * RD = Reliable Datagram
+ * There may be others later
+ */
+enum nvme_conn_type {
+	RC = 0,
+	RD,
+};
 
 struct aq {
-	/* struct *nvme_aq_stuff */
+	/* The fabric-specific NVMe AQ struct */
 	void	 *fabric_aq_conn;
 };
 
-struct ioq {
-	/* This should be a "list" of IOQs
-	  struct *nvme_ioq_stuff
-	*/
-	void	 *fabric_ioq_conn;
-};
-
-struct nvme_conn {
-	struct list_head	node; /*List of all active connections*/
-	int			state; /*CONN_PROBE, CONN_AQ, CONN_IOQ, ... */
-	char			*ctrlrname[FABRIC_STRING_MAX];
-	char			*subsysname[FABRIC_STRING_MAX];
-	char			*Address[ADDRSIZE];
-	int			port;
-	struct aq		*aq;
-	struct ioq		*ioq;
-};
-
-/* TODO: Add sizeof BUILD_BUG_ON() checks to these struct sizes
- * when space is more fleshed out enough to put a size on these things.
+/* TODO: an instance of this struct is pointed by
+ * nvme_common_queue context, to allow us to do
+ * things like queue[0].context->aq_conn,
+ * which associates the nvme_common layer of the
+ * admin queue to the fabric agnostic layer of
+ * the admin fabric connection.
  */
+struct nvme_fabric_ctrl {
+	/* list of all ctrls in subsystem */
+	struct list_head	 node;
 
-/*
- * This struct would be used to embed more than 1 sgl descriptors
- * with a data block and have that pointed by
- * '*data' in the nvme capsule structs.
- *
- */
-struct nvme_sgl_data_capsule {
-	struct nvme_common_sgl_desc sgllist[NVME_SGL_SEGMENT_MAXSIZE];
-	void *data;
-};
-
-/*
- * TODO:  Think this will be the fundamental device type for
- * all NVMe fabric device drivers??
- *
- * For each device instance, it can represent 1 controller discovered.
- */
-struct nvme_fabric_dev {
-
-	/* generic, pci-e free, nvme implementation stuff */
-	struct nvme_common_dev *dev;
-
-	/* needed for default fabric address to describe host */
-	__le64 fabric_address;
+	/* enum nvme_conn_stage values */
+	int			 state;
 
 	/*
-	 * there needs to be a way to go between the local (host)
-	 * nvme device and the remote (ep) nvme device.  Host
-	 * will think it's the nvme device but this tells it
-	 * 'to go here instead'.
+	 * controller id, per NVMe subsystem. Same value
+	 * retrieved from an NVMe Identify Controller command.
+	 * Guaranteed to be unique per NVMe subsystem,
+	 * (or the device is not a standard NVMe device).
 	 */
-	void *xport_context;
+	__u16			 cntlid;
+
+	/* Backpointer to nvme_fabric_host.  May not need. */
+	struct nvme_fabric_host *host;
+
+	/* NVMe Admin Queue Fabric Connection (queue 0) */
+	void			*aq_conn;
 
 	/*
-	 * API fabric-specific drivers (RDMA, INFINIBAND, etc)
-	 * must implement
+	 * List of NVMe IO Queue Fabric Connections.
+	 * List starts at 1 for queue 1.
 	 */
+	void			*ioq_list;
+};
+
+struct nvme_fabric_subsystem {
+	/* List of all active conn */
+	struct list_head	node;
+
+	/* List of all active conn */
+	struct list_head	ctrl_list;
+	spinlock_t		ctrl_list_lock;
+
+	unsigned int		num_ctrl;
+	unsigned int		fabric;
+
+	/* 'enum nvme_conn_type' value */
+	unsigned int		conn_type;
+
+	/*
+	 * unique name and equivilent network address for
+	 * the NVMe Fabrics target subsystem.
+	 */
+	char			subsiqn[NVME_FABRIC_IQN_MAXLEN];
+	struct nvme_fabric_addr address;
+
+	/*
+	 * Not sure if this is needed; a way to refer to this
+	 * subsystem via numerical reference.
+	 */
+	short			reference_num;
+
+};
+
+/*
+ * NVMe fabric host data structure that maintains all the
+ * subsystems it is successfully communicating and managing.
+ */
+struct nvme_fabric_host {
+
+	/* host NVMe session GUID - a host-generated 128b value
+	 * using RFC-4122 UUID format
+	 */
+	__u8			hnsid[HNSID_LEN];
+
+	/* Unique IQN name for host */
+	char			hostname[NVME_FABRIC_IQN_MAXLEN];
+
+	/* NVMe version number the fabric host follows */
+	__u8			vs[NVME_FABRIC_VS_LEN];
+
+	/* number of subsystems host is servicing for this nvme fabric */
+	int			num_subsystems;
+
+	/* this is a list of struct nvme_fabric_subsystem */
+	struct list_head	subsystem_list;
+	spinlock_t		subsystem_list_lock;
+
+	/* Namespace count for a given controller */
+	int instance;
+
+	/* API fabric-specific drivers (RDMA, FC, etc) must implement */
 	struct nvme_fabric_host_operations *fops;
 
-	/* any fabric, implementation specific structs to associate */
-	void *fabric_private;
+	/* generic, pci-e free, nvme implementation stuff */
+	struct nvme_common_dev *nvme_dev;
+
+	/*
+	 * there needs to be a way to go between the local (host) nvme device
+	 * and the remote (ep) nvme device.  Host will think it's the nvme
+	 * device but this tells it 'to go here instead'.
+	 */
+	void *xport_context;
 };
 
 struct nvme_fabric_host_operations {
 	struct module *owner;
-
 	/*
-	 *  Function that takes the specific transport context being
-	 *  written for this specific driver plus an NVMe admin command
-	 *  and preps the contents (like for example, package
-	 *  the data into an NVMe capsule) for an NVMe admin cmd
-	 *  submission that will then be sent by this function over the
-	 *  fabric.
+	 * Simple fabric function that sends a connect capsule over the fabric
+	 * specific transport. The NVMe over Fabrics agnostic layer will
+	 * construct a connect capsule and
+	 * a connect response capsule and send to the fabric specific
+	 * layer via this function.
 	 *
-	 *  @dev:    Current nvme_fabric_dev being operated on.
-	 *  @cmd:    The NVMe Admin command that will be used to prepare
-	 *           the command transmission over the fabric.
-	 *  @result: pointer to DW0 of the NVMe completion packet, which
-	 *           data contents are specific to the admin command sent.
+	 * @fabric_context: Specific fabric transport data construct that
+	 *                  will be used on a send command.
 	 *
+	 * @capsule: the capsule that will be sent by the fabric specific layer
+	 *	     to the target
+	 *
+	 * @rsp:      Expected response capsule to the capsule that is being
+	 *	      sent.  This will be returned by the fabric specific
+	 *            layer's response completion routine.
 	 *  Return Value:
 	 *      0 for Success
 	 *      Any other value, error
 	 *
-	 *  Caveats:
-	 *      if the function does not return 0, result parameter
-	 *      must be set to 0.
-	 *
 	 *  Notes:
-	 *      This function is based on nvmerp_submit_aq_cmd()
-	 *      of the demo.
+	 *      The connect response capsule size is always constant,
+	 *      plus the only value the NVMe fabrics truly cares about
+	 *      is the cntlid field (assuming sts field says it's
+	 *      successful). Thus it's expected the use of this
+	 *      NVMe capsule command is simple, thus, it can be
+	 *      broken out in it's own function.
 	 */
-	int (*prepsend_admin_cmd)(struct nvme_fabric_dev *dev,
-				  struct nvme_common_command *cmd,
-				  __u32 *result);
-
+	int (*send_connect_capsule)(void *fabric_context,
+				    struct nvme_capsule_packet *capsule,
+				    struct nvme_capsule_packet *rsp);
+#if 0
 	/*
 	 * Function that takes the specific fabric transport and
 	 * an NVMe I/O command and packages the contents (in say,
@@ -827,10 +870,8 @@ struct nvme_fabric_host_operations {
 	 * over the fabric by this function.
 	 *
 	 * @dev:	The current nvme_fabric device being operated on.
-	 * @queue_num:	Which nvme_queue nvmeq to use in dev.
-	 *\		TODO: Not sure 'why' nvmeq was used here
-	 *		other than it was needed in
-	 *		the demo.
+	 * @nvmeq:	nvme_queue from which the request originated: needed
+	 *		to obtain fabric context, qid, and cq_head.
 	 * @cmd:	NVMe I/O command to be sent over the fabric to
 	 *		the ep.
 	 * @len:	The leftover byte count after subtracting from
@@ -843,109 +884,163 @@ struct nvme_fabric_host_operations {
 	 * Notes:
 	 *	This function is based on on nvmerp_submit_io_cmd()
 	 *      of the demo.
-	 */
-	int (*prepsend_io_cmd)(struct nvme_fabric_dev *dev,
-			       __u16 queue_num,
-			       struct nvme_command *cmd,
-			       __u32 len);
-
-	/*
-	 * The NVMe fabric discover function responsible for
-	 * discovery on all fabric paths.  For each discovery,
-	 * the name of a controller and the associated fabric
-	 * ports will be returned.
-	 */
-	/*
-	    "discover sequence (generic, nvme-free)"
-		-"go and get # of controllers on the fabric"
-		- track # of controllers discovered
-		-structure that keeps # of ns for each dev,
-		 name of each controller, fabric address for each controller
+	 *
 	*/
-	int (*probe)(char *address, int port,
-		     int fabric, struct nvme_conn *disc_conn);
-
-	/*TODO*/
-	void (*disconnect)(char *address, int port, int fabric);
+	int (*prepsend_io_cmd)(struct nvme_common_queue *nvmeq,
+			       struct nvme_command *cmd, __u32 len);
+#endif
+	/*
+	 * Function that shuts down a fabric connection.
+	 *
+	 * @subsys_name: The name of the subsystem that will
+	 *		 have it's 'endpoints'
+	 *		 (NVMe controllers for example)
+	 *		 disconnected from fabric communication.
+	 * @ctrlname:	 The controller name to be disconnected
+	 *		 from fabric communication.
+	 * @address:	 Specific network address being used to
+	 *		 be shutdown.
+	 */
+	void (*disconnect)(char *subsys_name, __u16 cntlid,
+			   struct nvme_fabric_addr *addr);
 
 	/*
 	 * Function that establishes a fabric-specific connection with
-	 * the ep, as well as create the send work queue and the receive
+	 * the ctrl, as well as create the send work queue and the receive
 	 * work queue to establish a queue pair for the host to use
-	 * to communicate NVMe capsules with the ep.
+	 * to communicate with a destination via NVMe capsules
 	 *
-	 *  @conn: The connection session description construct
-	 *         of the host fabric device.
+	 * @subsys:		the NVMe Fabric subsystem data structure used
+	 *			to establish a connection to an NVMe Fabrics
+	 *			target subsystem.
+	 * @current_cntlid	The current controller (represented by the
+	 *			cntlid value found from Identify Controller
+	 *			data structure) that is being configured
+	 *			for NVMe queue setup.
+	 * @uuid:		A unique ID to be used for this connection
+	 *			session (most likely will be of the standard
+	 *			RFC-4122 UUID format).
+	 * @stage:		What type of NVMe fabric connection for
+	 *			ctrl_name we desire (see enum nvme_conn_stage
+	 *			for values).
+	 * @conn_ptr:		OUT void parameter that will point to the
+	 *			specific fabric connection session
+	 *			description construct of the host fabric
+	 *			device.
 	 *
 	 *  Return Value:
 	 *      0 for success,
 	 *      any other value, error.
 	 *
 	 *  Notes:
-	 *      This function is based on connect_queue() from
-	 *      the demo.  From Dave, this function will
-	 *      actually make a connection first, then create
-	 *      the queues.
+	 *      will make a connection first, then create the necessary
+	 *      queues requested.
 	 */
-	int (*connect_create_queue)(char *addr, int port, int fabric,
-				    struct nvme_conn *nvme_conn, int stage);
+	int (*connect_create_queue)(struct nvme_fabric_subsystem *subsys,
+				    __u16 current_cntlid,
+				    __u8 *uuid,
+				    int stage,
+				    void **conn_ptr);
 
 	/*
-	 * Function that stops processing queues and destroys
-	 * the queue resources.
+	 * Function that builds an sglist that will be packaged and sent
+	 * across the fabric.
 	 *
-	 * @conn: The connection session resources construct
-	 *        of the host fabric device.
+	 * @
 	 *
-	 * Notes:
-	 *     This function is base on disconnect_queue() from
-	 *     the demo.
+	 * @incapsule_num: An IN parameter that is the additional number of
+	 *		   sgl elements to be built and packaged
+	 *		   and tacked on at the end of the NVMe
+	 *		   fabric capsule.  This number does NOT
+	 *		   include the first sgl element that is
+	 *		   a part of a normal NVMe command.
+	 *
+	 * @sglist: an OUT parameter that...points to the sglist elements
+	 *	    tacked on at the end of an NVMe Fabric capsule
+	 *          (incapsule_num sglist elements)??????
+	 *
+	 * Returns:
+	 *      0 for success
+	 *      anything else, ERROR
 	 */
-	void (*stop_destroy_queues)(int TODO);
+	int (*build_admin_sglist)(void *prp1, void *prp2,
+				  int incapsule_len,
+				  struct nvme_common_sgl_desc *sglist);
+
+	/*
+	 * OPTIONAL function for fabric transports to implement
+	 * set the correct controller id to the subsystem.  It is
+	 * assumed that fabric transports may keep some type of
+	 * data structure to relate NVMe controllers found
+	 * from a subsystem target and it's network connections.
+	 * Per NVMe standard, the spec guaruntees
+	 * an NVMe controller can be unique by subsystem name
+	 * and cntlid field returned from an NVMe Identify
+	 * Controller command.
+	 *
+	 * @subsys_name: Unique subsystem name the controller is
+	 *		 found.
+	 * @cntlid:	 The valid cntlid number on that controller
+	 *		 discovered in the subsystem on the fabric
+	 *		 target.
+	 * Returns:
+	 *      0 for success
+	 *      anything else, error
+	 */
+	int (*finalize_cntlid)(char *subsys_name, __u16 cntlid);
 };
 
-/*
- *
- * Some notes:
- *      *If you want the device to have an ioctl associated with
- *       it, define a block_device_operations with it.  This
- *       would not be a core function of
- *       nvme_fabric_host_operations.
- *
- */
-
+int nvme_fabric_parse_addr(int address_type, char *address, int port,
+			   struct nvme_fabric_addr *fabric_addr);
 int nvme_fabric_register(char *nvme_class_name,
 			 struct nvme_fabric_host_operations *new_fabric);
-int nvme_fabric_unregister(int TODO);
-int nvme_fabric_discovery(char *address, int port, int fabric);
-int nvme_fabric_add_subsystem(char *subsystem_name, char *ctrlr_name,
-			      int fabric, char *address, int port);
-int nvme_fabric_remove_endpoint(char *address, int port, int fabric);
+int nvme_fabric_unregister(struct nvme_fabric_subsystem *conn);
+int nvme_fabric_discovery(struct nvme_fabric_addr *addr, int fabric,
+			  int simulation);
+int nvme_fabric_add_controller(char *subsys_name,
+			       int fabric, int conn_type,
+			       struct nvme_fabric_addr *address);
+int nvme_fabric_remove_host_treenode(char *subsys_name, __u16 cntlid);
+int nvme_fabric_set_instance(void);
+void nvme_fabric_get_hostname(char *hostname);
+void nvme_fabric_set_hostname(char *hostname);
+void nvme_fabric_create_session_guid(__u8 *hnsid);
+void *nvme_fabric_get_xport_context(void);
+
 
 /******** nvme-sysfs.c function prototype definitions *********/
 
 int nvme_sysfs_init(char *nvme_class_name);
 void nvme_sysfs_exit(void);
-ssize_t nvme_sysfs_do_add_endpoint(struct class *class,
-				   struct class_attribute *attr,
-				   const char *buf, size_t count);
+ssize_t nvme_sysfs_do_add_discover_server(struct class *class,
+		struct class_attribute *attr,
+		const char *buf, size_t count);
+ssize_t nvme_sysfs_show_discover_server(struct class *class,
+					struct class_attribute *attr,
+					char *buf);
 ssize_t nvme_sysfs_do_add_subsystem(struct class *class,
 				    struct class_attribute *attr,
 				    const char *buf, size_t count);
-ssize_t nvme_sysfs_show_add_endpoint(struct class *class,
-				     struct class_attribute *attr,
-				     char *buf);
-ssize_t nvme_sysfs_do_remove_endpoint(struct class *class,
+ssize_t nvme_sysfs_show_add_subsystem(struct class *class,
 				      struct class_attribute *attr,
-				      const char *buf, size_t count);
+				      char *buf);
+ssize_t nvme_sysfs_do_remove_subsystem(struct class *class,
+				       struct class_attribute *attr,
+				       const char *buf, size_t count);
+ssize_t nvme_sysfs_show_remove_subsystem(struct class *class,
+		struct class_attribute *attr,
+		char *buf);
+ssize_t nvme_sysfs_do_remove_controller(struct class *class,
+					struct class_attribute *attr,
+					const char *buf, size_t count);
+ssize_t nvme_sysfs_show_remove_controller(struct class *class,
+		struct class_attribute *attr,
+		char *buf);
 ssize_t nvme_sysfs_do_set_hostname(struct class *class,
 				   struct class_attribute *attr,
 				   const char *buf, size_t count);
 ssize_t nvme_sysfs_show_set_hostname(struct class *class,
 				     struct class_attribute *attr,
 				     char *buf);
-ssize_t nvme_sysfs_show_add_subsystem(struct class *class,
-				      struct class_attribute *attr,
-				      char *buf);
 
 #endif  /* _LINUX_NVME_FABRICS_H */
