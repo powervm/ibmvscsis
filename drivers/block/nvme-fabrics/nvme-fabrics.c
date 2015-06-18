@@ -46,6 +46,7 @@ static inline void _nvme_check_size(void)
 	BUILD_BUG_ON(sizeof(struct nvme_common_id_ctrl) != 4096);
 	BUILD_BUG_ON(sizeof(struct nvme_common_id_ns) != 4096);
 	BUILD_BUG_ON(sizeof(struct nvme_common_completion) != 16);
+
 	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_desc) != 16);
 	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_dblk) != 16);
 	BUILD_BUG_ON(sizeof(struct nvme_common_sgl_bbkt) != 16);
@@ -54,6 +55,18 @@ static inline void _nvme_check_size(void)
 
 	BUILD_BUG_ON(sizeof(struct nvme_connect_capsule) != 1024);
 	BUILD_BUG_ON(sizeof(struct nvme_connect_rsp_capsule) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_submit_capsule) != 80);
+	BUILD_BUG_ON(sizeof(struct nvme_completion_capsule) != 32);
+	BUILD_BUG_ON(sizeof(struct nvme_prpset_capsule) != 32);
+	BUILD_BUG_ON(sizeof(struct nvme_prpset_rsp_capsule) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_prpget_capsule) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_prpget_rsp_capsule) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_cplqueue_capsule) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_cplqueue_rsp_capsule) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_discover_capsule) != 1024);
+	BUILD_BUG_ON(sizeof(struct nvme_discover_rsp_capsule) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_discoveryinfo_rsp_capsule) != 16);
+	BUILD_BUG_ON(sizeof(struct nvme_discoveryinfo_capsule) != 16);
 }
 
 /*
@@ -190,7 +203,7 @@ create_nvme_capsule(struct nvme_common_cmd *cmd,
 static int nvme_fabric_submit_admin_cmd(struct nvme_common_queue *nvmeq,
 					struct nvme_common_cmd *cmd)
 {
-	int ret 			= 0;
+	int ret				= 0;
 	__u32 len			= 0;
 	__u32 rsp_len			= 0;
 	union nvme_capsule_cmd *capsule	= NULL;
@@ -387,9 +400,8 @@ static int create_connect_capsule(union nvme_capsule_cmd *capsule,
 		capsule->connect.hdr.cqid  = queue_number;
 	}
 
-	if (hnsid) {
+	if (hnsid)
 		memcpy(capsule->connect.body.hnsid, hnsid, HNSID_LEN);
-	}
 
 	if (queue_type == NVME_AQ) {
 		capsule->connect.body.cntlid = 0xFFFF;
@@ -796,7 +808,7 @@ int nvme_fabric_register(char *nvme_class_name,
 {
 	int ret = -EINVAL;
 
-	/* BUILD CHECK! Take out when dev of structs done */
+	/* BUILD CHECK! Take out when intial NVMe fabric development done */
 	_nvme_check_size();
 
 	pr_info("%s: %s()\n", __FILE__, __func__);
