@@ -621,9 +621,9 @@ err2:
 	 * doesn't have a new controller connection in it's tree 
 	 * but the fabric specfic transport does. 
 	 */
-	nvme_host->fops->disconnect(subsys->subsiqn,
+	nvme_host->fops->disconnect(subsystem->subsiqn,
 				    NVME_FABRIC_INIT_CNTLID,
-				    &subsys->address);
+				    &subsystem->address);
 err1:
 	return ret;
 }
