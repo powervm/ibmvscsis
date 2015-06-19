@@ -22,6 +22,8 @@
  * makes no assumption that a technology like PCIe or RDMA is being
  * used to carry out the protocol.
  */
+#define NO_TARGET
+
 #include <linux/nvme-fabrics/nvme-common.h>
 #include <linux/nvme-fabrics/nvme-fabrics.h>
 #include <linux/errno.h>
@@ -375,9 +377,6 @@ EXPORT_SYMBOL_GPL(nvme_fabric_remove_host_treenode);
 
 /*
  * Creates an NVMe Connect Capsule Packet.
- *
- * TODO: Make sure subsys_name really is a subsys_name
- * and not the old ctrlname from last TP002 version
  */
 static int create_connect_capsule(union nvme_capsule_cmd *capsule,
 				       __u8   queue_type,
@@ -584,14 +583,15 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 		pr_err("connect rsp sts:    %d (should be 0)\n\n",
 		       rsp.connect.hdr.sts);
 
-		/*
-		 * TODO: Add this in when send_capsule() RDMA code is fully
-		 * written to check for wacky connect response errors
-		 * coming from the controller.
-		 *
-		ret = -ENODATA;
-		goto err1;
+
+		/* For testing some basic things in the fabric host wo/a
+		 * target attached to it.
 		 */
+		#ifndef NO_TARGET
+		ret = -ENODATA;
+		goto err1; 
+		#endif 
+		
 	} else
 		pr_info("\n\n%s(): received VALID cntlid %d from target\n",
 			__func__, rsp.connect.hdr.cntlid);
@@ -602,7 +602,6 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 	 * transport does not have to fill this function out if
 	 * it does not need it.
 	 */
-
 	spin_lock_irqsave(&subsystem->ctrl_list_lock, flags);
 	new_ctrl->cntlid = rsp.connect.hdr.cntlid;
 	pr_info("%s(): ctrl's cntlid in subsystem %s set to %d\n",
