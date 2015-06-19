@@ -559,7 +559,7 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 	if (ret) {
 		pr_err("%s %s(): Error %d creating connect capsule\n",
 		       __FILE__, __func__, ret);
-		goto err1;
+		goto err2;
 	};
 	ret = nvme_host->fops->send_admin_cmd(
 		      new_ctrl->aq_conn,
@@ -568,7 +568,7 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 	if (ret) {
 		pr_err("%s(): Error send_capsule() returned %d\n",
 		       __func__, ret);
-		goto err1;
+		goto err2;
 	}
 
 	if ((rsp.connect.hdr.cctype != CCTYPE_CONNECT_RSP) ||
@@ -589,7 +589,7 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 		 */
 		#ifndef NO_TARGET
 		ret = -ENODATA;
-		goto err1; 
+		goto err2; 
 		#endif 
 		
 	} else
@@ -611,6 +611,19 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 						       new_ctrl->cntlid);
 	spin_unlock_irqrestore(&subsystem->ctrl_list_lock, flags);
 
+	return ret;
+
+err2:
+	/* in the event of an error, after we established a fabric
+	 * specific connection with a subsystem, we need to tell
+	 * the fabric specific transport to disconnect and cleanup 
+	 * so we are not in some weird state where the fabric host 
+	 * doesn't have a new controller connection in it's tree 
+	 * but the fabric specfic transport does. 
+	 */
+	nvme_host->fops->disconnect(subsys->subsiqn,
+				    NVME_FABRIC_INIT_CNTLID,
+				    &subsys->address);
 err1:
 	return ret;
 }
