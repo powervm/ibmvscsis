@@ -619,14 +619,21 @@ err2:
 	 * the fabric specific transport to disconnect and cleanup 
 	 * so we are not in some weird state where the fabric host 
 	 * doesn't have a new controller connection in it's tree 
-	 * but the fabric specfic transport does. 
+	 * but the fabric specfic transport does. This goes back 
+	 * to makeing finalize_cntlid() an optional API to 
+	 * fill out because it cannot be envisioned someone 
+	 * in the future won't find a way to do their transport- 
+	 * specific data structures without needing cntlid names. 
 	 */
-	nvme_host->fops->disconnect(subsystem->subsiqn,
-				    NVME_FABRIC_INIT_CNTLID,
-				    &subsystem->address);
+	if (nvme_host->fops->finalize_cntlid != NULL) {
+		nvme_host->fops->disconnect(subsystem->subsiqn,
+					    NVME_FABRIC_INIT_CNTLID,
+					    &subsystem->address);
+	}
 err1:
 	return ret;
 }
+
 /*
  * Public function that adds an NVMe remote Subsystem by do_add_subsystem or
  * nvme_fabric_discovery
