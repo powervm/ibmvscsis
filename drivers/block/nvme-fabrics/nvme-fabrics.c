@@ -589,9 +589,9 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 		 */
 		#ifndef NO_TARGET
 		ret = -ENODATA;
-		goto err2; 
-		#endif 
-		
+		goto err2;
+		#endif
+
 	} else
 		pr_info("\n\n%s(): received VALID cntlid %d from target\n",
 			__func__, rsp.connect.hdr.cntlid);
@@ -616,14 +616,14 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 err2:
 	/* in the event of an error, after we established a fabric
 	 * specific connection with a subsystem, we need to tell
-	 * the fabric specific transport to disconnect and cleanup 
-	 * so we are not in some weird state where the fabric host 
-	 * doesn't have a new controller connection in it's tree 
-	 * but the fabric specfic transport does. This goes back 
-	 * to makeing finalize_cntlid() an optional API to 
-	 * fill out because it cannot be envisioned someone 
-	 * in the future won't find a way to do their transport- 
-	 * specific data structures without needing cntlid names. 
+	 * the fabric specific transport to disconnect and cleanup
+	 * so we are not in some weird state where the fabric host
+	 * doesn't have a new controller connection in it's tree
+	 * but the fabric specfic transport does. This goes back
+	 * to makeing finalize_cntlid() an optional API to
+	 * fill out because it cannot be envisioned someone
+	 * in the future won't find a way to do their transport-
+	 * specific data structures without needing cntlid names.
 	 */
 	if (nvme_host->fops->finalize_cntlid != NULL) {
 		nvme_host->fops->disconnect(subsystem->subsiqn,

@@ -113,7 +113,7 @@ struct rdma_ctrl {
 	int			 instance;
 	struct ib_device        *ib_dev;
 	struct ib_pd            *pd;
-	struct ib_mr            *mr;
+	struct ib_mr            *mr; /* CAYTONCAYTON - Do we need this? */
 	int			 max_qp_init_rd_atom;
 	int			 max_qp_rd_atom;
 	struct list_head	 connections; /* ctrl AQ + IOQs */
@@ -140,19 +140,24 @@ struct nvme_rdma_conn {
 	struct nvme_common_queue	*nvmeq;
 };
 
-struct xport_sge {
-	struct ib_sge	sgl;
-};
+/*TODO: Decide if we are going to use a "common" rx/tx_desc for
+ * all discovery/aq/ioq connections (in which case we have a
+ * minor inefficiency in that discovery and aq will have more
+ * sgl entries than needed...
+ * OR
+ * separate them out which will greatly expand the code length
+ * due to functions to handle each...  Pick your poison.
+ */
 
-struct rx_desc {
-	struct list_head	node;
-	struct nvme_rdma_conn	*fabric_conn;
-	struct xport_sge	 xport[MAX_IOQ_RECV_SGE];
-};
+/*FINISH ME! - all the rx/tx_depth structures need love*/
 
-struct tx_desc {
-	struct nvme_rdma_conn	*fabric_conn;
-	struct xport_sge	 xport[MAX_IOQ_SEND_SGE];
+struct xport_desc {
+	struct ib_device	 *ib_dev;
+	struct ib_mr		 *mr;
+	int			  num_sge;
+	int			  dir;
+	struct ib_sge		  sgl[MAX_IOQ_SEND_SGE];
+/*	u8			  buffer[MAX_INLINE_DATA]; */
 };
 
 #endif  /* _LINUX_NVME_FABRICS_RDMA_H */
