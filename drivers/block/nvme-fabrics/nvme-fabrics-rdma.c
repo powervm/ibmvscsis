@@ -38,8 +38,8 @@ char fabric_used[NVME_FABRIC_IQN_MAXLEN] = "rdma";
 module_param_string(fabric_used, "rdma", FABRIC_STRING_MAX, 0444);
 MODULE_PARM_DESC(fabric_used, "Read-only description of fabric being used");
 
-unsigned char fabric_timeout = FABRIC_TIMEOUT;
-module_param(fabric_timeout, byte, 0644);
+unsigned fabric_timeout = FABRIC_TIMEOUT;
+module_param(fabric_timeout, uint, 0644);
 MODULE_PARM_DESC(fabric_timeout, "Timeout for fabric-specific communication");
 
 unsigned char discover_retry_count = DISCOVER_RETRY;
@@ -1184,7 +1184,9 @@ static int nvme_rdma_connect_create_queue(struct nvme_fabric_subsystem *subsys,
 	fabric_conn->stage	= stage;
 
 	memcpy(&fabric_conn->dst, dstaddr_in, sizeof(struct sockaddr_in));
-
+	init_completion(&fabric_conn->comp);
+	init_waitqueue_head(&fabric_conn->sem);
+	
 	/* Create the Discover/Admin/IO Connection */
 	ret = connect_to_rdma_ctrl(fabric_conn);
 	if (ret) {
@@ -1192,9 +1194,6 @@ static int nvme_rdma_connect_create_queue(struct nvme_fabric_subsystem *subsys,
 			__FILE__, __func__, ret);
 		goto fail;
 	}
-
-	init_completion(&fabric_conn->comp);
-	init_waitqueue_head(&fabric_conn->sem);
 
 	spin_lock_irqsave(&nvme_fabric_list_lock, flags);
 	list_add_tail(&fabric_conn->node, &rdma_ctrl->connections);

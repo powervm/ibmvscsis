@@ -116,10 +116,10 @@
 #define DISCOVER_RETRY          7
 #define AQ_RETRY                7
 #define IOQ_RETRY               7
-#define FABRIC_TIMEOUT          15
+#define FABRIC_TIMEOUT          3000
 
 extern char fabric_used[FABRIC_STRING_MAX];
-extern unsigned char fabric_timeout;
+extern unsigned fabric_timeout;
 extern unsigned char discover_retry_count;
 extern unsigned char admin_retry_count;
 extern unsigned char io_retry_count;
