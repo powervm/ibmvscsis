@@ -342,7 +342,7 @@ struct nvme_submit_capsule {
 	} hdr;
 	struct {
 		/* nvme submission command */
-		struct nvme_common_command sqe;
+		struct nvme_common_cmd sqe;
 
 		/* Field indicates data metadata, and/or
 		 * SGLs required for the command submitted.
