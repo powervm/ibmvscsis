@@ -123,6 +123,9 @@ extern unsigned fabric_timeout;
 extern unsigned char discover_retry_count;
 extern unsigned char admin_retry_count;
 extern unsigned char io_retry_count;
+extern unsigned char discover_pool_depth;
+extern unsigned char aq_pool_depth;
+extern unsigned char ioq_pool_depth;
 
 enum nvme_fabric_type {
 	NVME_FABRIC_PCIE     = 0,     /* PCIe Fabric */

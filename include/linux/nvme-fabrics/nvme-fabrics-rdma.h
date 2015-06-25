@@ -58,8 +58,8 @@
 #define AQ_RQ_SIZE		1
 #define MAX_AQ_SEND_WR		AQ_SQ_SIZE
 #define MAX_AQ_RECV_WR		AQ_RQ_SIZE
-#define MAX_AQ_SEND_SGE		1
-#define MAX_AQ_RECV_SGE		1
+#define MAX_AQ_SEND_SGE		2
+#define MAX_AQ_RECV_SGE		2
 
 #define IOQ_POOL_DEPTH		0
 #define IOQ_SQ_SIZE		40

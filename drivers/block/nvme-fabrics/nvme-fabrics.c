@@ -22,7 +22,6 @@
  * makes no assumption that a technology like PCIe or RDMA is being
  * used to carry out the protocol.
  */
-#define NO_TARGET
 
 #include <linux/nvme-fabrics/nvme-common.h>
 #include <linux/nvme-fabrics/nvme-fabrics.h>
