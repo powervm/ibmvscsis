@@ -14,8 +14,8 @@ else
   OFED_DIR:=
 endif
 
-#KDIR ?= /lib/modules/`uname -r`/build
-KDIR := /home/cayton/master
+KDIR ?= /lib/modules/`uname -r`/build
+#KDIR := /home/cayton/master
 autoconf_h=$(shell /bin/ls -1 $(KDIR)/include/*/autoconf.h | head -1)
 kconfig_h=$(shell /bin/ls -1 $(KDIR)/include/*/kconfig.h 2>/dev/null | head -1)
 
@@ -28,6 +28,7 @@ ifneq ("$(OFED_DIR)","")
 endif
 
 INCLUDES+=	\
+	   -I$(MODULE_DIR)/include \
 	   -Iarch/x86/include \
 	   -Iarch/x86/include/generated/uapi \
 	   -Iarch/x86/include/generated  \

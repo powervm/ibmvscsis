@@ -28,6 +28,8 @@
 #include <linux/errno.h>
 #include <linux/random.h>
 
+#define DRV_NAME "nvme_fabrics"
+
 #define NVME_UNUSED(x) ((void)x)
 
 static struct nvme_fabric_host *nvme_host;
@@ -129,7 +131,7 @@ int nvme_fabric_parse_addr(int address_type, char *address, int port,
 		       FC_ADDR_SIZE);
 		break;
 	default:
-		pr_err("Unsupported address type %d\n", address_type);
+		pr_err(DRV_NAME " Unsupported address type %d\n", address_type);
 		ret = -EINVAL;
 		break;
 	}
@@ -274,8 +276,8 @@ EXPORT_SYMBOL_GPL(nvme_fabric_get_xport_context);
 static void nvme_fabric_destroy_ctrl(struct nvme_fabric_subsystem *subsys,
 				     struct nvme_fabric_ctrl *ctrl)
 {
-	pr_info("%s: Removing controller %d @ subsys %s\n",
-		__func__, ctrl->cntlid, subsys->subsiqn);
+	pr_info(DRV_NAME " %s(%d): Removing controller %d @ subsys %s\n",
+		__func__, __LINE__, ctrl->cntlid, subsys->subsiqn);
 
 	nvme_host->fops->disconnect(subsys->subsiqn,
 				    ctrl->cntlid,
@@ -318,11 +320,11 @@ int nvme_fabric_remove_host_treenode(char *subsys_name, __u16 cntlid)
 	unsigned long			 flags;
 	int				 ret = -ENXIO;
 
-	pr_info("%s: %s()\n", __FILE__, __func__);
+	pr_info(DRV_NAME " %s(%d)\n", __func__, __LINE__);
 
 	subsys = find_subsystem(subsys_name);
 	if (!subsys) {
-		pr_err("%s: Did not find subsys %s\n", __func__, subsys_name);
+		pr_err(DRV_NAME " %s(%d): Did not find subsys %s\n", __func__, __LINE__, subsys_name);
 		return -ENXIO;
 	}
 
@@ -354,11 +356,11 @@ int nvme_fabric_remove_host_treenode(char *subsys_name, __u16 cntlid)
 		}
 
 		if (unlikely(subsys->num_ctrl))
-			pr_err("%s: Ctrl count in subsys %s should be 0: %d\n",
-			       __func__, subsys->subsiqn,
+			pr_err(DRV_NAME " %s(%d): Ctrl count in subsys %s should be 0: %d\n",
+			       __func__, __LINE__, subsys->subsiqn,
 			       subsys->num_ctrl);
 
-		pr_info("%s: Removing subsys %s\n", __func__,
+		pr_info(DRV_NAME " %s(%d): Removing subsys %s\n", __func__, __LINE__,
 			subsys->subsiqn);
 
 		/* Now remove the subsystem */
@@ -404,7 +406,7 @@ static int create_connect_capsule(union nvme_capsule_cmd *capsule,
 	if (queue_type == NVME_AQ) {
 		capsule->connect.body.cntlid = 0xFFFF;
 	} else {
-		pr_err("%s: TODO: Connect via IOQ WIP\n", __func__);
+		pr_err(DRV_NAME " %s(%d): TODO: Connect via IOQ WIP\n", __func__, __LINE__);
 		return -EINVAL;
 	}
 	capsule->connect.body.authpr = 0;
@@ -418,25 +420,25 @@ static int create_connect_capsule(union nvme_capsule_cmd *capsule,
 			hostname, NVME_FABRIC_IQN_MAXLEN);
 	}
 
-	pr_info("\n===%s Created Connect Capsule ===\n", __func__);
-	pr_info("cctype:  %#x      authpr: %d\n",
+	pr_info(DRV_NAME " \n%s(%d) === Created Connect Capsule ===\n", __func__, __LINE__);
+	pr_info(DRV_NAME " cctype:  %#x      authpr: %d\n",
 		capsule->connect.hdr.cctype,
 		capsule->connect.hdr.authpr);
-	pr_info("vs[3]: %x vs[2]: %x vs[1]: %x vs[0]: %x\n",
+	pr_info(DRV_NAME " vs[3]: %x vs[2]: %x vs[1]: %x vs[0]: %x\n",
 		capsule->connect.hdr.vs[3],
 		capsule->connect.hdr.vs[2],
 		capsule->connect.hdr.vs[1],
 		capsule->connect.hdr.vs[0]);
-	pr_info("sqid:    %d        cqid:   %d\n",
+	pr_info(DRV_NAME " sqid:    %d        cqid:   %d\n",
 		capsule->connect.hdr.sqid,
 		capsule->connect.hdr.cqid);
-	pr_info("hnsid:   %pUX\n", capsule->connect.body.hnsid);
-	pr_info("cntlid:  %#x   authpr: %d\n",
+	pr_info(DRV_NAME " hnsid:   %pUX\n", capsule->connect.body.hnsid);
+	pr_info(DRV_NAME " cntlid:  %#x   authpr: %d\n",
 		capsule->connect.body.cntlid,
 		capsule->connect.body.authpr);
-	pr_info("subsiqn: %s\n", capsule->connect.body.subsiqn);
-	pr_info("hostiqn: %s\n", capsule->connect.body.hostiqn);
-	pr_info("========================\n");
+	pr_info(DRV_NAME " subsiqn: %s\n", capsule->connect.body.subsiqn);
+	pr_info(DRV_NAME " hostiqn: %s\n", capsule->connect.body.hostiqn);
+	pr_info(DRV_NAME " ========================\n");
 
 	return 0;
 }
@@ -471,7 +473,7 @@ static int nvme_fabric_initialize_disks(struct nvme_fabric_subsystem *conn)
 {
 	int                      ret = 0;
 
-	pr_info("%s: %s()\n", __FILE__, __func__);
+	pr_info(DRV_NAME " %s(%d)\n", __func__, __LINE__);
 
 	NVME_UNUSED(conn);
 
@@ -529,19 +531,19 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 			&(new_ctrl->aq_conn));
 
 	if (ret) {
-		pr_err("%s(): Error connect_create_queue(AQ) %d\n",
-		       __func__, ret);
+		pr_err(DRV_NAME " %s(%d): Error connect_create_queue(AQ) %d\n",
+		       __func__, __LINE__, ret);
 		goto err1;
 	}
 
 	if (new_ctrl->aq_conn == NULL) {
-		pr_err("%s(): Error! aq_conn NULL from *_create_queue()\n",
-		       __func__);
+		pr_err(DRV_NAME " %s(%d): Error! aq_conn NULL from *_create_queue()\n",
+		       __func__, __LINE__);
 		ret = -ENODEV;
 		goto err1;
 	} else {
-		pr_info("%s(): aq_conn ptr has been set to %p\n",
-			__func__, new_ctrl->aq_conn);
+		pr_info(DRV_NAME " %s(%d): aq_conn ptr has been set to %p\n",
+			__func__, __LINE__, new_ctrl->aq_conn);
 	}
 
 	ret =  create_connect_capsule(&capsule,
@@ -556,8 +558,8 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 
 	ret = create_connect_capsule_rsp(&rsp);
 	if (ret) {
-		pr_err("%s %s(): Error %d creating connect capsule\n",
-		       __FILE__, __func__, ret);
+		pr_err(DRV_NAME " %s(%d): Error %d creating connect capsule\n",
+		       __func__, __LINE__, ret);
 		goto err2;
 	};
 	ret = nvme_host->fops->send_admin_cmd(
@@ -565,21 +567,21 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 		      &capsule,
 		      &rsp);
 	if (ret) {
-		pr_err("%s(): Error send_capsule() returned %d\n",
-		       __func__, ret);
+		pr_err(DRV_NAME " %s(%d): Error send_capsule() returned %d\n",
+		       __func__, __LINE__, ret);
 		goto err2;
 	}
 
 	if ((rsp.connect.hdr.cctype != CCTYPE_CONNECT_RSP) ||
 	    (rsp.connect.hdr.cntlid == 0xFFFF) ||
 	    (rsp.connect.hdr.sts != 0)) {
-		pr_err("%s(): Error! Unexpected Connect response values!\n",
-		       __func__);
-		pr_err("connect rsp cctype: %d (must be '5')\n",
+		pr_err(DRV_NAME " %s(%d): Error! Unexpected Connect response values!\n",
+		       __func__, __LINE__);
+		pr_err(DRV_NAME " connect rsp cctype: %d (must be '5')\n",
 		       rsp.connect.hdr.cctype);
-		pr_err("connect rsp cntlid: %#x (cannot be 0xFFFF)\n",
+		pr_err(DRV_NAME " connect rsp cntlid: %#x (cannot be 0xFFFF)\n",
 		       rsp.connect.hdr.cntlid);
-		pr_err("connect rsp sts:    %d (should be 0)\n\n",
+		pr_err(DRV_NAME " connect rsp sts:    %d (should be 0)\n\n",
 		       rsp.connect.hdr.sts);
 
 
@@ -592,8 +594,8 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 		#endif
 
 	} else
-		pr_info("\n\n%s(): received VALID cntlid %d from target\n",
-			__func__, rsp.connect.hdr.cntlid);
+		pr_info(DRV_NAME " \n\n%s(%d): received VALID cntlid %d from target\n",
+			__func__, __LINE__, rsp.connect.hdr.cntlid);
 
 	/* Now that we have a valid controller id for the subsystem,
 	 * optionally inform the implementation of the value.
@@ -603,8 +605,8 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 	 */
 	spin_lock_irqsave(&subsystem->ctrl_list_lock, flags);
 	new_ctrl->cntlid = rsp.connect.hdr.cntlid;
-	pr_info("%s(): ctrl's cntlid in subsystem %s set to %d\n",
-		__func__, subsystem->subsiqn, new_ctrl->cntlid);
+	pr_info(DRV_NAME " %s(%d): ctrl's cntlid in subsystem %s set to %d\n",
+		__func__, __LINE__, subsystem->subsiqn, new_ctrl->cntlid);
 	if (nvme_host->fops->finalize_cntlid != NULL)
 		ret = nvme_host->fops->finalize_cntlid(subsystem->subsiqn,
 						       new_ctrl->cntlid);
@@ -663,11 +665,11 @@ int nvme_fabric_add_controller(char *subsys_name,
 	unsigned long			 flags = 0;
 	int				 ret   = 0;
 
-	pr_info("%s: %s()\n", __FILE__, __func__);
+	pr_info(DRV_NAME " %s(%d)\n", __func__, __LINE__);
 
 	subsystem = find_subsystem(subsys_name);
 	if (!subsystem) {
-		pr_info("%s: Creating subsystem %s.\n", __func__, subsys_name);
+		pr_info(DRV_NAME " %s(%d): Creating subsystem %s.\n", __func__, __LINE__, subsys_name);
 		subsystem = nvme_fabric_add_subsystem(subsys_name, address,
 						      fabric_type, conn_type);
 		if (!subsystem)
@@ -825,13 +827,13 @@ int nvme_fabric_register(char *nvme_class_name,
 	/* BUILD CHECK! Take out when intial NVMe fabric development done */
 	_nvme_check_size();
 
-	pr_info("%s: %s()\n", __FILE__, __func__);
+	pr_info(DRV_NAME " %s(%d)\n", __func__, __LINE__);
 
 	if (fabric_used[0] == 0 || !fabric_timeout ||
 			!discover_retry_count || !admin_retry_count ||
 			!io_retry_count) {
-		pr_err("%s(): Error parameters not properly filled out!\n",
-		       __func__);
+		pr_err(DRV_NAME " %s(%d): Error parameters not properly filled out!\n",
+		       __func__, __LINE__);
 		ret = -ENODATA;
 		goto err1;
 	}
@@ -847,8 +849,8 @@ int nvme_fabric_register(char *nvme_class_name,
 			(nvme_host->fops->disconnect == NULL)           ||
 			(nvme_host->fops->send_admin_cmd == NULL)  ||
 			(nvme_host->fops->build_admin_sglist == NULL)) {
-		pr_err("%s(): Error, a fabric function not implemented!\n",
-		       __func__);
+		pr_err(DRV_NAME " %s(%d): Error, a fabric function not implemented!\n",
+		       __func__, __LINE__);
 		ret = -ENOSYS;
 		goto err1;
 	}
@@ -865,19 +867,19 @@ int nvme_fabric_register(char *nvme_class_name,
 
 	ret = nvme_common_init(&nvme_common_ops);
 	if (ret) {
-		pr_err("%s %s(): Error- nvme_common_init() failed\n",
-		       __FILE__, __func__);
+		pr_err(DRV_NAME " %s(%d): Error- nvme_common_init() failed\n",
+		       __func__, __LINE__);
 		goto err1;
 	}
 
 	ret = nvme_sysfs_init(nvme_class_name);
 	if (ret) {
-		pr_err("%s %s(): Error- nvme_sysfs_init() failed\n",
-		       __FILE__, __func__);
+		pr_err(DRV_NAME " %s(%d): Error- nvme_sysfs_init() failed\n",
+		       __func__, __LINE__);
 		goto err2;
 	}
 
-	pr_info("%s %s() exited with %d\n", __FILE__, __func__, ret);
+	pr_info(DRV_NAME " %s(%d) exited with %d\n", __func__, __LINE__, ret);
 	return ret;
 
 err2:
@@ -900,7 +902,7 @@ int nvme_fabric_unregister(struct nvme_fabric_subsystem *conn)
 	struct list_head	     *pos;
 	struct list_head	     *q;
 
-	pr_info("%s: %s()\n", __FILE__, __func__);
+	pr_info(DRV_NAME " %s(%d)\n", __func__, __LINE__);
 
 	list_for_each_safe(pos, q, &nvme_host->subsystem_list) {
 		ss = list_entry(pos, struct nvme_fabric_subsystem, node);
