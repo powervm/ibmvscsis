@@ -194,7 +194,7 @@ static int exynos_ppmu_get_event(struct devfreq_event_dev *edev,
 	return 0;
 }
 
-static struct devfreq_event_ops exynos_ppmu_ops = {
+static const struct devfreq_event_ops exynos_ppmu_ops = {
 	.disable = exynos_ppmu_disable,
 	.set_event = exynos_ppmu_set_event,
 	.get_event = exynos_ppmu_get_event,
@@ -327,8 +327,8 @@ static int exynos_ppmu_probe(struct platform_device *pdev)
 
 	for (i = 0; i < info->num_events; i++) {
 		edev[i] = devm_devfreq_event_add_edev(&pdev->dev, &desc[i]);
-		if (IS_ERR(edev)) {
-			ret = PTR_ERR(edev);
+		if (IS_ERR(edev[i])) {
+			ret = PTR_ERR(edev[i]);
 			dev_err(&pdev->dev,
 				"failed to add devfreq-event device\n");
 			goto err;

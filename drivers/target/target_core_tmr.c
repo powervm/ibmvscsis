@@ -27,8 +27,6 @@
 #include <linux/spinlock.h>
 #include <linux/list.h>
 #include <linux/export.h>
-#include <scsi/scsi.h>
-#include <scsi/scsi_cmnd.h>
 
 #include <target/target_core_base.h>
 #include <target/target_core_backend.h>
@@ -125,8 +123,8 @@ void core_tmr_abort_task(
 		if (dev != se_cmd->se_dev)
 			continue;
 
-		/* skip se_cmd associated with tmr */
-		if (tmr->task_cmd == se_cmd)
+		/* skip task management functions, including tmr->task_cmd */
+		if (se_cmd->se_cmd_flags & SCF_SCSI_TMR_CDB)
 			continue;
 
 		ref_tag = se_cmd->se_tfo->get_task_tag(se_cmd);

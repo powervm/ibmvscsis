@@ -300,6 +300,7 @@ static int setup_cq(struct nvme_rdma_conn *fabric_conn,
 {
 	struct ib_device	*ib_dev = fabric_conn->rdma_ctrl->ib_dev;
 	struct ib_cq		*cq;
+	struct ib_cq_init_attr	 attr;
 	int			 cqes;
 
 	pr_info(DRV_NAME " %s(%d)\n", __func__, __LINE__);
@@ -318,8 +319,12 @@ static int setup_cq(struct nvme_rdma_conn *fabric_conn,
 	pr_err(DRV_NAME " %s(%d) setup_cq: fabric_conn = %p\n",
 	       __func__, __LINE__, fabric_conn);
 
+	memset(&attr, 0, sizeof(attr));
+
+	attr.cqe = cqes;
+
 	cq = ib_create_cq(ib_dev, comp_handler, event_handler,
-			  fabric_conn, cqes, 0);
+			  fabric_conn, &attr);
 	if (IS_ERR(cq)) {
 		pr_err(DRV_NAME " %s(%d) ib_create_cq failed\n",
 		       __func__, __LINE__);

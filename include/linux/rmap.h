@@ -105,14 +105,6 @@ static inline void put_anon_vma(struct anon_vma *anon_vma)
 		__put_anon_vma(anon_vma);
 }
 
-static inline struct anon_vma *page_anon_vma(struct page *page)
-{
-	if (((unsigned long)page->mapping & PAGE_MAPPING_FLAGS) !=
-					    PAGE_MAPPING_ANON)
-		return NULL;
-	return page_rmapping(page);
-}
-
 static inline void vma_lock_anon_vma(struct vm_area_struct *vma)
 {
 	struct anon_vma *anon_vma = vma->anon_vma;
@@ -198,7 +190,7 @@ int page_referenced(struct page *, int is_locked,
 int try_to_unmap(struct page *, enum ttu_flags flags);
 
 /*
- * Called from mm/filemap_xip.c to unmap empty zero page
+ * Used by uprobes to replace a userspace page safely
  */
 pte_t *__page_check_address(struct page *, struct mm_struct *,
 				unsigned long, spinlock_t **, int);

@@ -40,6 +40,8 @@
 unsigned int drm_debug = 0;	/* 1 to enable debug output */
 EXPORT_SYMBOL(drm_debug);
 
+bool drm_atomic = 0;
+
 MODULE_AUTHOR(CORE_AUTHOR);
 MODULE_DESCRIPTION(CORE_DESC);
 MODULE_LICENSE("GPL and additional rights");
@@ -66,7 +68,7 @@ void drm_err(const char *format, ...)
 	vaf.fmt = format;
 	vaf.va = &args;
 
-	printk(KERN_ERR "[" DRM_NAME ":%pf] *ERROR* %pV",
+	printk(KERN_ERR "[" DRM_NAME ":%ps] *ERROR* %pV",
 	       __builtin_return_address(0), &vaf);
 
 	va_end(args);
@@ -88,8 +90,6 @@ void drm_ut_debug_printk(const char *function_name, const char *format, ...)
 }
 EXPORT_SYMBOL(drm_ut_debug_printk);
 
-#define DRM_MAGIC_HASH_ORDER  4  /**< Size of key hash table. Must be power of 2. */
-
 struct drm_master *drm_master_create(struct drm_minor *minor)
 {
 	struct drm_master *master;
@@ -101,11 +101,7 @@ struct drm_master *drm_master_create(struct drm_minor *minor)
 	kref_init(&master->refcount);
 	spin_lock_init(&master->lock.spinlock);
 	init_waitqueue_head(&master->lock.lock_queue);
-	if (drm_ht_create(&master->magiclist, DRM_MAGIC_HASH_ORDER)) {
-		kfree(master);
-		return NULL;
-	}
-	INIT_LIST_HEAD(&master->magicfree);
+	idr_init(&master->magic_map);
 	master->minor = minor;
 
 	return master;
@@ -134,16 +130,10 @@ static void drm_master_destroy(struct kref *kref)
 			r_list = NULL;
 		}
 	}
-
-	if (master->unique) {
-		kfree(master->unique);
-		master->unique = NULL;
-		master->unique_len = 0;
-	}
-
-	drm_ht_remove(&master->magiclist);
-
 	mutex_unlock(&dev->struct_mutex);
+
+	idr_destroy(&master->magic_map);
+	kfree(master->unique);
 	kfree(master);
 }
 

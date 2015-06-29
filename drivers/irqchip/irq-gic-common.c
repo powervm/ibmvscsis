@@ -21,48 +21,37 @@
 
 #include "irq-gic-common.h"
 
-void gic_configure_irq(unsigned int irq, unsigned int type,
+int gic_configure_irq(unsigned int irq, unsigned int type,
 		       void __iomem *base, void (*sync_access)(void))
 {
-	u32 enablemask = 1 << (irq % 32);
-	u32 enableoff = (irq / 32) * 4;
 	u32 confmask = 0x2 << ((irq % 16) * 2);
 	u32 confoff = (irq / 16) * 4;
-	bool enabled = false;
-	u32 val;
+	u32 val, oldval;
+	int ret = 0;
 
 	/*
 	 * Read current configuration register, and insert the config
 	 * for "irq", depending on "type".
 	 */
-	val = readl_relaxed(base + GIC_DIST_CONFIG + confoff);
-	if (type == IRQ_TYPE_LEVEL_HIGH)
+	val = oldval = readl_relaxed(base + GIC_DIST_CONFIG + confoff);
+	if (type & IRQ_TYPE_LEVEL_MASK)
 		val &= ~confmask;
-	else if (type == IRQ_TYPE_EDGE_RISING)
+	else if (type & IRQ_TYPE_EDGE_BOTH)
 		val |= confmask;
 
 	/*
-	 * As recommended by the spec, disable the interrupt before changing
-	 * the configuration
-	 */
-	if (readl_relaxed(base + GIC_DIST_ENABLE_SET + enableoff) & enablemask) {
-		writel_relaxed(enablemask, base + GIC_DIST_ENABLE_CLEAR + enableoff);
-		if (sync_access)
-			sync_access();
-		enabled = true;
-	}
-
-	/*
 	 * Write back the new configuration, and possibly re-enable
-	 * the interrupt.
+	 * the interrupt. If we tried to write a new configuration and failed,
+	 * return an error.
 	 */
 	writel_relaxed(val, base + GIC_DIST_CONFIG + confoff);
-
-	if (enabled)
-		writel_relaxed(enablemask, base + GIC_DIST_ENABLE_SET + enableoff);
+	if (readl_relaxed(base + GIC_DIST_CONFIG + confoff) != val && val != oldval)
+		ret = -EINVAL;
 
 	if (sync_access)
 		sync_access();
+
+	return ret;
 }
 
 void __init gic_dist_config(void __iomem *base, int gic_irqs,

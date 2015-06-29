@@ -7,7 +7,7 @@
 #include <linux/completion.h>
 #include <linux/kthread.h>
 #include <linux/module.h>
-#include <linux/time.h>
+#include <linux/ktime.h>
 #include <asm/local.h>
 
 struct rb_page {
@@ -17,7 +17,7 @@ struct rb_page {
 };
 
 /* run time and sleep time in seconds */
-#define RUN_TIME	10
+#define RUN_TIME	10ULL
 #define SLEEP_TIME	10
 
 /* number of events for writer to wake up the reader */
@@ -32,11 +32,11 @@ static struct task_struct *producer;
 static struct task_struct *consumer;
 static unsigned long read;
 
-static int disable_reader;
+static unsigned int disable_reader;
 module_param(disable_reader, uint, 0644);
 MODULE_PARM_DESC(disable_reader, "only run producer");
 
-static int write_iteration = 50;
+static unsigned int write_iteration = 50;
 module_param(write_iteration, uint, 0644);
 MODULE_PARM_DESC(write_iteration, "# of writes between timestamp readings");
 
@@ -46,16 +46,16 @@ static int consumer_nice = MAX_NICE;
 static int producer_fifo = -1;
 static int consumer_fifo = -1;
 
-module_param(producer_nice, uint, 0644);
+module_param(producer_nice, int, 0644);
 MODULE_PARM_DESC(producer_nice, "nice prio for producer");
 
-module_param(consumer_nice, uint, 0644);
+module_param(consumer_nice, int, 0644);
 MODULE_PARM_DESC(consumer_nice, "nice prio for consumer");
 
-module_param(producer_fifo, uint, 0644);
+module_param(producer_fifo, int, 0644);
 MODULE_PARM_DESC(producer_fifo, "fifo prio for producer");
 
-module_param(consumer_fifo, uint, 0644);
+module_param(consumer_fifo, int, 0644);
 MODULE_PARM_DESC(consumer_fifo, "fifo prio for consumer");
 
 static int read_events;
@@ -212,8 +212,7 @@ static void ring_buffer_consumer(void)
 
 static void ring_buffer_producer(void)
 {
-	struct timeval start_tv;
-	struct timeval end_tv;
+	ktime_t start_time, end_time, timeout;
 	unsigned long long time;
 	unsigned long long entries;
 	unsigned long long overruns;
@@ -227,7 +226,8 @@ static void ring_buffer_producer(void)
 	 * make the system stall)
 	 */
 	trace_printk("Starting ring buffer hammer\n");
-	do_gettimeofday(&start_tv);
+	start_time = ktime_get();
+	timeout = ktime_add_ns(start_time, RUN_TIME * NSEC_PER_SEC);
 	do {
 		struct ring_buffer_event *event;
 		int *entry;
@@ -244,7 +244,7 @@ static void ring_buffer_producer(void)
 				ring_buffer_unlock_commit(buffer, event);
 			}
 		}
-		do_gettimeofday(&end_tv);
+		end_time = ktime_get();
 
 		cnt++;
 		if (consumer && !(cnt % wakeup_interval))
@@ -263,8 +263,10 @@ static void ring_buffer_producer(void)
 		if (cnt % wakeup_interval)
 			cond_resched();
 #endif
+		if (kthread_should_stop())
+			kill_test = 1;
 
-	} while (end_tv.tv_sec < (start_tv.tv_sec + RUN_TIME) && !kill_test);
+	} while (ktime_before(end_time, timeout) && !kill_test);
 	trace_printk("End ring buffer hammer\n");
 
 	if (consumer) {
@@ -280,14 +282,12 @@ static void ring_buffer_producer(void)
 		wait_for_completion(&read_done);
 	}
 
-	time = end_tv.tv_sec - start_tv.tv_sec;
-	time *= USEC_PER_SEC;
-	time += (long long)((long)end_tv.tv_usec - (long)start_tv.tv_usec);
+	time = ktime_us_delta(end_time, start_time);
 
 	entries = ring_buffer_entries(buffer);
 	overruns = ring_buffer_overruns(buffer);
 
-	if (kill_test)
+	if (kill_test && !kthread_should_stop())
 		trace_printk("ERROR!\n");
 
 	if (!disable_reader) {
@@ -381,7 +381,7 @@ static int ring_buffer_consumer_thread(void *arg)
 	}
 	__set_current_state(TASK_RUNNING);
 
-	if (kill_test)
+	if (!kthread_should_stop())
 		wait_to_die();
 
 	return 0;
@@ -401,13 +401,16 @@ static int ring_buffer_producer_thread(void *arg)
 		}
 
 		ring_buffer_producer();
+		if (kill_test)
+			goto out_kill;
 
 		trace_printk("Sleeping for 10 secs\n");
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule_timeout(HZ * SLEEP_TIME);
 	}
 
-	if (kill_test)
+out_kill:
+	if (!kthread_should_stop())
 		wait_to_die();
 
 	return 0;
@@ -452,7 +455,7 @@ static int __init ring_buffer_benchmark_init(void)
 
 	if (producer_fifo >= 0) {
 		struct sched_param param = {
-			.sched_priority = consumer_fifo
+			.sched_priority = producer_fifo
 		};
 		sched_setscheduler(producer, SCHED_FIFO, &param);
 	} else

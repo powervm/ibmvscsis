@@ -69,6 +69,7 @@
 #include <linux/miscdevice.h>
 #endif
 #include <asm/uaccess.h>
+#include <acpi/video.h>
 
 #define dprintk(fmt, ...)			\
 do {						\
@@ -1032,7 +1033,7 @@ struct sony_backlight_props {
 	u8			offset;
 	u8			maxlvl;
 };
-struct sony_backlight_props sony_bl_props;
+static struct sony_backlight_props sony_bl_props;
 
 static int sony_backlight_update_status(struct backlight_device *bd)
 {
@@ -3198,12 +3199,8 @@ static int sony_nc_add(struct acpi_device *device)
 			sony_nc_function_setup(device, sony_pf_device);
 	}
 
-	/* setup input devices and helper fifo */
-	if (acpi_video_backlight_support()) {
-		pr_info("brightness ignored, must be controlled by ACPI video driver\n");
-	} else {
+	if (acpi_video_get_backlight_type() == acpi_backlight_vendor)
 		sony_nc_backlight_setup();
-	}
 
 	/* create sony_pf sysfs attributes related to the SNC device */
 	for (item = sony_nc_values; item->name; ++item) {

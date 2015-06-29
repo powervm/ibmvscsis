@@ -18,6 +18,7 @@
 #include <linux/interrupt.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/of_graph.h>
 #include <linux/gpio.h>
 #include <linux/component.h>
 #include <linux/phy/phy.h>
@@ -27,13 +28,18 @@
 #include <drm/drmP.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
+#include <drm/drm_atomic_helper.h>
 #include <drm/drm_panel.h>
-#include <drm/bridge/ptn3460.h>
 
 #include "exynos_dp_core.h"
 
 #define ctx_from_connector(c)	container_of(c, struct exynos_dp_device, \
 					connector)
+
+static inline struct exynos_drm_crtc *dp_to_crtc(struct exynos_dp_device *dp)
+{
+	return to_exynos_crtc(dp->encoder->crtc);
+}
 
 static inline struct exynos_dp_device *
 display_to_dp(struct exynos_drm_display *d)
@@ -189,7 +195,7 @@ static int exynos_dp_read_edid(struct exynos_dp_device *dp)
 		}
 	}
 
-	dev_err(dp->dev, "EDID Read success!\n");
+	dev_dbg(dp->dev, "EDID Read success!\n");
 	return 0;
 }
 
@@ -947,10 +953,13 @@ static void exynos_dp_connector_destroy(struct drm_connector *connector)
 }
 
 static struct drm_connector_funcs exynos_dp_connector_funcs = {
-	.dpms = drm_helper_connector_dpms,
+	.dpms = drm_atomic_helper_connector_dpms,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.detect = exynos_dp_detect,
 	.destroy = exynos_dp_connector_destroy,
+	.reset = drm_atomic_helper_connector_reset,
+	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
+	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 };
 
 static int exynos_dp_get_modes(struct drm_connector *connector)
@@ -993,32 +1002,20 @@ static struct drm_connector_helper_funcs exynos_dp_connector_helper_funcs = {
 	.best_encoder = exynos_dp_best_encoder,
 };
 
-static bool find_bridge(const char *compat, struct bridge_init *bridge)
-{
-	bridge->client = NULL;
-	bridge->node = of_find_compatible_node(NULL, NULL, compat);
-	if (!bridge->node)
-		return false;
-
-	bridge->client = of_find_i2c_device_by_node(bridge->node);
-	if (!bridge->client)
-		return false;
-
-	return true;
-}
-
 /* returns the number of bridges attached */
-static int exynos_drm_attach_lcd_bridge(struct drm_device *dev,
+static int exynos_drm_attach_lcd_bridge(struct exynos_dp_device *dp,
 		struct drm_encoder *encoder)
 {
-	struct bridge_init bridge;
 	int ret;
 
-	if (find_bridge("nxp,ptn3460", &bridge)) {
-		ret = ptn3460_init(dev, encoder, bridge.client, bridge.node);
-		if (!ret)
-			return 1;
+	encoder->bridge = dp->bridge;
+	dp->bridge->encoder = encoder;
+	ret = drm_bridge_attach(encoder->dev, dp->bridge);
+	if (ret) {
+		DRM_ERROR("Failed to attach bridge to drm\n");
+		return ret;
 	}
+
 	return 0;
 }
 
@@ -1032,9 +1029,11 @@ static int exynos_dp_create_connector(struct exynos_drm_display *display,
 	dp->encoder = encoder;
 
 	/* Pre-empt DP connector creation if there's a bridge */
-	ret = exynos_drm_attach_lcd_bridge(dp->drm_dev, encoder);
-	if (ret)
-		return 0;
+	if (dp->bridge) {
+		ret = exynos_drm_attach_lcd_bridge(dp, encoder);
+		if (!ret)
+			return 0;
+	}
 
 	connector->polled = DRM_CONNECTOR_POLL_HPD;
 
@@ -1067,9 +1066,9 @@ static void exynos_dp_phy_exit(struct exynos_dp_device *dp)
 		phy_power_off(dp->phy);
 }
 
-static void exynos_dp_poweron(struct exynos_drm_display *display)
+static void exynos_dp_poweron(struct exynos_dp_device *dp)
 {
-	struct exynos_dp_device *dp = display_to_dp(display);
+	struct exynos_drm_crtc *crtc = dp_to_crtc(dp);
 
 	if (dp->dpms_mode == DRM_MODE_DPMS_ON)
 		return;
@@ -1081,16 +1080,19 @@ static void exynos_dp_poweron(struct exynos_drm_display *display)
 		}
 	}
 
+	if (crtc->ops->clock_enable)
+		crtc->ops->clock_enable(dp_to_crtc(dp), true);
+
 	clk_prepare_enable(dp->clock);
 	exynos_dp_phy_init(dp);
 	exynos_dp_init_dp(dp);
 	enable_irq(dp->irq);
-	exynos_dp_commit(display);
+	exynos_dp_commit(&dp->display);
 }
 
-static void exynos_dp_poweroff(struct exynos_drm_display *display)
+static void exynos_dp_poweroff(struct exynos_dp_device *dp)
 {
-	struct exynos_dp_device *dp = display_to_dp(display);
+	struct exynos_drm_crtc *crtc = dp_to_crtc(dp);
 
 	if (dp->dpms_mode != DRM_MODE_DPMS_ON)
 		return;
@@ -1107,6 +1109,9 @@ static void exynos_dp_poweroff(struct exynos_drm_display *display)
 	exynos_dp_phy_exit(dp);
 	clk_disable_unprepare(dp->clock);
 
+	if (crtc->ops->clock_enable)
+		crtc->ops->clock_enable(dp_to_crtc(dp), false);
+
 	if (dp->panel) {
 		if (drm_panel_unprepare(dp->panel))
 			DRM_ERROR("failed to turnoff the panel\n");
@@ -1119,12 +1124,12 @@ static void exynos_dp_dpms(struct exynos_drm_display *display, int mode)
 
 	switch (mode) {
 	case DRM_MODE_DPMS_ON:
-		exynos_dp_poweron(display);
+		exynos_dp_poweron(dp);
 		break;
 	case DRM_MODE_DPMS_STANDBY:
 	case DRM_MODE_DPMS_SUSPEND:
 	case DRM_MODE_DPMS_OFF:
-		exynos_dp_poweroff(display);
+		exynos_dp_poweroff(dp);
 		break;
 	default:
 		break;
@@ -1241,7 +1246,7 @@ static int exynos_dp_bind(struct device *dev, struct device *master, void *data)
 		}
 	}
 
-	if (!dp->panel) {
+	if (!dp->panel && !dp->bridge) {
 		ret = exynos_dp_dt_parse_panel(dp);
 		if (ret)
 			return ret;
@@ -1325,9 +1330,8 @@ static const struct component_ops exynos_dp_ops = {
 static int exynos_dp_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct device_node *panel_node;
+	struct device_node *panel_node, *bridge_node, *endpoint;
 	struct exynos_dp_device *dp;
-	int ret;
 
 	dp = devm_kzalloc(&pdev->dev, sizeof(struct exynos_dp_device),
 				GFP_KERNEL);
@@ -1338,11 +1342,6 @@ static int exynos_dp_probe(struct platform_device *pdev)
 	dp->display.ops = &exynos_dp_display_ops;
 	platform_set_drvdata(pdev, dp);
 
-	ret = exynos_drm_component_add(&pdev->dev, EXYNOS_DEVICE_TYPE_CONNECTOR,
-					dp->display.type);
-	if (ret)
-		return ret;
-
 	panel_node = of_parse_phandle(dev->of_node, "panel", 0);
 	if (panel_node) {
 		dp->panel = of_drm_find_panel(panel_node);
@@ -1351,18 +1350,24 @@ static int exynos_dp_probe(struct platform_device *pdev)
 			return -EPROBE_DEFER;
 	}
 
-	ret = component_add(&pdev->dev, &exynos_dp_ops);
-	if (ret)
-		exynos_drm_component_del(&pdev->dev,
-						EXYNOS_DEVICE_TYPE_CONNECTOR);
+	endpoint = of_graph_get_next_endpoint(dev->of_node, NULL);
+	if (endpoint) {
+		bridge_node = of_graph_get_remote_port_parent(endpoint);
+		if (bridge_node) {
+			dp->bridge = of_drm_find_bridge(bridge_node);
+			of_node_put(bridge_node);
+			if (!dp->bridge)
+				return -EPROBE_DEFER;
+		} else
+			return -EPROBE_DEFER;
+	}
 
-	return ret;
+	return component_add(&pdev->dev, &exynos_dp_ops);
 }
 
 static int exynos_dp_remove(struct platform_device *pdev)
 {
 	component_del(&pdev->dev, &exynos_dp_ops);
-	exynos_drm_component_del(&pdev->dev, EXYNOS_DEVICE_TYPE_CONNECTOR);
 
 	return 0;
 }

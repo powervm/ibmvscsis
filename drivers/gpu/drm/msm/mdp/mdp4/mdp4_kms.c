@@ -119,10 +119,50 @@ static int mdp4_hw_init(struct msm_kms *kms)
 	if (mdp4_kms->rev > 1)
 		mdp4_write(mdp4_kms, REG_MDP4_RESET_STATUS, 1);
 
+	dev->mode_config.allow_fb_modifiers = true;
+
 out:
 	pm_runtime_put_sync(dev->dev);
 
 	return ret;
+}
+
+static void mdp4_prepare_commit(struct msm_kms *kms, struct drm_atomic_state *state)
+{
+	struct mdp4_kms *mdp4_kms = to_mdp4_kms(to_mdp_kms(kms));
+	int i, ncrtcs = state->dev->mode_config.num_crtc;
+
+	mdp4_enable(mdp4_kms);
+
+	/* see 119ecb7fd */
+	for (i = 0; i < ncrtcs; i++) {
+		struct drm_crtc *crtc = state->crtcs[i];
+		if (!crtc)
+			continue;
+		drm_crtc_vblank_get(crtc);
+	}
+}
+
+static void mdp4_complete_commit(struct msm_kms *kms, struct drm_atomic_state *state)
+{
+	struct mdp4_kms *mdp4_kms = to_mdp4_kms(to_mdp_kms(kms));
+	int i, ncrtcs = state->dev->mode_config.num_crtc;
+
+	/* see 119ecb7fd */
+	for (i = 0; i < ncrtcs; i++) {
+		struct drm_crtc *crtc = state->crtcs[i];
+		if (!crtc)
+			continue;
+		drm_crtc_vblank_put(crtc);
+	}
+
+	mdp4_disable(mdp4_kms);
+}
+
+static void mdp4_wait_for_crtc_commit_done(struct msm_kms *kms,
+						struct drm_crtc *crtc)
+{
+	mdp4_crtc_wait_for_commit_done(crtc);
 }
 
 static long mdp4_round_pixclk(struct msm_kms *kms, unsigned long rate,
@@ -161,6 +201,9 @@ static const struct mdp_kms_funcs kms_funcs = {
 		.irq             = mdp4_irq,
 		.enable_vblank   = mdp4_enable_vblank,
 		.disable_vblank  = mdp4_disable_vblank,
+		.prepare_commit  = mdp4_prepare_commit,
+		.complete_commit = mdp4_complete_commit,
+		.wait_for_crtc_commit_done = mdp4_wait_for_crtc_commit_done,
 		.get_format      = mdp_get_format,
 		.round_pixclk    = mdp4_round_pixclk,
 		.preclose        = mdp4_preclose,

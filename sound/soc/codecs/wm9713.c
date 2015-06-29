@@ -255,7 +255,7 @@ static int wm9713_hp_mixer_put(struct snd_kcontrol *kcontrol,
 	struct snd_soc_dapm_context *dapm = snd_soc_dapm_kcontrol_dapm(kcontrol);
 	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(dapm);
 	struct wm9713_priv *wm9713 = snd_soc_codec_get_drvdata(codec);
-	unsigned int val = ucontrol->value.enumerated.item[0];
+	unsigned int val = ucontrol->value.integer.value[0];
 	struct soc_mixer_control *mc =
 		(struct soc_mixer_control *)kcontrol->private_value;
 	unsigned int mixer, mask, shift, old;
@@ -268,7 +268,7 @@ static int wm9713_hp_mixer_put(struct snd_kcontrol *kcontrol,
 
 	mutex_lock(&wm9713->lock);
 	old = wm9713->hp_mixer[mixer];
-	if (ucontrol->value.enumerated.item[0])
+	if (ucontrol->value.integer.value[0])
 		wm9713->hp_mixer[mixer] |= mask;
 	else
 		wm9713->hp_mixer[mixer] &= ~mask;
@@ -306,7 +306,7 @@ static int wm9713_hp_mixer_get(struct snd_kcontrol *kcontrol,
 	mixer = mc->shift >> 8;
 	shift = mc->shift & 0xff;
 
-	ucontrol->value.enumerated.item[0] =
+	ucontrol->value.integer.value[0] =
 		(wm9713->hp_mixer[mixer] >> shift) & 1;
 
 	return 0;
@@ -1054,8 +1054,8 @@ static int ac97_aux_prepare(struct snd_pcm_substream *substream,
 			  SNDRV_PCM_RATE_48000)
 
 #define WM9713_PCM_FORMATS \
-	(SNDRV_PCM_FORMAT_S16_LE | SNDRV_PCM_FORMAT_S20_3LE | \
-	 SNDRV_PCM_FORMAT_S24_LE)
+	(SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE | \
+	 SNDRV_PCM_FMTBIT_S24_LE)
 
 static const struct snd_soc_dai_ops wm9713_dai_ops_hifi = {
 	.prepare	= ac97_hifi_prepare,
@@ -1171,7 +1171,6 @@ static int wm9713_set_bias_level(struct snd_soc_codec *codec,
 		ac97_write(codec, AC97_POWERDOWN, 0xffff);
 		break;
 	}
-	codec->dapm.bias_level = level;
 	return 0;
 }
 
@@ -1201,7 +1200,7 @@ static int wm9713_soc_resume(struct snd_soc_codec *codec)
 	if (ret < 0)
 		return ret;
 
-	wm9713_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
+	snd_soc_codec_force_bias_level(codec, SND_SOC_BIAS_STANDBY);
 
 	/* do we need to re-start the PLL ? */
 	if (wm9713->pll_in)

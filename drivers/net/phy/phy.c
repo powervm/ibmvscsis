@@ -58,6 +58,31 @@ static const char *phy_speed_to_str(int speed)
 	}
 }
 
+#define PHY_STATE_STR(_state)			\
+	case PHY_##_state:			\
+		return __stringify(_state);	\
+
+static const char *phy_state_to_str(enum phy_state st)
+{
+	switch (st) {
+	PHY_STATE_STR(DOWN)
+	PHY_STATE_STR(STARTING)
+	PHY_STATE_STR(READY)
+	PHY_STATE_STR(PENDING)
+	PHY_STATE_STR(UP)
+	PHY_STATE_STR(AN)
+	PHY_STATE_STR(RUNNING)
+	PHY_STATE_STR(NOLINK)
+	PHY_STATE_STR(FORCING)
+	PHY_STATE_STR(CHANGELINK)
+	PHY_STATE_STR(HALTED)
+	PHY_STATE_STR(RESUMING)
+	}
+
+	return NULL;
+}
+
+
 /**
  * phy_print_status - Convenience function to print out the current phy status
  * @phydev: the phy_device struct
@@ -233,6 +258,25 @@ static inline unsigned int phy_find_valid(unsigned int idx, u32 features)
 		idx++;
 
 	return idx < MAX_NUM_SETTINGS ? idx : MAX_NUM_SETTINGS - 1;
+}
+
+/**
+ * phy_check_valid - check if there is a valid PHY setting which matches
+ *		     speed, duplex, and feature mask
+ * @speed: speed to match
+ * @duplex: duplex to match
+ * @features: A mask of the valid settings
+ *
+ * Description: Returns true if there is a valid setting, false otherwise.
+ */
+static inline bool phy_check_valid(int speed, int duplex, u32 features)
+{
+	unsigned int idx;
+
+	idx = phy_find_valid(phy_find_setting(speed, duplex), features);
+
+	return settings[idx].speed == speed && settings[idx].duplex == duplex &&
+		(settings[idx].setting & features);
 }
 
 /**
@@ -723,6 +767,9 @@ EXPORT_SYMBOL(phy_stop);
  */
 void phy_start(struct phy_device *phydev)
 {
+	bool do_resume = false;
+	int err = 0;
+
 	mutex_lock(&phydev->lock);
 
 	switch (phydev->state) {
@@ -733,11 +780,22 @@ void phy_start(struct phy_device *phydev)
 		phydev->state = PHY_UP;
 		break;
 	case PHY_HALTED:
+		/* make sure interrupts are re-enabled for the PHY */
+		err = phy_enable_interrupts(phydev);
+		if (err < 0)
+			break;
+
 		phydev->state = PHY_RESUMING;
+		do_resume = true;
+		break;
 	default:
 		break;
 	}
 	mutex_unlock(&phydev->lock);
+
+	/* if phy was suspended, bring the physical link up again */
+	if (do_resume)
+		phy_resume(phydev);
 }
 EXPORT_SYMBOL(phy_start);
 
@@ -750,10 +808,13 @@ void phy_state_machine(struct work_struct *work)
 	struct delayed_work *dwork = to_delayed_work(work);
 	struct phy_device *phydev =
 			container_of(dwork, struct phy_device, state_queue);
-	bool needs_aneg = false, do_suspend = false, do_resume = false;
+	bool needs_aneg = false, do_suspend = false;
+	enum phy_state old_state;
 	int err = 0;
 
 	mutex_lock(&phydev->lock);
+
+	old_state = phydev->state;
 
 	if (phydev->drv->link_change_notify)
 		phydev->drv->link_change_notify(phydev);
@@ -869,14 +930,6 @@ void phy_state_machine(struct work_struct *work)
 		}
 		break;
 	case PHY_RESUMING:
-		err = phy_clear_interrupt(phydev);
-		if (err)
-			break;
-
-		err = phy_config_interrupt(phydev, PHY_INTERRUPT_ENABLED);
-		if (err)
-			break;
-
 		if (AUTONEG_ENABLE == phydev->autoneg) {
 			err = phy_aneg_done(phydev);
 			if (err < 0)
@@ -914,7 +967,6 @@ void phy_state_machine(struct work_struct *work)
 			}
 			phydev->adjust_link(phydev->attached_dev);
 		}
-		do_resume = true;
 		break;
 	}
 
@@ -924,11 +976,12 @@ void phy_state_machine(struct work_struct *work)
 		err = phy_start_aneg(phydev);
 	else if (do_suspend)
 		phy_suspend(phydev);
-	else if (do_resume)
-		phy_resume(phydev);
 
 	if (err < 0)
 		phy_error(phydev);
+
+	dev_dbg(&phydev->dev, "PHY state change %s -> %s\n",
+		phy_state_to_str(old_state), phy_state_to_str(phydev->state));
 
 	queue_delayed_work(system_power_efficient_wq, &phydev->state_queue,
 			   PHY_STATE_TIME * HZ);
@@ -1034,18 +1087,17 @@ int phy_init_eee(struct phy_device *phydev, bool clk_stop_enable)
 {
 	/* According to 802.3az,the EEE is supported only in full duplex-mode.
 	 * Also EEE feature is active when core is operating with MII, GMII
-	 * or RGMII. Internal PHYs are also allowed to proceed and should
-	 * return an error if they do not support EEE.
+	 * or RGMII (all kinds). Internal PHYs are also allowed to proceed and
+	 * should return an error if they do not support EEE.
 	 */
 	if ((phydev->duplex == DUPLEX_FULL) &&
 	    ((phydev->interface == PHY_INTERFACE_MODE_MII) ||
 	    (phydev->interface == PHY_INTERFACE_MODE_GMII) ||
-	    (phydev->interface == PHY_INTERFACE_MODE_RGMII) ||
+	     phy_interface_is_rgmii(phydev) ||
 	     phy_is_internal(phydev))) {
 		int eee_lp, eee_cap, eee_adv;
 		u32 lp, cap, adv;
 		int status;
-		unsigned int idx;
 
 		/* Read phy status to properly get the right settings */
 		status = phy_read_status(phydev);
@@ -1077,8 +1129,7 @@ int phy_init_eee(struct phy_device *phydev, bool clk_stop_enable)
 
 		adv = mmd_eee_adv_to_ethtool_adv_t(eee_adv);
 		lp = mmd_eee_adv_to_ethtool_adv_t(eee_lp);
-		idx = phy_find_setting(phydev->speed, phydev->duplex);
-		if (!(lp & adv & settings[idx].setting))
+		if (!phy_check_valid(phydev->speed, phydev->duplex, lp & adv))
 			goto eee_exit_err;
 
 		if (clk_stop_enable) {

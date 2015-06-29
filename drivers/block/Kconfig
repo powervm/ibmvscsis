@@ -310,12 +310,6 @@ config BLK_DEV_NBD
 
 	  If unsure, say N.
 
-config NVME_FABRICS
-	tristate "NVMe Fabrics Project; default to y for compile-sake"
-	default y
-	---help---
-	  TODO: FILL ME OUT...
-
 config BLK_DEV_NVME
 	tristate "NVM Express block device"
 	depends on PCI
@@ -326,6 +320,8 @@ config BLK_DEV_NVME
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called nvme.
+
+source "drivers/block/nvme-fabrics/Kconfig"
 
 config BLK_DEV_SKD
 	tristate "STEC S1120 Block Driver"
@@ -399,14 +395,15 @@ config BLK_DEV_RAM_SIZE
 	  The default value is 4096 kilobytes. Only change this if you know
 	  what you are doing.
 
-config BLK_DEV_XIP
-	bool "Support XIP filesystems on RAM block device"
-	depends on BLK_DEV_RAM
+config BLK_DEV_RAM_DAX
+	bool "Support Direct Access (DAX) to RAM block devices"
+	depends on BLK_DEV_RAM && FS_DAX
 	default n
 	help
-	  Support XIP filesystems (such as ext2 with XIP support on) on
-	  top of block ram device. This will slightly enlarge the kernel, and
-	  will prevent RAM block device backing store memory from being
+	  Support filesystems using DAX to access RAM block devices.  This
+	  avoids double-buffering data in the page cache before copying it
+	  to the block device.  Answering Y will slightly enlarge the kernel,
+	  and will prevent RAM block device backing store memory from being
 	  allocated from highmem (only a problem for highmem systems).
 
 config CDROM_PKTCDVD

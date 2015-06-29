@@ -42,7 +42,6 @@
 MODULE_DESCRIPTION("V4L2 PCI Skeleton Driver");
 MODULE_AUTHOR("Hans Verkuil");
 MODULE_LICENSE("GPL v2");
-MODULE_DEVICE_TABLE(pci, skeleton_pci_tbl);
 
 /**
  * struct skeleton - All internal data for one instance of device
@@ -95,6 +94,7 @@ static const struct pci_device_id skeleton_pci_tbl[] = {
 	/* { PCI_DEVICE(PCI_VENDOR_ID_, PCI_DEVICE_ID_) }, */
 	{ 0, }
 };
+MODULE_DEVICE_TABLE(pci, skeleton_pci_tbl);
 
 /*
  * HDTV: this structure has the capabilities of the HDTV receiver.
@@ -406,9 +406,7 @@ static int skeleton_enum_fmt_vid_cap(struct file *file, void *priv,
 	if (f->index != 0)
 		return -EINVAL;
 
-	strlcpy(f->description, "4:2:2, packed, YUYV", sizeof(f->description));
 	f->pixelformat = V4L2_PIX_FMT_YUYV;
-	f->flags = 0;
 	return 0;
 }
 

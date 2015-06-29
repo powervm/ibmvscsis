@@ -329,12 +329,12 @@ static int mpc8xxx_gpio_irq_map(struct irq_domain *h, unsigned int irq,
 	return 0;
 }
 
-static struct irq_domain_ops mpc8xxx_gpio_irq_ops = {
+static const struct irq_domain_ops mpc8xxx_gpio_irq_ops = {
 	.map	= mpc8xxx_gpio_irq_map,
 	.xlate	= irq_domain_xlate_twocell,
 };
 
-static struct of_device_id mpc8xxx_gpio_ids[] __initdata = {
+static struct of_device_id mpc8xxx_gpio_ids[] = {
 	{ .compatible = "fsl,mpc8349-gpio", },
 	{ .compatible = "fsl,mpc8572-gpio", },
 	{ .compatible = "fsl,mpc8610-gpio", },

@@ -1,5 +1,6 @@
 Documentation/
 .config
+.config_old
 .missing-syscalls.d
 .tmp_*
 .version

@@ -17,6 +17,7 @@
 #include <drm/drmP.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_crtc_helper.h>
+#include <drm/drm_atomic_helper.h>
 
 #include "regs-hdmi.h"
 
@@ -1050,10 +1051,13 @@ static void hdmi_connector_destroy(struct drm_connector *connector)
 }
 
 static struct drm_connector_funcs hdmi_connector_funcs = {
-	.dpms = drm_helper_connector_dpms,
+	.dpms = drm_atomic_helper_connector_dpms,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.detect = hdmi_detect,
 	.destroy = hdmi_connector_destroy,
+	.reset = drm_atomic_helper_connector_reset,
+	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
+	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 };
 
 static int hdmi_get_modes(struct drm_connector *connector)
@@ -2007,7 +2011,7 @@ static void hdmi_mode_set(struct exynos_drm_display *display,
 	DRM_DEBUG_KMS("xres=%d, yres=%d, refresh=%d, intl=%s\n",
 		m->hdisplay, m->vdisplay,
 		m->vrefresh, (m->flags & DRM_MODE_FLAG_INTERLACE) ?
-		"INTERLACED" : "PROGERESSIVE");
+		"INTERLACED" : "PROGRESSIVE");
 
 	/* preserve mode information for later use. */
 	drm_mode_copy(&hdata->current_mode, mode);
@@ -2032,9 +2036,8 @@ static void hdmi_commit(struct exynos_drm_display *display)
 	hdmi_conf_apply(hdata);
 }
 
-static void hdmi_poweron(struct exynos_drm_display *display)
+static void hdmi_poweron(struct hdmi_context *hdata)
 {
-	struct hdmi_context *hdata = display_to_hdmi(display);
 	struct hdmi_resources *res = &hdata->res;
 
 	mutex_lock(&hdata->hdmi_mutex);
@@ -2060,12 +2063,11 @@ static void hdmi_poweron(struct exynos_drm_display *display)
 	clk_prepare_enable(res->sclk_hdmi);
 
 	hdmiphy_poweron(hdata);
-	hdmi_commit(display);
+	hdmi_commit(&hdata->display);
 }
 
-static void hdmi_poweroff(struct exynos_drm_display *display)
+static void hdmi_poweroff(struct hdmi_context *hdata)
 {
-	struct hdmi_context *hdata = display_to_hdmi(display);
 	struct hdmi_resources *res = &hdata->res;
 
 	mutex_lock(&hdata->hdmi_mutex);
@@ -2103,13 +2105,13 @@ static void hdmi_dpms(struct exynos_drm_display *display, int mode)
 	struct hdmi_context *hdata = display_to_hdmi(display);
 	struct drm_encoder *encoder = hdata->encoder;
 	struct drm_crtc *crtc = encoder->crtc;
-	struct drm_crtc_helper_funcs *funcs = NULL;
+	const struct drm_crtc_helper_funcs *funcs = NULL;
 
 	DRM_DEBUG_KMS("mode %d\n", mode);
 
 	switch (mode) {
 	case DRM_MODE_DPMS_ON:
-		hdmi_poweron(display);
+		hdmi_poweron(hdata);
 		break;
 	case DRM_MODE_DPMS_STANDBY:
 	case DRM_MODE_DPMS_SUSPEND:
@@ -2125,10 +2127,10 @@ static void hdmi_dpms(struct exynos_drm_display *display, int mode)
 		 */
 		if (crtc)
 			funcs = crtc->helper_private;
-		if (funcs && funcs->dpms)
-			(*funcs->dpms)(crtc, mode);
+		if (funcs && funcs->disable)
+			(*funcs->disable)(crtc);
 
-		hdmi_poweroff(display);
+		hdmi_poweroff(hdata);
 		break;
 	default:
 		DRM_DEBUG_KMS("unknown dpms mode: %d\n", mode);
@@ -2358,20 +2360,13 @@ static int hdmi_probe(struct platform_device *pdev)
 	hdata->display.type = EXYNOS_DISPLAY_TYPE_HDMI;
 	hdata->display.ops = &hdmi_display_ops;
 
-	ret = exynos_drm_component_add(&pdev->dev, EXYNOS_DEVICE_TYPE_CONNECTOR,
-					hdata->display.type);
-	if (ret)
-		return ret;
-
 	mutex_init(&hdata->hdmi_mutex);
 
 	platform_set_drvdata(pdev, hdata);
 
 	match = of_match_node(hdmi_match_types, dev->of_node);
-	if (!match) {
-		ret = -ENODEV;
-		goto err_del_component;
-	}
+	if (!match)
+		return -ENODEV;
 
 	drv_data = (struct hdmi_driver_data *)match->data;
 	hdata->type = drv_data->type;
@@ -2391,13 +2386,13 @@ static int hdmi_probe(struct platform_device *pdev)
 	hdata->regs = devm_ioremap_resource(dev, res);
 	if (IS_ERR(hdata->regs)) {
 		ret = PTR_ERR(hdata->regs);
-		goto err_del_component;
+		return ret;
 	}
 
 	ret = devm_gpio_request(dev, hdata->hpd_gpio, "HPD");
 	if (ret) {
 		DRM_ERROR("failed to request HPD gpio\n");
-		goto err_del_component;
+		return ret;
 	}
 
 	ddc_node = hdmi_legacy_ddc_dt_binding(dev);
@@ -2408,8 +2403,7 @@ static int hdmi_probe(struct platform_device *pdev)
 	ddc_node = of_parse_phandle(dev->of_node, "ddc", 0);
 	if (!ddc_node) {
 		DRM_ERROR("Failed to find ddc node in device tree\n");
-		ret = -ENODEV;
-		goto err_del_component;
+		return -ENODEV;
 	}
 
 out_get_ddc_adpt:
@@ -2493,9 +2487,6 @@ err_hdmiphy:
 err_ddc:
 	put_device(&hdata->ddc_adpt->dev);
 
-err_del_component:
-	exynos_drm_component_del(&pdev->dev, EXYNOS_DEVICE_TYPE_CONNECTOR);
-
 	return ret;
 }
 
@@ -2515,7 +2506,6 @@ static int hdmi_remove(struct platform_device *pdev)
 	pm_runtime_disable(&pdev->dev);
 	component_del(&pdev->dev, &hdmi_component_ops);
 
-	exynos_drm_component_del(&pdev->dev, EXYNOS_DEVICE_TYPE_CONNECTOR);
 	return 0;
 }
 

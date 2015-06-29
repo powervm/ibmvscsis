@@ -493,6 +493,11 @@ static int omap2430_musb_exit(struct musb *musb)
 }
 
 static const struct musb_platform_ops omap2430_ops = {
+	.quirks		= MUSB_DMA_INVENTRA,
+#ifdef CONFIG_USB_INVENTRA_DMA
+	.dma_init	= musbhs_dma_controller_create,
+	.dma_exit	= musbhs_dma_controller_destroy,
+#endif
 	.init		= omap2430_musb_init,
 	.exit		= omap2430_musb_exit,
 
@@ -516,7 +521,7 @@ static int omap2430_probe(struct platform_device *pdev)
 	struct omap2430_glue		*glue;
 	struct device_node		*np = pdev->dev.of_node;
 	struct musb_hdrc_config		*config;
-	int				ret = -ENOMEM;
+	int				ret = -ENOMEM, val;
 
 	glue = devm_kzalloc(&pdev->dev, sizeof(*glue), GFP_KERNEL);
 	if (!glue)
@@ -559,7 +564,10 @@ static int omap2430_probe(struct platform_device *pdev)
 		of_property_read_u32(np, "num-eps", (u32 *)&config->num_eps);
 		of_property_read_u32(np, "ram-bits", (u32 *)&config->ram_bits);
 		of_property_read_u32(np, "power", (u32 *)&pdata->power);
-		config->multipoint = of_property_read_bool(np, "multipoint");
+
+		ret = of_property_read_u32(np, "multipoint", &val);
+		if (!ret && val)
+			config->multipoint = true;
 
 		pdata->board_data	= data;
 		pdata->config		= config;

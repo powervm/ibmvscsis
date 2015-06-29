@@ -157,7 +157,7 @@ config IPVLAN
       making it transparent to the connected L2 switch.
 
       Ipvlan devices can be added using the "ip" command from the
-      iproute2 package starting with the iproute2-X.Y.ZZ release:
+      iproute2 package starting with the iproute2-3.19 release:
 
       "ip link add link <main-dev> [ NAME ] type ipvlan"
 
@@ -178,6 +178,20 @@ config VXLAN
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called vxlan.
+
+config GENEVE
+       tristate "Generic Network Virtualization Encapsulation netdev"
+       depends on INET && GENEVE_CORE
+       select NET_IP_TUNNEL
+       ---help---
+	  This allows one to create geneve virtual interfaces that provide
+	  Layer 2 Networks over Layer 3 Networks. GENEVE is often used
+	  to tunnel virtual network infrastructure in virtualized environments.
+	  For more information see:
+	    http://tools.ietf.org/html/draft-gross-geneve-02
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called geneve.
 
 config NETCONSOLE
 	tristate "Network console logging support"

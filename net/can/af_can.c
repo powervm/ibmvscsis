@@ -179,7 +179,7 @@ static int can_create(struct net *net, struct socket *sock, int protocol,
 
 	sock->ops = cp->ops;
 
-	sk = sk_alloc(net, PF_CAN, GFP_KERNEL, cp->prot);
+	sk = sk_alloc(net, PF_CAN, GFP_KERNEL, cp->prot, kern);
 	if (!sk) {
 		err = -ENOMEM;
 		goto errout;
@@ -259,6 +259,9 @@ int can_send(struct sk_buff *skb, int loop)
 		goto inval_skb;
 	}
 
+	skb->ip_summed = CHECKSUM_UNNECESSARY;
+
+	skb_reset_mac_header(skb);
 	skb_reset_network_header(skb);
 	skb_reset_transport_header(skb);
 
@@ -307,8 +310,12 @@ int can_send(struct sk_buff *skb, int loop)
 		return err;
 	}
 
-	if (newskb)
+	if (newskb) {
+		if (!(newskb->tstamp.tv64))
+			__net_timestamp(newskb);
+
 		netif_rx_ni(newskb);
+	}
 
 	/* update statistics */
 	can_stats.tx_frames++;

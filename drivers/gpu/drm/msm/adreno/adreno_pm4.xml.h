@@ -12,11 +12,11 @@ The rules-ng-ng source files this header was generated from are:
 - /home/robclark/src/freedreno/envytools/rnndb/freedreno_copyright.xml  (   1453 bytes, from 2013-03-31 16:51:27)
 - /home/robclark/src/freedreno/envytools/rnndb/adreno/a2xx.xml          (  32901 bytes, from 2014-06-02 15:21:30)
 - /home/robclark/src/freedreno/envytools/rnndb/adreno/adreno_common.xml (  10551 bytes, from 2014-11-13 22:44:30)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/adreno_pm4.xml    (  15053 bytes, from 2014-11-09 15:45:47)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/a3xx.xml          (  63169 bytes, from 2014-11-13 22:44:18)
-- /home/robclark/src/freedreno/envytools/rnndb/adreno/a4xx.xml          (  49097 bytes, from 2014-11-14 15:38:00)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/adreno_pm4.xml    (  14895 bytes, from 2015-04-19 15:23:28)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/a3xx.xml          (  66709 bytes, from 2015-04-12 18:16:35)
+- /home/robclark/src/freedreno/envytools/rnndb/adreno/a4xx.xml          (  60633 bytes, from 2015-05-20 14:48:19)
 
-Copyright (C) 2013-2014 by the following authors:
+Copyright (C) 2013-2015 by the following authors:
 - Rob Clark <robdclark@gmail.com> (robclark)
 
 Permission is hereby granted, free of charge, to any person obtaining
@@ -76,16 +76,11 @@ enum pc_di_primtype {
 	DI_PT_LINELOOP = 7,
 	DI_PT_RECTLIST = 8,
 	DI_PT_POINTLIST_A3XX = 9,
-	DI_PT_QUADLIST = 13,
-	DI_PT_QUADSTRIP = 14,
-	DI_PT_POLYGON = 15,
-	DI_PT_2D_COPY_RECT_LIST_V0 = 16,
-	DI_PT_2D_COPY_RECT_LIST_V1 = 17,
-	DI_PT_2D_COPY_RECT_LIST_V2 = 18,
-	DI_PT_2D_COPY_RECT_LIST_V3 = 19,
-	DI_PT_2D_FILL_RECT_LIST = 20,
-	DI_PT_2D_LINE_STRIP = 21,
-	DI_PT_2D_TRI_STRIP = 22,
+	DI_PT_LINE_ADJ = 10,
+	DI_PT_LINESTRIP_ADJ = 11,
+	DI_PT_TRI_ADJ = 12,
+	DI_PT_TRISTRIP_ADJ = 13,
+	DI_PT_PATCHES = 34,
 };
 
 enum pc_di_src_sel {
@@ -172,7 +167,9 @@ enum adreno_pm4_type3_packets {
 	CP_DRAW_INDIRECT = 40,
 	CP_DRAW_INDX_INDIRECT = 41,
 	CP_DRAW_AUTO = 36,
+	CP_UNKNOWN_19 = 25,
 	CP_UNKNOWN_1A = 26,
+	CP_UNKNOWN_4E = 78,
 	CP_WIDE_REG_WRITE = 116,
 	IN_IB_PREFETCH_END = 23,
 	IN_SUBBLK_PREFETCH = 31,
@@ -190,6 +187,7 @@ enum adreno_state_block {
 	SB_FRAG_TEX = 2,
 	SB_FRAG_MIPADDR = 3,
 	SB_VERT_SHADER = 4,
+	SB_GEOM_SHADER = 5,
 	SB_FRAG_SHADER = 6,
 };
 
@@ -201,6 +199,12 @@ enum adreno_state_type {
 enum adreno_state_src {
 	SS_DIRECT = 0,
 	SS_INDIRECT = 4,
+};
+
+enum a4xx_index_size {
+	INDEX4_SIZE_8_BIT = 0,
+	INDEX4_SIZE_16_BIT = 1,
+	INDEX4_SIZE_32_BIT = 2,
 };
 
 #define REG_CP_LOAD_STATE_0					0x00000000
@@ -374,29 +378,27 @@ static inline uint32_t CP_DRAW_INDX_OFFSET_0_SOURCE_SELECT(enum pc_di_src_sel va
 {
 	return ((val) << CP_DRAW_INDX_OFFSET_0_SOURCE_SELECT__SHIFT) & CP_DRAW_INDX_OFFSET_0_SOURCE_SELECT__MASK;
 }
-#define CP_DRAW_INDX_OFFSET_0_VIS_CULL__MASK			0x00000700
-#define CP_DRAW_INDX_OFFSET_0_VIS_CULL__SHIFT			8
-static inline uint32_t CP_DRAW_INDX_OFFSET_0_VIS_CULL(enum pc_di_vis_cull_mode val)
-{
-	return ((val) << CP_DRAW_INDX_OFFSET_0_VIS_CULL__SHIFT) & CP_DRAW_INDX_OFFSET_0_VIS_CULL__MASK;
-}
-#define CP_DRAW_INDX_OFFSET_0_INDEX_SIZE__MASK			0x00000800
-#define CP_DRAW_INDX_OFFSET_0_INDEX_SIZE__SHIFT			11
-static inline uint32_t CP_DRAW_INDX_OFFSET_0_INDEX_SIZE(enum pc_di_index_size val)
+#define CP_DRAW_INDX_OFFSET_0_TESSELLATE			0x00000100
+#define CP_DRAW_INDX_OFFSET_0_INDEX_SIZE__MASK			0x00000c00
+#define CP_DRAW_INDX_OFFSET_0_INDEX_SIZE__SHIFT			10
+static inline uint32_t CP_DRAW_INDX_OFFSET_0_INDEX_SIZE(enum a4xx_index_size val)
 {
 	return ((val) << CP_DRAW_INDX_OFFSET_0_INDEX_SIZE__SHIFT) & CP_DRAW_INDX_OFFSET_0_INDEX_SIZE__MASK;
 }
-#define CP_DRAW_INDX_OFFSET_0_NOT_EOP				0x00001000
-#define CP_DRAW_INDX_OFFSET_0_SMALL_INDEX			0x00002000
-#define CP_DRAW_INDX_OFFSET_0_PRE_DRAW_INITIATOR_ENABLE		0x00004000
-#define CP_DRAW_INDX_OFFSET_0_NUM_INSTANCES__MASK		0xffff0000
-#define CP_DRAW_INDX_OFFSET_0_NUM_INSTANCES__SHIFT		16
-static inline uint32_t CP_DRAW_INDX_OFFSET_0_NUM_INSTANCES(uint32_t val)
+#define CP_DRAW_INDX_OFFSET_0_TESS_MODE__MASK			0x01f00000
+#define CP_DRAW_INDX_OFFSET_0_TESS_MODE__SHIFT			20
+static inline uint32_t CP_DRAW_INDX_OFFSET_0_TESS_MODE(uint32_t val)
 {
-	return ((val) << CP_DRAW_INDX_OFFSET_0_NUM_INSTANCES__SHIFT) & CP_DRAW_INDX_OFFSET_0_NUM_INSTANCES__MASK;
+	return ((val) << CP_DRAW_INDX_OFFSET_0_TESS_MODE__SHIFT) & CP_DRAW_INDX_OFFSET_0_TESS_MODE__MASK;
 }
 
 #define REG_CP_DRAW_INDX_OFFSET_1				0x00000001
+#define CP_DRAW_INDX_OFFSET_1_NUM_INSTANCES__MASK		0xffffffff
+#define CP_DRAW_INDX_OFFSET_1_NUM_INSTANCES__SHIFT		0
+static inline uint32_t CP_DRAW_INDX_OFFSET_1_NUM_INSTANCES(uint32_t val)
+{
+	return ((val) << CP_DRAW_INDX_OFFSET_1_NUM_INSTANCES__SHIFT) & CP_DRAW_INDX_OFFSET_1_NUM_INSTANCES__MASK;
+}
 
 #define REG_CP_DRAW_INDX_OFFSET_2				0x00000002
 #define CP_DRAW_INDX_OFFSET_2_NUM_INDICES__MASK			0xffffffff

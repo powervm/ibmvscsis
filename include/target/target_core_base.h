@@ -6,7 +6,6 @@
 #include <linux/dma-mapping.h>
 #include <linux/blkdev.h>
 #include <linux/percpu_ida.h>
-#include <scsi/scsi_cmnd.h>
 #include <net/sock.h>
 #include <net/tcp.h>
 
@@ -17,23 +16,15 @@
 /* Don't raise above 511 or REPORT_LUNS needs to handle >1 page */
 #define TRANSPORT_MAX_LUNS_PER_TPG		256
 /*
- * By default we use 32-byte CDBs in TCM Core and subsystem plugin code.
- *
- * Note that both include/scsi/scsi_cmnd.h:MAX_COMMAND_SIZE and
- * include/linux/blkdev.h:BLOCK_MAX_CDB as of v2.6.36-rc4 still use
- * 16-byte CDBs by default and require an extra allocation for
- * 32-byte CDBs to because of legacy issues.
- *
- * Within TCM Core there are no such legacy limitiations, so we go ahead
- * use 32-byte CDBs by default and use include/scsi/scsi.h:scsi_command_size()
- * within all TCM Core and subsystem plugin code.
+ * Maximum size of a CDB that can be stored in se_cmd without allocating
+ * memory dynamically for the CDB.
  */
 #define TCM_MAX_COMMAND_SIZE			32
 /*
  * From include/scsi/scsi_cmnd.h:SCSI_SENSE_BUFFERSIZE, currently
  * defined 96, but the real limit is 252 (or 260 including the header)
  */
-#define TRANSPORT_SENSE_BUFFER			SCSI_SENSE_BUFFERSIZE
+#define TRANSPORT_SENSE_BUFFER			96
 /* Used by transport_send_check_condition_and_sense() */
 #define SPC_SENSE_KEY_OFFSET			2
 #define SPC_ADD_SENSE_LEN_OFFSET		7
@@ -165,10 +156,8 @@ enum se_cmd_flags_table {
 	SCF_SEND_DELAYED_TAS		= 0x00004000,
 	SCF_ALUA_NON_OPTIMIZED		= 0x00008000,
 	SCF_PASSTHROUGH_SG_TO_MEM_NOALLOC = 0x00020000,
-	SCF_ACK_KREF			= 0x00040000,
 	SCF_COMPARE_AND_WRITE		= 0x00080000,
 	SCF_COMPARE_AND_WRITE_POST	= 0x00100000,
-	SCF_CMD_XCOPY_PASSTHROUGH	= 0x00200000,
 };
 
 /* struct se_dev_entry->lun_flags and struct se_lun->lun_access */
@@ -407,7 +396,7 @@ struct t10_reservation {
 	/* Activate Persistence across Target Power Loss enabled
 	 * for SCSI device */
 	int pr_aptpl_active;
-#define PR_APTPL_BUF_LEN			8192
+#define PR_APTPL_BUF_LEN			262144
 	u32 pr_generation;
 	spinlock_t registration_lock;
 	spinlock_t aptpl_reg_lock;
@@ -520,11 +509,11 @@ struct se_cmd {
 	struct list_head	se_cmd_list;
 	struct completion	cmd_wait_comp;
 	struct kref		cmd_kref;
-	struct target_core_fabric_ops *se_tfo;
+	const struct target_core_fabric_ops *se_tfo;
 	sense_reason_t		(*execute_cmd)(struct se_cmd *);
 	sense_reason_t		(*execute_rw)(struct se_cmd *, struct scatterlist *,
 					      u32, enum dma_data_direction);
-	sense_reason_t (*transport_complete_callback)(struct se_cmd *);
+	sense_reason_t (*transport_complete_callback)(struct se_cmd *, bool);
 
 	unsigned char		*t_task_cdb;
 	unsigned char		__t_task_cdb[TCM_MAX_COMMAND_SIZE];
@@ -591,6 +580,7 @@ struct se_node_acl {
 	bool			acl_stop:1;
 	u32			queue_depth;
 	u32			acl_index;
+	enum target_prot_type	saved_prot_type;
 #define MAX_ACL_TAG_SIZE 64
 	char			acl_tag[MAX_ACL_TAG_SIZE];
 	/* Used for PR SPEC_I_PT=1 and REGISTER_AND_MOVE */
@@ -616,6 +606,7 @@ struct se_session {
 	unsigned		sess_tearing_down:1;
 	u64			sess_bin_isid;
 	enum target_prot_op	sup_prot_ops;
+	enum target_prot_type	sess_prot_type;
 	struct se_node_acl	*se_node_acl;
 	struct se_portal_group *se_tpg;
 	void			*fabric_sess_ptr;
@@ -890,7 +881,7 @@ struct se_portal_group {
 	/* List of TCM sessions associated wth this TPG */
 	struct list_head	tpg_sess_list;
 	/* Pointer to $FABRIC_MOD dependent code */
-	struct target_core_fabric_ops *se_tpg_tfo;
+	const struct target_core_fabric_ops *se_tpg_tfo;
 	struct se_wwn		*se_tpg_wwn;
 	struct config_group	tpg_group;
 	struct config_group	*tpg_default_groups[7];

@@ -17,15 +17,18 @@
 
 #include <linux/linkage.h>
 
-#include <asm/assembler.h>
-#include <asm/memory.h>
+#include <asm/alternative.h>
 #include <asm/asm-offsets.h>
+#include <asm/assembler.h>
+#include <asm/cpufeature.h>
 #include <asm/debug-monitors.h>
+#include <asm/esr.h>
 #include <asm/fpsimdmacros.h>
 #include <asm/kvm.h>
-#include <asm/kvm_asm.h>
 #include <asm/kvm_arm.h>
+#include <asm/kvm_asm.h>
 #include <asm/kvm_mmu.h>
+#include <asm/memory.h>
 
 #define CPU_GP_REG_OFFSET(x)	(CPU_GP_REGS + x)
 #define CPU_XREG_OFFSET(x)	CPU_GP_REG_OFFSET(CPU_USER_PT_REGS + 8*x)
@@ -49,8 +52,8 @@
 	stp	x29, lr, [x3, #80]
 
 	mrs	x19, sp_el0
-	mrs	x20, elr_el2		// EL1 PC
-	mrs	x21, spsr_el2		// EL1 pstate
+	mrs	x20, elr_el2		// pc before entering el2
+	mrs	x21, spsr_el2		// pstate before entering el2
 
 	stp	x19, x20, [x3, #96]
 	str	x21, [x3, #112]
@@ -81,8 +84,8 @@
 	ldr	x21, [x3, #16]
 
 	msr	sp_el0, x19
-	msr	elr_el2, x20 				// EL1 PC
-	msr	spsr_el2, x21 				// EL1 pstate
+	msr	elr_el2, x20 		// pc on return from el2
+	msr	spsr_el2, x21 		// pstate on return from el2
 
 	add	x3, x2, #CPU_XREG_OFFSET(19)
 	ldp	x19, x20, [x3]
@@ -807,10 +810,7 @@
  * Call into the vgic backend for state saving
  */
 .macro save_vgic_state
-	adr	x24, __vgic_sr_vectors
-	ldr	x24, [x24, VGIC_SAVE_FN]
-	kern_hyp_va	x24
-	blr	x24
+	alternative_insn "bl __save_vgic_v2_state", "bl __save_vgic_v3_state", ARM64_HAS_SYSREG_GIC_CPUIF
 	mrs	x24, hcr_el2
 	mov	x25, #HCR_INT_OVERRIDE
 	neg	x25, x25
@@ -827,10 +827,7 @@
 	orr	x24, x24, #HCR_INT_OVERRIDE
 	orr	x24, x24, x25
 	msr	hcr_el2, x24
-	adr	x24, __vgic_sr_vectors
-	ldr	x24, [x24, #VGIC_RESTORE_FN]
-	kern_hyp_va	x24
-	blr	x24
+	alternative_insn "bl __restore_vgic_v2_state", "bl __restore_vgic_v3_state", ARM64_HAS_SYSREG_GIC_CPUIF
 .endm
 
 .macro save_timer_state
@@ -1031,6 +1028,28 @@ ENTRY(__kvm_tlb_flush_vmid_ipa)
 	ret
 ENDPROC(__kvm_tlb_flush_vmid_ipa)
 
+/**
+ * void __kvm_tlb_flush_vmid(struct kvm *kvm) - Flush per-VMID TLBs
+ * @struct kvm *kvm - pointer to kvm structure
+ *
+ * Invalidates all Stage 1 and 2 TLB entries for current VMID.
+ */
+ENTRY(__kvm_tlb_flush_vmid)
+	dsb     ishst
+
+	kern_hyp_va     x0
+	ldr     x2, [x0, #KVM_VTTBR]
+	msr     vttbr_el2, x2
+	isb
+
+	tlbi    vmalls12e1is
+	dsb     ish
+	isb
+
+	msr     vttbr_el2, xzr
+	ret
+ENDPROC(__kvm_tlb_flush_vmid)
+
 ENTRY(__kvm_flush_vm_context)
 	dsb	ishst
 	tlbi	alle1is
@@ -1038,12 +1057,6 @@ ENTRY(__kvm_flush_vm_context)
 	dsb	ish
 	ret
 ENDPROC(__kvm_flush_vm_context)
-
-	// struct vgic_sr_vectors __vgi_sr_vectors;
-	.align 3
-ENTRY(__vgic_sr_vectors)
-	.skip	VGIC_SR_VECTOR_SZ
-ENDPROC(__vgic_sr_vectors)
 
 __kvm_hyp_panic:
 	// Guess the context by looking at VTTBR:
@@ -1141,9 +1154,9 @@ el1_sync:					// Guest trapped into EL2
 	push	x2, x3
 
 	mrs	x1, esr_el2
-	lsr	x2, x1, #ESR_EL2_EC_SHIFT
+	lsr	x2, x1, #ESR_ELx_EC_SHIFT
 
-	cmp	x2, #ESR_EL2_EC_HVC64
+	cmp	x2, #ESR_ELx_EC_HVC64
 	b.ne	el1_trap
 
 	mrs	x3, vttbr_el2			// If vttbr is valid, the 64bit guest
@@ -1178,13 +1191,13 @@ el1_trap:
 	 * x1: ESR
 	 * x2: ESR_EC
 	 */
-	cmp	x2, #ESR_EL2_EC_DABT
-	mov	x0, #ESR_EL2_EC_IABT
+	cmp	x2, #ESR_ELx_EC_DABT_LOW
+	mov	x0, #ESR_ELx_EC_IABT_LOW
 	ccmp	x2, x0, #4, ne
 	b.ne	1f		// Not an abort we care about
 
 	/* This is an abort. Check for permission fault */
-	and	x2, x1, #ESR_EL2_FSC_TYPE
+	and	x2, x1, #ESR_ELx_FSC_TYPE
 	cmp	x2, #FSC_PERM
 	b.ne	1f		// Not a permission fault
 

@@ -15,18 +15,22 @@
 #include <linux/mm.h>
 #include <linux/uaccess.h>
 #include <asm/synch.h>
-#include <misc/cxl.h>
+#include <misc/cxl-base.h>
 
 #include "cxl.h"
+#include "trace.h"
 
 static int afu_control(struct cxl_afu *afu, u64 command,
 		       u64 result, u64 mask, bool enabled)
 {
 	u64 AFU_Cntl = cxl_p2n_read(afu, CXL_AFU_Cntl_An);
 	unsigned long timeout = jiffies + (HZ * CXL_TIMEOUT);
+	int rc = 0;
 
 	spin_lock(&afu->afu_cntl_lock);
 	pr_devel("AFU command starting: %llx\n", command);
+
+	trace_cxl_afu_ctrl(afu, command);
 
 	cxl_p2n_write(afu, CXL_AFU_Cntl_An, AFU_Cntl | command);
 
@@ -34,8 +38,8 @@ static int afu_control(struct cxl_afu *afu, u64 command,
 	while ((AFU_Cntl & mask) != result) {
 		if (time_after_eq(jiffies, timeout)) {
 			dev_warn(&afu->dev, "WARNING: AFU control timed out!\n");
-			spin_unlock(&afu->afu_cntl_lock);
-			return -EBUSY;
+			rc = -EBUSY;
+			goto out;
 		}
 		pr_devel_ratelimited("AFU control... (0x%.16llx)\n",
 				     AFU_Cntl | command);
@@ -44,9 +48,11 @@ static int afu_control(struct cxl_afu *afu, u64 command,
 	};
 	pr_devel("AFU command complete: %llx\n", command);
 	afu->enabled = enabled;
+out:
+	trace_cxl_afu_ctrl_done(afu, command, rc);
 	spin_unlock(&afu->afu_cntl_lock);
 
-	return 0;
+	return rc;
 }
 
 static int afu_enable(struct cxl_afu *afu)
@@ -67,7 +73,7 @@ int cxl_afu_disable(struct cxl_afu *afu)
 }
 
 /* This will disable as well as reset */
-int cxl_afu_reset(struct cxl_afu *afu)
+int __cxl_afu_reset(struct cxl_afu *afu)
 {
 	pr_devel("AFU reset request\n");
 
@@ -77,7 +83,7 @@ int cxl_afu_reset(struct cxl_afu *afu)
 			   false);
 }
 
-static int afu_check_and_enable(struct cxl_afu *afu)
+int cxl_afu_check_and_enable(struct cxl_afu *afu)
 {
 	if (afu->enabled)
 		return 0;
@@ -91,6 +97,9 @@ int cxl_psl_purge(struct cxl_afu *afu)
 	u64 dsisr, dar;
 	u64 start, end;
 	unsigned long timeout = jiffies + (HZ * CXL_TIMEOUT);
+	int rc = 0;
+
+	trace_cxl_psl_ctrl(afu, CXL_PSL_SCNTL_An_Pc);
 
 	pr_devel("PSL purge request\n");
 
@@ -107,7 +116,8 @@ int cxl_psl_purge(struct cxl_afu *afu)
 			== CXL_PSL_SCNTL_An_Ps_Pending) {
 		if (time_after_eq(jiffies, timeout)) {
 			dev_warn(&afu->dev, "WARNING: PSL Purge timed out!\n");
-			return -EBUSY;
+			rc = -EBUSY;
+			goto out;
 		}
 		dsisr = cxl_p2n_read(afu, CXL_PSL_DSISR_An);
 		pr_devel_ratelimited("PSL purging... PSL_CNTL: 0x%.16llx  PSL_DSISR: 0x%.16llx\n", PSL_CNTL, dsisr);
@@ -128,7 +138,9 @@ int cxl_psl_purge(struct cxl_afu *afu)
 
 	cxl_p1n_write(afu, CXL_PSL_SCNTL_An,
 		       PSL_CNTL & ~CXL_PSL_SCNTL_An_Pc);
-	return 0;
+out:
+	trace_cxl_psl_ctrl_done(afu, CXL_PSL_SCNTL_An_Pc, rc);
+	return rc;
 }
 
 static int spa_max_procs(int spa_size)
@@ -185,6 +197,7 @@ static int alloc_spa(struct cxl_afu *afu)
 
 static void release_spa(struct cxl_afu *afu)
 {
+	cxl_p1n_write(afu, CXL_PSL_SPAP_An, 0);
 	free_pages((unsigned long) afu->spa, afu->spa_order);
 }
 
@@ -278,6 +291,9 @@ static int do_process_element_cmd(struct cxl_context *ctx,
 {
 	u64 state;
 	unsigned long timeout = jiffies + (HZ * CXL_TIMEOUT);
+	int rc = 0;
+
+	trace_cxl_llcmd(ctx, cmd);
 
 	WARN_ON(!ctx->afu->enabled);
 
@@ -289,12 +305,14 @@ static int do_process_element_cmd(struct cxl_context *ctx,
 	while (1) {
 		if (time_after_eq(jiffies, timeout)) {
 			dev_warn(&ctx->afu->dev, "WARNING: Process Element Command timed out!\n");
-			return -EBUSY;
+			rc = -EBUSY;
+			goto out;
 		}
 		state = be64_to_cpup(ctx->afu->sw_command_status);
 		if (state == ~0ULL) {
 			pr_err("cxl: Error adding process element to AFU\n");
-			return -1;
+			rc = -1;
+			goto out;
 		}
 		if ((state & (CXL_SPA_SW_CMD_MASK | CXL_SPA_SW_STATE_MASK  | CXL_SPA_SW_LINK_MASK)) ==
 		    (cmd | (cmd >> 16) | ctx->pe))
@@ -309,7 +327,9 @@ static int do_process_element_cmd(struct cxl_context *ctx,
 		schedule();
 
 	}
-	return 0;
+out:
+	trace_cxl_llcmd_done(ctx, cmd, rc);
+	return rc;
 }
 
 static int add_process_element(struct cxl_context *ctx)
@@ -359,7 +379,7 @@ static int remove_process_element(struct cxl_context *ctx)
 }
 
 
-static void assign_psn_space(struct cxl_context *ctx)
+void cxl_assign_psn_space(struct cxl_context *ctx)
 {
 	if (!ctx->afu->pp_size || ctx->master) {
 		ctx->psn_phys = ctx->afu->psn_phys;
@@ -410,34 +430,46 @@ err:
 #define set_endian(sr) ((sr) &= ~(CXL_PSL_SR_An_LE))
 #endif
 
+static u64 calculate_sr(struct cxl_context *ctx)
+{
+	u64 sr = 0;
+
+	if (ctx->master)
+		sr |= CXL_PSL_SR_An_MP;
+	if (mfspr(SPRN_LPCR) & LPCR_TC)
+		sr |= CXL_PSL_SR_An_TC;
+	if (ctx->kernel) {
+		sr |= CXL_PSL_SR_An_R | (mfmsr() & MSR_SF);
+		sr |= CXL_PSL_SR_An_HV;
+	} else {
+		sr |= CXL_PSL_SR_An_PR | CXL_PSL_SR_An_R;
+		set_endian(sr);
+		sr &= ~(CXL_PSL_SR_An_HV);
+		if (!test_tsk_thread_flag(current, TIF_32BIT))
+			sr |= CXL_PSL_SR_An_SF;
+	}
+	return sr;
+}
+
 static int attach_afu_directed(struct cxl_context *ctx, u64 wed, u64 amr)
 {
-	u64 sr;
+	u32 pid;
 	int r, result;
 
-	assign_psn_space(ctx);
+	cxl_assign_psn_space(ctx);
 
 	ctx->elem->ctxtime = 0; /* disable */
 	ctx->elem->lpid = cpu_to_be32(mfspr(SPRN_LPID));
 	ctx->elem->haurp = 0; /* disable */
 	ctx->elem->sdr = cpu_to_be64(mfspr(SPRN_SDR1));
 
-	sr = 0;
-	if (ctx->master)
-		sr |= CXL_PSL_SR_An_MP;
-	if (mfspr(SPRN_LPCR) & LPCR_TC)
-		sr |= CXL_PSL_SR_An_TC;
-	/* HV=0, PR=1, R=1 for userspace
-	 * For kernel contexts: this would need to change
-	 */
-	sr |= CXL_PSL_SR_An_PR | CXL_PSL_SR_An_R;
-	set_endian(sr);
-	sr &= ~(CXL_PSL_SR_An_HV);
-	if (!test_tsk_thread_flag(current, TIF_32BIT))
-		sr |= CXL_PSL_SR_An_SF;
-	ctx->elem->common.pid = cpu_to_be32(current->pid);
+	pid = current->pid;
+	if (ctx->kernel)
+		pid = 0;
 	ctx->elem->common.tid = 0;
-	ctx->elem->sr = cpu_to_be64(sr);
+	ctx->elem->common.pid = cpu_to_be32(pid);
+
+	ctx->elem->sr = cpu_to_be64(calculate_sr(ctx));
 
 	ctx->elem->common.csrp = 0; /* disable */
 	ctx->elem->common.aurp0 = 0; /* disable */
@@ -457,7 +489,7 @@ static int attach_afu_directed(struct cxl_context *ctx, u64 wed, u64 amr)
 	ctx->elem->common.wed = cpu_to_be64(wed);
 
 	/* first guy needs to enable */
-	if ((result = afu_check_and_enable(ctx->afu)))
+	if ((result = cxl_afu_check_and_enable(ctx->afu)))
 		return result;
 
 	add_process_element(ctx);
@@ -475,7 +507,7 @@ static int deactivate_afu_directed(struct cxl_afu *afu)
 	cxl_sysfs_afu_m_remove(afu);
 	cxl_chardev_afu_remove(afu);
 
-	cxl_afu_reset(afu);
+	__cxl_afu_reset(afu);
 	cxl_afu_disable(afu);
 	cxl_psl_purge(afu);
 
@@ -510,20 +542,15 @@ static int activate_dedicated_process(struct cxl_afu *afu)
 static int attach_dedicated(struct cxl_context *ctx, u64 wed, u64 amr)
 {
 	struct cxl_afu *afu = ctx->afu;
-	u64 sr;
+	u64 pid;
 	int rc;
 
-	sr = 0;
-	set_endian(sr);
-	if (ctx->master)
-		sr |= CXL_PSL_SR_An_MP;
-	if (mfspr(SPRN_LPCR) & LPCR_TC)
-		sr |= CXL_PSL_SR_An_TC;
-	sr |= CXL_PSL_SR_An_PR | CXL_PSL_SR_An_R;
-	if (!test_tsk_thread_flag(current, TIF_32BIT))
-		sr |= CXL_PSL_SR_An_SF;
-	cxl_p2n_write(afu, CXL_PSL_PID_TID_An, (u64)current->pid << 32);
-	cxl_p1n_write(afu, CXL_PSL_SR_An, sr);
+	pid = (u64)current->pid << 32;
+	if (ctx->kernel)
+		pid = 0;
+	cxl_p2n_write(afu, CXL_PSL_PID_TID_An, pid);
+
+	cxl_p1n_write(afu, CXL_PSL_SR_An, calculate_sr(ctx));
 
 	if ((rc = cxl_write_sstp(afu, ctx->sstp0, ctx->sstp1)))
 		return rc;
@@ -544,9 +571,9 @@ static int attach_dedicated(struct cxl_context *ctx, u64 wed, u64 amr)
 	cxl_p2n_write(afu, CXL_PSL_AMR_An, amr);
 
 	/* master only context for dedicated */
-	assign_psn_space(ctx);
+	cxl_assign_psn_space(ctx);
 
-	if ((rc = cxl_afu_reset(afu)))
+	if ((rc = __cxl_afu_reset(afu)))
 		return rc;
 
 	cxl_p2n_write(afu, CXL_PSL_WED_An, wed);
@@ -609,7 +636,7 @@ int cxl_attach_process(struct cxl_context *ctx, bool kernel, u64 wed, u64 amr)
 
 static inline int detach_process_native_dedicated(struct cxl_context *ctx)
 {
-	cxl_afu_reset(ctx->afu);
+	__cxl_afu_reset(ctx->afu);
 	cxl_afu_disable(ctx->afu);
 	cxl_psl_purge(ctx->afu);
 	return 0;
@@ -629,6 +656,8 @@ static inline int detach_process_native_afu_directed(struct cxl_context *ctx)
 
 int cxl_detach_process(struct cxl_context *ctx)
 {
+	trace_cxl_detach(ctx);
+
 	if (ctx->afu->current_mode == CXL_MODE_DEDICATED)
 		return detach_process_native_dedicated(ctx);
 
@@ -667,6 +696,7 @@ static void recover_psl_err(struct cxl_afu *afu, u64 errstat)
 
 int cxl_ack_irq(struct cxl_context *ctx, u64 tfc, u64 psl_reset_mask)
 {
+	trace_cxl_psl_irq_ack(ctx, tfc);
 	if (tfc)
 		cxl_p2n_write(ctx->afu, CXL_PSL_TFC_An, tfc);
 	if (psl_reset_mask)

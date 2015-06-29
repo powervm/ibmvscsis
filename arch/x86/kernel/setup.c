@@ -89,6 +89,7 @@
 #include <asm/cacheflush.h>
 #include <asm/processor.h>
 #include <asm/bugs.h>
+#include <asm/kasan.h>
 
 #include <asm/vsyscall.h>
 #include <asm/cpu.h>
@@ -353,7 +354,7 @@ static void __init relocate_initrd(void)
 		mapaddr = ramdisk_image & PAGE_MASK;
 		p = early_memremap(mapaddr, clen+slop);
 		memcpy(q, p+slop, clen);
-		early_iounmap(p, clen+slop);
+		early_memunmap(p, clen+slop);
 		q += clen;
 		ramdisk_image += clen;
 		ramdisk_size  -= clen;
@@ -437,7 +438,7 @@ static void __init parse_setup_data(void)
 		data_len = data->len + sizeof(struct setup_data);
 		data_type = data->type;
 		pa_next = data->next;
-		early_iounmap(data, sizeof(*data));
+		early_memunmap(data, sizeof(*data));
 
 		switch (data_type) {
 		case SETUP_E820_EXT:
@@ -469,7 +470,7 @@ static void __init e820_reserve_setup_data(void)
 			 E820_RAM, E820_RESERVED_KERN);
 		found = 1;
 		pa_data = data->next;
-		early_iounmap(data, sizeof(*data));
+		early_memunmap(data, sizeof(*data));
 	}
 	if (!found)
 		return;
@@ -490,7 +491,7 @@ static void __init memblock_x86_reserve_range_setup_data(void)
 		data = early_memremap(pa_data, sizeof(*data));
 		memblock_reserve(pa_data, sizeof(*data) + data->len);
 		pa_data = data->next;
-		early_iounmap(data, sizeof(*data));
+		early_memunmap(data, sizeof(*data));
 	}
 }
 
@@ -530,12 +531,14 @@ static void __init reserve_crashkernel_low(void)
 	if (ret != 0) {
 		/*
 		 * two parts from lib/swiotlb.c:
-		 *	swiotlb size: user specified with swiotlb= or default.
-		 *	swiotlb overflow buffer: now is hardcoded to 32k.
-		 *		We round it to 8M for other buffers that
-		 *		may need to stay low too.
+		 * -swiotlb size: user-specified with swiotlb= or default.
+		 *
+		 * -swiotlb overflow buffer: now hardcoded to 32k. We round it
+		 * to 8M for other buffers that may need to stay low too. Also
+		 * make sure we allocate enough extra low memory so that we
+		 * don't run out of DMA buffers for 32-bit devices.
 		 */
-		low_size = swiotlb_size_or_default() + (8UL<<20);
+		low_size = max(swiotlb_size_or_default() + (8UL<<20), 256UL<<20);
 		auto_set = true;
 	} else {
 		/* passed with crashkernel=0,low ? */
@@ -831,10 +834,15 @@ static void __init trim_low_memory_range(void)
 static int
 dump_kernel_offset(struct notifier_block *self, unsigned long v, void *p)
 {
-	pr_emerg("Kernel Offset: 0x%lx from 0x%lx "
-		 "(relocation range: 0x%lx-0x%lx)\n",
-		 (unsigned long)&_text - __START_KERNEL, __START_KERNEL,
-		 __START_KERNEL_map, MODULES_VADDR-1);
+	if (kaslr_enabled()) {
+		pr_emerg("Kernel Offset: 0x%lx from 0x%lx (relocation range: 0x%lx-0x%lx)\n",
+			 kaslr_offset(),
+			 __START_KERNEL,
+			 __START_KERNEL_map,
+			 MODULES_VADDR-1);
+	} else {
+		pr_emerg("Kernel Offset: disabled\n");
+	}
 
 	return 0;
 }
@@ -1097,6 +1105,9 @@ void __init setup_arch(char **cmdline_p)
 	memblock_set_current_limit(ISA_END_ADDRESS);
 	memblock_x86_fill();
 
+	if (efi_enabled(EFI_BOOT))
+		efi_find_mirror();
+
 	/*
 	 * The EFI specification says that boot service code won't be called
 	 * after ExitBootServices(). This is, in fact, a lie.
@@ -1174,9 +1185,11 @@ void __init setup_arch(char **cmdline_p)
 
 	x86_init.paging.pagetable_init();
 
+	kasan_init();
+
 	if (boot_cpu_data.cpuid_level >= 0) {
 		/* A CPU has %cr4 if and only if it has CPUID */
-		mmu_cr4_features = read_cr4();
+		mmu_cr4_features = __read_cr4();
 		if (trampoline_cr4_features)
 			*trampoline_cr4_features = mmu_cr4_features;
 	}
@@ -1214,8 +1227,7 @@ void __init setup_arch(char **cmdline_p)
 	init_cpu_to_node();
 
 	init_apic_mappings();
-	if (x86_io_apic_ops.init)
-		x86_io_apic_ops.init();
+	io_apic_init_mappings();
 
 	kvm_guest_init();
 

@@ -30,6 +30,7 @@
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_user_verbs.h>
 #include <rdma/ib_addr.h>
+#include <rdma/ib_mad.h>
 
 #include <linux/netdevice.h>
 #include <net/addrconf.h>
@@ -202,6 +203,24 @@ static enum rdma_link_layer ocrdma_link_layer(struct ib_device *device,
 	return IB_LINK_LAYER_ETHERNET;
 }
 
+static int ocrdma_port_immutable(struct ib_device *ibdev, u8 port_num,
+			         struct ib_port_immutable *immutable)
+{
+	struct ib_port_attr attr;
+	int err;
+
+	err = ocrdma_query_port(ibdev, port_num, &attr);
+	if (err)
+		return err;
+
+	immutable->pkey_tbl_len = attr.pkey_tbl_len;
+	immutable->gid_tbl_len = attr.gid_tbl_len;
+	immutable->core_cap_flags = RDMA_CORE_PORT_IBA_ROCE;
+	immutable->max_mad_size = IB_MGMT_MAD_SIZE;
+
+	return 0;
+}
+
 static int ocrdma_register_device(struct ocrdma_dev *dev)
 {
 	strlcpy(dev->ibdev.name, "ocrdma%d", IB_DEVICE_NAME_MAX);
@@ -239,7 +258,7 @@ static int ocrdma_register_device(struct ocrdma_dev *dev)
 
 	dev->ibdev.node_type = RDMA_NODE_IB_CA;
 	dev->ibdev.phys_port_cnt = 1;
-	dev->ibdev.num_comp_vectors = 1;
+	dev->ibdev.num_comp_vectors = dev->eq_cnt;
 
 	/* mandatory verbs. */
 	dev->ibdev.query_device = ocrdma_query_device;
@@ -286,6 +305,7 @@ static int ocrdma_register_device(struct ocrdma_dev *dev)
 	dev->ibdev.dma_device = &dev->nic_info.pdev->dev;
 
 	dev->ibdev.process_mad = ocrdma_process_mad;
+	dev->ibdev.get_port_immutable = ocrdma_port_immutable;
 
 	if (ocrdma_get_asic_type(dev) == OCRDMA_ASIC_GEN_SKH_R) {
 		dev->ibdev.uverbs_cmd_mask |=
@@ -328,6 +348,8 @@ static int ocrdma_alloc_resources(struct ocrdma_dev *dev)
 	dev->stag_arr = kzalloc(sizeof(u64) * OCRDMA_MAX_STAG, GFP_KERNEL);
 	if (dev->stag_arr == NULL)
 		goto alloc_err;
+
+	ocrdma_alloc_pd_pool(dev);
 
 	spin_lock_init(&dev->av_tbl.lock);
 	spin_lock_init(&dev->flush_q_lock);
@@ -491,6 +513,9 @@ static struct ocrdma_dev *ocrdma_add(struct be_dev_info *dev_info)
 	spin_unlock(&ocrdma_devlist_lock);
 	/* Init stats */
 	ocrdma_add_port_stats(dev);
+	/* Interrupt Moderation */
+	INIT_DELAYED_WORK(&dev->eqd_work, ocrdma_eqd_set_task);
+	schedule_delayed_work(&dev->eqd_work, msecs_to_jiffies(1000));
 
 	pr_info("%s %s: %s \"%s\" port %d\n",
 		dev_name(&dev->nic_info.pdev->dev), hca_name(dev),
@@ -528,10 +553,11 @@ static void ocrdma_remove(struct ocrdma_dev *dev)
 	/* first unregister with stack to stop all the active traffic
 	 * of the registered clients.
 	 */
-	ocrdma_rem_port_stats(dev);
+	cancel_delayed_work_sync(&dev->eqd_work);
 	ocrdma_remove_sysfiles(dev);
-
 	ib_unregister_device(&dev->ibdev);
+
+	ocrdma_rem_port_stats(dev);
 
 	spin_lock(&ocrdma_devlist_lock);
 	list_del_rcu(&dev->entry);

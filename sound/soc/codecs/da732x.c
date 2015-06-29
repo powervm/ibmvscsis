@@ -876,11 +876,11 @@ static const struct snd_soc_dapm_widget da732x_dapm_widgets[] = {
 
 static const struct snd_soc_dapm_route da732x_dapm_routes[] = {
 	/* Inputs */
-	{"AUX1L PGA", "NULL", "AUX1L"},
-	{"AUX1R PGA", "NULL", "AUX1R"},
+	{"AUX1L PGA", NULL, "AUX1L"},
+	{"AUX1R PGA", NULL, "AUX1R"},
 	{"MIC1 PGA", NULL, "MIC1"},
-	{"MIC2 PGA", "NULL", "MIC2"},
-	{"MIC3 PGA", "NULL", "MIC3"},
+	{"MIC2 PGA", NULL, "MIC2"},
+	{"MIC3 PGA", NULL, "MIC3"},
 
 	/* Capture Path */
 	{"ADC1 Left MUX", "MIC1", "MIC1 PGA"},
@@ -1432,7 +1432,7 @@ static int da732x_set_bias_level(struct snd_soc_codec *codec,
 	case SND_SOC_BIAS_PREPARE:
 		break;
 	case SND_SOC_BIAS_STANDBY:
-		if (codec->dapm.bias_level == SND_SOC_BIAS_OFF) {
+		if (snd_soc_codec_get_bias_level(codec) == SND_SOC_BIAS_OFF) {
 			/* Init Codec */
 			snd_soc_write(codec, DA732X_REG_REF1,
 				      DA732X_VMID_FASTCHG);
@@ -1501,8 +1501,6 @@ static int da732x_set_bias_level(struct snd_soc_codec *codec,
 		da732x->pll_en = false;
 		break;
 	}
-
-	codec->dapm.bias_level = level;
 
 	return 0;
 }

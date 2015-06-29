@@ -519,7 +519,7 @@ static int vnet_walk_rx_one(struct vnet_port *port,
 	if (desc->hdr.state != VIO_DESC_READY)
 		return 1;
 
-	rmb();
+	dma_rmb();
 
 	viodbg(DATA, "vio_walk_rx_one desc[%02x:%02x:%08x:%08x:%llx:%llx]\n",
 	       desc->hdr.state, desc->hdr.ack,
@@ -1192,23 +1192,16 @@ static int vnet_handle_offloads(struct vnet_port *port, struct sk_buff *skb)
 	skb_pull(skb, maclen);
 
 	if (port->tso && gso_size < datalen) {
+		if (skb_unclone(skb, GFP_ATOMIC))
+			goto out_dropped;
+
 		/* segment to TSO size */
 		skb_shinfo(skb)->gso_size = datalen;
 		skb_shinfo(skb)->gso_segs = gso_segs;
-
-		segs = skb_gso_segment(skb, dev->features & ~NETIF_F_TSO);
-
-		/* restore gso_size & gso_segs */
-		skb_shinfo(skb)->gso_size = gso_size;
-		skb_shinfo(skb)->gso_segs = DIV_ROUND_UP(skb->len - hlen,
-							 gso_size);
-	} else
-		segs = skb_gso_segment(skb, dev->features & ~NETIF_F_TSO);
-	if (IS_ERR(segs)) {
-		dev->stats.tx_dropped++;
-		dev_kfree_skb_any(skb);
-		return NETDEV_TX_OK;
 	}
+	segs = skb_gso_segment(skb, dev->features & ~NETIF_F_TSO);
+	if (IS_ERR(segs))
+		goto out_dropped;
 
 	skb_push(skb, maclen);
 	skb_reset_mac_header(skb);
@@ -1246,6 +1239,10 @@ static int vnet_handle_offloads(struct vnet_port *port, struct sk_buff *skb)
 	if (!(status & NETDEV_TX_MASK))
 		dev_kfree_skb_any(skb);
 	return status;
+out_dropped:
+	dev->stats.tx_dropped++;
+	dev_kfree_skb_any(skb);
+	return NETDEV_TX_OK;
 }
 
 static int vnet_start_xmit(struct sk_buff *skb, struct net_device *dev)
@@ -1383,7 +1380,7 @@ static int vnet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	/* This has to be a non-SMP write barrier because we are writing
 	 * to memory which is shared with the peer LDOM.
 	 */
-	wmb();
+	dma_wmb();
 
 	d->hdr.state = VIO_DESC_READY;
 
@@ -1398,7 +1395,7 @@ static int vnet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	 * is marked READY, but start_cons was false.
 	 * If so, vnet_ack() should send out the missed "start" trigger.
 	 *
-	 * Note that the wmb() above makes sure the cookies et al. are
+	 * Note that the dma_wmb() above makes sure the cookies et al. are
 	 * not globally visible before the VIO_DESC_READY, and that the
 	 * stores are ordered correctly by the compiler. The consumer will
 	 * not proceed until the VIO_DESC_READY is visible assuring that
@@ -1414,6 +1411,8 @@ static int vnet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (unlikely(err < 0)) {
 		netdev_info(dev, "TX trigger error %d\n", err);
 		d->hdr.state = VIO_DESC_FREE;
+		skb = port->tx_bufs[txi].skb;
+		port->tx_bufs[txi].skb = NULL;
 		dev->stats.tx_carrier_errors++;
 		goto out_dropped;
 	}

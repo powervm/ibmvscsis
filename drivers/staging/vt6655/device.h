@@ -68,7 +68,6 @@
 
 #include "device_cfg.h"
 #include "card.h"
-#include "mib.h"
 #include "srom.h"
 #include "desc.h"
 #include "key.h"
@@ -239,7 +238,6 @@ struct vnt_private {
 	CHIP_TYPE                   chip_id;
 
 	void __iomem                *PortOffset;
-	unsigned long dwIsr;
 	u32                         memaddr;
 	u32                         ioaddr;
 	u32                         io_size;
@@ -285,11 +283,6 @@ struct vnt_private {
 
 	unsigned char abyCurrentNetAddr[ETH_ALEN]; __aligned(2)
 	bool bLinkPass;          /* link status: OK or fail */
-
-	/* Adapter statistics */
-	SStatCounter                scStatistic;
-	/* 802.11 counter */
-	SDot11Counters              s802_11Counter;
 
 	unsigned int	uCurrRSSI;
 	unsigned char byCurrSQ;
@@ -367,7 +360,7 @@ struct vnt_private {
 	bool bIsBeaconBufReadySet;
 	unsigned int	cbBeaconBufReadySetCnt;
 	bool bFixRate;
-	unsigned char byCurrentCh;
+	u16 byCurrentCh;
 
 	bool bAES;
 
@@ -407,32 +400,13 @@ struct vnt_private {
 	unsigned char byBBCR88;
 	unsigned char byBBCR09;
 
-	bool bDiversityRegCtlON;
-	bool bDiversityEnable;
-	unsigned long ulDiversityNValue;
-	unsigned long ulDiversityMValue;
-	unsigned char byTMax;
-	unsigned char byTMax2;
-	unsigned char byTMax3;
-	unsigned long ulSQ3TH;
-
-	/* ANT diversity */
-	unsigned long uDiversityCnt;
-	unsigned char byAntennaState;
-	unsigned long ulRatio_State0;
-	unsigned long ulRatio_State1;
-
-	/* SQ3 functions for antenna diversity */
-	struct timer_list           TimerSQ3Tmax1;
-	struct timer_list           TimerSQ3Tmax2;
-	struct timer_list           TimerSQ3Tmax3;
-
-	unsigned long uNumSQ3[MAX_RATE];
-	unsigned short wAntDiversityMaxRate;
-
 	unsigned char abyEEPROM[EEP_MAX_CONTEXT_SIZE]; /* unsigned long alignment */
 
 	unsigned short wBeaconInterval;
+
+	struct work_struct interrupt_work;
+
+	struct ieee80211_low_level_stats low_stats;
 };
 
 static inline PDEVICE_RD_INFO alloc_rd_info(void)

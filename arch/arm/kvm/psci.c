@@ -22,6 +22,9 @@
 #include <asm/cputype.h>
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_psci.h>
+#include <asm/kvm_host.h>
+
+#include <uapi/linux/psci.h>
 
 /*
  * This is an implementation of the Power State Coordination Interface
@@ -66,25 +69,17 @@ static void kvm_psci_vcpu_off(struct kvm_vcpu *vcpu)
 static unsigned long kvm_psci_vcpu_on(struct kvm_vcpu *source_vcpu)
 {
 	struct kvm *kvm = source_vcpu->kvm;
-	struct kvm_vcpu *vcpu = NULL, *tmp;
+	struct kvm_vcpu *vcpu = NULL;
 	wait_queue_head_t *wq;
 	unsigned long cpu_id;
 	unsigned long context_id;
-	unsigned long mpidr;
 	phys_addr_t target_pc;
-	int i;
 
-	cpu_id = *vcpu_reg(source_vcpu, 1);
+	cpu_id = *vcpu_reg(source_vcpu, 1) & MPIDR_HWID_BITMASK;
 	if (vcpu_mode_is_32bit(source_vcpu))
 		cpu_id &= ~((u32) 0);
 
-	kvm_for_each_vcpu(i, tmp, kvm) {
-		mpidr = kvm_vcpu_get_mpidr(tmp);
-		if ((mpidr & MPIDR_HWID_BITMASK) == (cpu_id & MPIDR_HWID_BITMASK)) {
-			vcpu = tmp;
-			break;
-		}
-	}
+	vcpu = kvm_mpidr_to_vcpu(kvm, cpu_id);
 
 	/*
 	 * Make sure the caller requested a valid CPU and that the CPU is
@@ -155,7 +150,7 @@ static unsigned long kvm_psci_vcpu_affinity_info(struct kvm_vcpu *vcpu)
 	 * then ON else OFF
 	 */
 	kvm_for_each_vcpu(i, tmp, kvm) {
-		mpidr = kvm_vcpu_get_mpidr(tmp);
+		mpidr = kvm_vcpu_get_mpidr_aff(tmp);
 		if (((mpidr & target_affinity_mask) == target_affinity) &&
 		    !tmp->arch.pause) {
 			return PSCI_0_2_AFFINITY_LEVEL_ON;
@@ -237,10 +232,6 @@ static int kvm_psci_0_2_call(struct kvm_vcpu *vcpu)
 	case PSCI_0_2_FN64_AFFINITY_INFO:
 		val = kvm_psci_vcpu_affinity_info(vcpu);
 		break;
-	case PSCI_0_2_FN_MIGRATE:
-	case PSCI_0_2_FN64_MIGRATE:
-		val = PSCI_RET_NOT_SUPPORTED;
-		break;
 	case PSCI_0_2_FN_MIGRATE_INFO_TYPE:
 		/*
 		 * Trusted OS is MP hence does not require migration
@@ -248,10 +239,6 @@ static int kvm_psci_0_2_call(struct kvm_vcpu *vcpu)
 		 * Trusted OS is not present
 		 */
 		val = PSCI_0_2_TOS_MP;
-		break;
-	case PSCI_0_2_FN_MIGRATE_INFO_UP_CPU:
-	case PSCI_0_2_FN64_MIGRATE_INFO_UP_CPU:
-		val = PSCI_RET_NOT_SUPPORTED;
 		break;
 	case PSCI_0_2_FN_SYSTEM_OFF:
 		kvm_psci_system_off(vcpu);
@@ -278,7 +265,8 @@ static int kvm_psci_0_2_call(struct kvm_vcpu *vcpu)
 		ret = 0;
 		break;
 	default:
-		return -EINVAL;
+		val = PSCI_RET_NOT_SUPPORTED;
+		break;
 	}
 
 	*vcpu_reg(vcpu, 0) = val;
@@ -298,12 +286,9 @@ static int kvm_psci_0_1_call(struct kvm_vcpu *vcpu)
 	case KVM_PSCI_FN_CPU_ON:
 		val = kvm_psci_vcpu_on(vcpu);
 		break;
-	case KVM_PSCI_FN_CPU_SUSPEND:
-	case KVM_PSCI_FN_MIGRATE:
+	default:
 		val = PSCI_RET_NOT_SUPPORTED;
 		break;
-	default:
-		return -EINVAL;
 	}
 
 	*vcpu_reg(vcpu, 0) = val;

@@ -137,6 +137,7 @@ struct c4iw_stats {
 	u64  tcam_full;
 	u64  act_ofld_conn_fails;
 	u64  pas_ofld_conn_fails;
+	u64  neg_adv;
 };
 
 struct c4iw_hw_queue {
@@ -164,9 +165,7 @@ struct wr_log_entry {
 
 struct c4iw_rdev {
 	struct c4iw_resource resource;
-	unsigned long qpshift;
 	u32 qpmask;
-	unsigned long cqshift;
 	u32 cqmask;
 	struct c4iw_dev_ucontext uctx;
 	struct gen_pool *pbl_pool;
@@ -196,7 +195,7 @@ static inline int c4iw_num_stags(struct c4iw_rdev *rdev)
 	return (int)(rdev->lldi.vr->stag.size >> 5);
 }
 
-#define C4IW_WR_TO (30*HZ)
+#define C4IW_WR_TO (60*HZ)
 
 struct c4iw_wr_wait {
 	struct completion completion;
@@ -220,22 +219,21 @@ static inline int c4iw_wait_for_reply(struct c4iw_rdev *rdev,
 				 u32 hwtid, u32 qpid,
 				 const char *func)
 {
-	unsigned to = C4IW_WR_TO;
 	int ret;
 
-	do {
-		ret = wait_for_completion_timeout(&wr_waitp->completion, to);
-		if (!ret) {
-			printk(KERN_ERR MOD "%s - Device %s not responding - "
-			       "tid %u qpid %u\n", func,
-			       pci_name(rdev->lldi.pdev), hwtid, qpid);
-			if (c4iw_fatal_error(rdev)) {
-				wr_waitp->ret = -EIO;
-				break;
-			}
-			to = to << 2;
-		}
-	} while (!ret);
+	if (c4iw_fatal_error(rdev)) {
+		wr_waitp->ret = -EIO;
+		goto out;
+	}
+
+	ret = wait_for_completion_timeout(&wr_waitp->completion, C4IW_WR_TO);
+	if (!ret) {
+		PDBG("%s - Device %s not responding (disabling device) - tid %u qpid %u\n",
+		     func, pci_name(rdev->lldi.pdev), hwtid, qpid);
+		rdev->flags |= T4_FATAL_ERROR;
+		wr_waitp->ret = -EIO;
+	}
+out:
 	if (wr_waitp->ret)
 		PDBG("%s: FW reply %d tid %u qpid %u\n",
 		     pci_name(rdev->lldi.pdev), wr_waitp->ret, hwtid, qpid);
@@ -815,6 +813,11 @@ struct c4iw_listen_ep {
 	int backlog;
 };
 
+struct c4iw_ep_stats {
+	unsigned connect_neg_adv;
+	unsigned abort_neg_adv;
+};
+
 struct c4iw_ep {
 	struct c4iw_ep_common com;
 	struct c4iw_ep *parent_ep;
@@ -847,6 +850,7 @@ struct c4iw_ep {
 	unsigned int retry_count;
 	int snd_win;
 	int rcv_win;
+	struct c4iw_ep_stats stats;
 };
 
 static inline void print_addr(struct c4iw_ep_common *epc, const char *func,
@@ -986,10 +990,10 @@ int c4iw_reregister_phys_mem(struct ib_mr *mr,
 				     int acc, u64 *iova_start);
 int c4iw_dereg_mr(struct ib_mr *ib_mr);
 int c4iw_destroy_cq(struct ib_cq *ib_cq);
-struct ib_cq *c4iw_create_cq(struct ib_device *ibdev, int entries,
-					int vector,
-					struct ib_ucontext *ib_context,
-					struct ib_udata *udata);
+struct ib_cq *c4iw_create_cq(struct ib_device *ibdev,
+			     const struct ib_cq_init_attr *attr,
+			     struct ib_ucontext *ib_context,
+			     struct ib_udata *udata);
 int c4iw_resize_cq(struct ib_cq *cq, int cqe, struct ib_udata *udata);
 int c4iw_arm_cq(struct ib_cq *ibcq, enum ib_cq_notify_flags flags);
 int c4iw_destroy_qp(struct ib_qp *ib_qp);
@@ -1026,6 +1030,9 @@ void c4iw_ev_dispatch(struct c4iw_dev *dev, struct t4_cqe *err_cqe);
 
 extern struct cxgb4_client t4c_client;
 extern c4iw_handler_func c4iw_handlers[NUM_CPL_CMDS];
+void __iomem *c4iw_bar2_addrs(struct c4iw_rdev *rdev, unsigned int qid,
+			      enum cxgb4_bar2_qtype qtype,
+			      unsigned int *pbar2_qid, u64 *pbar2_pa);
 extern void c4iw_log_wr_stats(struct t4_wq *wq, struct t4_cqe *cqe);
 extern int c4iw_wr_log;
 extern int db_fc_threshold;

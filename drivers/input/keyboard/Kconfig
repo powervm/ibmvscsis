@@ -367,6 +367,7 @@ config KEYBOARD_MAPLE
 
 config KEYBOARD_MAX7359
 	tristate "Maxim MAX7359 Key Switch Controller"
+	select INPUT_MATRIXKMAP
 	depends on I2C
 	help
 	  If you say yes here you get support for the Maxim MAX7359 Key
@@ -588,6 +589,16 @@ config KEYBOARD_DAVINCI
 	  To compile this driver as a module, choose M here: the
 	  module will be called davinci_keyscan.
 
+config KEYBOARD_IPAQ_MICRO
+	tristate "Buttons on Micro SoC (iPaq h3100,h3600,h3700)"
+	depends on MFD_IPAQ_MICRO
+	help
+	  Say Y to enable support for the buttons attached to
+	  Micro peripheral controller on iPAQ h3100/h3600/h3700
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ipaq-micro-keys.
+
 config KEYBOARD_OMAP
 	tristate "TI OMAP keypad support"
 	depends on ARCH_OMAP1
@@ -667,7 +678,7 @@ config KEYBOARD_W90P910
 config KEYBOARD_CROS_EC
 	tristate "ChromeOS EC keyboard"
 	select INPUT_MATRIXKMAP
-	depends on MFD_CROS_EC
+	depends on CROS_EC_PROTO
 	help
 	  Say Y here to enable the matrix keyboard used by ChromeOS devices
 	  and implemented on the ChromeOS EC. You must enable one bus option
@@ -685,5 +696,16 @@ config KEYBOARD_CAP11XX
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called cap11xx.
+
+config KEYBOARD_BCM
+	tristate "Broadcom keypad driver"
+	depends on OF && HAVE_CLK
+	select INPUT_MATRIXKMAP
+	default ARCH_BCM_CYGNUS
+	help
+	  Say Y here if you want to use Broadcom keypad.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called bcm-keypad.
 
 endif

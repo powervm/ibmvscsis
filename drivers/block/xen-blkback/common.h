@@ -44,12 +44,6 @@
 #include <xen/interface/io/blkif.h>
 #include <xen/interface/io/protocols.h>
 
-#define DRV_PFX "xen-blkback:"
-#define DPRINTK(fmt, args...)				\
-	pr_debug(DRV_PFX "(%s:%d) " fmt ".\n",		\
-		 __func__, __LINE__, ##args)
-
-
 /*
  * This is the maximum number of segments that would be allowed in indirect
  * requests. This value will also be passed to the frontend.
@@ -213,6 +207,15 @@ enum blkif_protocol {
 	BLKIF_PROTOCOL_X86_32 = 2,
 	BLKIF_PROTOCOL_X86_64 = 3,
 };
+
+/*
+ * Default protocol if the frontend doesn't specify one.
+ */
+#ifdef CONFIG_X86
+#  define BLKIF_PROTOCOL_DEFAULT BLKIF_PROTOCOL_X86_32
+#else
+#  define BLKIF_PROTOCOL_DEFAULT BLKIF_PROTOCOL_NATIVE
+#endif
 
 struct xen_vbd {
 	/* What the domain refers to this vbd as. */

@@ -21,6 +21,7 @@
 #define TEGRA30		0x30
 #define TEGRA114	0x35
 #define TEGRA124	0x40
+#define TEGRA132	0x13
 
 #define TEGRA_FUSE_SKU_CALIB_0	0xf0
 #define TEGRA30_FUSE_SATA_CALIB	0x124
@@ -55,6 +56,7 @@ struct tegra_sku_info {
 };
 
 u32 tegra_read_straps(void);
+u32 tegra_read_ram_code(void);
 u32 tegra_read_chipid(void);
 int tegra_fuse_readl(unsigned long offset, u32 *value);
 

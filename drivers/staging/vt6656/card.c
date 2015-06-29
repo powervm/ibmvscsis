@@ -78,7 +78,7 @@ void vnt_set_channel(struct vnt_private *priv, u32 connection_channel)
 	/* Set Channel[7] = 0 to tell H/W channel is changing now. */
 	vnt_mac_reg_bits_off(priv, MAC_REG_CHANNEL, 0xb0);
 
-	vnt_control_out(priv, MESSAGE_TYPE_SELECT_CHANNLE,
+	vnt_control_out(priv, MESSAGE_TYPE_SELECT_CHANNEL,
 					connection_channel, 0, 0, NULL);
 
 	vnt_control_out_u8(priv, MESSAGE_REQUEST_MACREG, MAC_REG_CHANNEL,
@@ -389,7 +389,7 @@ void vnt_update_ifs(struct vnt_private *priv)
 			}
 		}
 
-		if (ofdm_rate == true)
+		if (ofdm_rate)
 			max_min = 4;
 		else
 			max_min = 5;

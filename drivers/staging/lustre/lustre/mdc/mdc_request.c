@@ -75,11 +75,11 @@ static int mdc_unpack_capa(struct obd_export *exp, struct ptlrpc_request *req,
 	if (IS_ERR(c)) {
 		CDEBUG(D_INFO, "alloc capa failed!\n");
 		return PTR_ERR(c);
-	} else {
-		c->c_capa = *capa;
-		*oc = c;
-		return 0;
 	}
+
+	c->c_capa = *capa;
+	*oc = c;
+	return 0;
 }
 
 static inline int mdc_queue_wait(struct ptlrpc_request *req)
@@ -481,6 +481,9 @@ static int mdc_unpack_acl(struct ptlrpc_request *req, struct lustre_md *md)
 		return -EPROTO;
 
 	acl = posix_acl_from_xattr(&init_user_ns, buf, body->aclsize);
+	if (acl == NULL)
+		return 0;
+
 	if (IS_ERR(acl)) {
 		rc = PTR_ERR(acl);
 		CERROR("convert xattr to acl: %d\n", rc);
@@ -855,8 +858,8 @@ static void mdc_close_handle_reply(struct ptlrpc_request *req,
 	}
 }
 
-int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
-	      struct md_open_data *mod, struct ptlrpc_request **request)
+static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
+		     struct md_open_data *mod, struct ptlrpc_request **request)
 {
 	struct obd_device     *obd = class_exp2obd(exp);
 	struct ptlrpc_request *req;
@@ -974,8 +977,8 @@ int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 	return rc < 0 ? rc : saved_rc;
 }
 
-int mdc_done_writing(struct obd_export *exp, struct md_op_data *op_data,
-		     struct md_open_data *mod)
+static int mdc_done_writing(struct obd_export *exp, struct md_op_data *op_data,
+			    struct md_open_data *mod)
 {
 	struct obd_device     *obd = class_exp2obd(exp);
 	struct ptlrpc_request *req;
@@ -1044,8 +1047,8 @@ int mdc_done_writing(struct obd_export *exp, struct md_op_data *op_data,
 }
 
 
-int mdc_readpage(struct obd_export *exp, struct md_op_data *op_data,
-		 struct page **pages, struct ptlrpc_request **request)
+static int mdc_readpage(struct obd_export *exp, struct md_op_data *op_data,
+			struct page **pages, struct ptlrpc_request **request)
 {
 	struct ptlrpc_request   *req;
 	struct ptlrpc_bulk_desc *desc;
@@ -1198,7 +1201,7 @@ static int mdc_ioc_fid2path(struct obd_export *exp, struct getinfo_fid2path *gf)
 
 	/* Key is KEY_FID2PATH + getinfo_fid2path description */
 	keylen = cfs_size_round(sizeof(KEY_FID2PATH)) + sizeof(*gf);
-	OBD_ALLOC(key, keylen);
+	key = kzalloc(keylen, GFP_NOFS);
 	if (key == NULL)
 		return -ENOMEM;
 	memcpy(key, KEY_FID2PATH, sizeof(KEY_FID2PATH));
@@ -1231,7 +1234,7 @@ static int mdc_ioc_fid2path(struct obd_export *exp, struct getinfo_fid2path *gf)
 	       PFID(&gf->gf_fid), gf->gf_recno, gf->gf_linkno, gf->gf_path);
 
 out:
-	OBD_FREE(key, keylen);
+	kfree(key);
 	return rc;
 }
 
@@ -1601,7 +1604,7 @@ static int mdc_changelog_send_thread(void *csdata)
 	CDEBUG(D_CHANGELOG, "changelog to fp=%p start %llu\n",
 	       cs->cs_fp, cs->cs_startrec);
 
-	OBD_ALLOC(cs->cs_buf, KUC_CHANGELOG_MSG_MAXSIZE);
+	cs->cs_buf = kzalloc(KUC_CHANGELOG_MSG_MAXSIZE, GFP_NOFS);
 	if (cs->cs_buf == NULL) {
 		rc = -ENOMEM;
 		goto out;
@@ -1641,9 +1644,8 @@ out:
 		llog_cat_close(NULL, llh);
 	if (ctxt)
 		llog_ctxt_put(ctxt);
-	if (cs->cs_buf)
-		OBD_FREE(cs->cs_buf, KUC_CHANGELOG_MSG_MAXSIZE);
-	OBD_FREE_PTR(cs);
+	kfree(cs->cs_buf);
+	kfree(cs);
 	return rc;
 }
 
@@ -1654,7 +1656,7 @@ static int mdc_ioc_changelog_send(struct obd_device *obd,
 	int rc;
 
 	/* Freed in mdc_changelog_send_thread */
-	OBD_ALLOC_PTR(cs);
+	cs = kzalloc(sizeof(*cs), GFP_NOFS);
 	if (!cs)
 		return -ENOMEM;
 
@@ -1676,7 +1678,7 @@ static int mdc_ioc_changelog_send(struct obd_device *obd,
 	}
 
 	CERROR("Failed to start changelog thread: %d\n", rc);
-	OBD_FREE_PTR(cs);
+	kfree(cs);
 	return rc;
 }
 
@@ -1816,10 +1818,7 @@ static int mdc_ioc_swap_layouts(struct obd_export *exp,
 	ptlrpc_request_set_replen(req);
 
 	rc = ptlrpc_queue_wait(req);
-	if (rc)
-		goto out;
 
-out:
 	ptlrpc_req_finished(req);
 	return rc;
 }
@@ -1908,8 +1907,8 @@ static int mdc_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 
 		/* copy UUID */
 		if (copy_to_user(data->ioc_pbuf2, obd2cli_tgt(obd),
-				     min((int) data->ioc_plen2,
-					 (int) sizeof(struct obd_uuid)))) {
+				 min_t(size_t, data->ioc_plen2,
+					       sizeof(struct obd_uuid)))) {
 			rc = -EFAULT;
 			goto out;
 		}
@@ -1921,8 +1920,8 @@ static int mdc_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 			goto out;
 
 		if (copy_to_user(data->ioc_pbuf1, &stat_buf,
-				     min((int) data->ioc_plen1,
-					 (int) sizeof(stat_buf)))) {
+				 min_t(size_t, data->ioc_plen1,
+					       sizeof(stat_buf)))) {
 			rc = -EFAULT;
 			goto out;
 		}
@@ -1934,7 +1933,7 @@ static int mdc_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 		struct if_quotactl *qctl = karg;
 		struct obd_quotactl *oqctl;
 
-		OBD_ALLOC_PTR(oqctl);
+		oqctl = kzalloc(sizeof(*oqctl), GFP_NOFS);
 		if (oqctl == NULL) {
 			rc = -ENOMEM;
 			goto out;
@@ -1948,7 +1947,7 @@ static int mdc_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 			qctl->obd_uuid = obd->u.cli.cl_target_uuid;
 		}
 
-		OBD_FREE_PTR(oqctl);
+		kfree(oqctl);
 		goto out;
 	}
 	case LL_IOC_GET_CONNECT_FLAGS:
@@ -1974,9 +1973,9 @@ out:
 	return rc;
 }
 
-int mdc_get_info_rpc(struct obd_export *exp,
-		     u32 keylen, void *key,
-		     int vallen, void *val)
+static int mdc_get_info_rpc(struct obd_export *exp,
+			    u32 keylen, void *key,
+			    int vallen, void *val)
 {
 	struct obd_import      *imp = class_exp2cliimp(exp);
 	struct ptlrpc_request  *req;
@@ -2091,7 +2090,6 @@ static int mdc_hsm_copytool_send(int len, void *val)
 {
 	struct kuc_hdr		*lh = (struct kuc_hdr *)val;
 	struct hsm_action_list	*hal = (struct hsm_action_list *)(lh + 1);
-	int			 rc;
 
 	if (len < sizeof(*lh) + sizeof(*hal)) {
 		CERROR("Short HSM message %d < %d\n", len,
@@ -2112,9 +2110,7 @@ static int mdc_hsm_copytool_send(int len, void *val)
 	       lh->kuc_msglen, hal->hal_count, hal->hal_fsname);
 
 	/* Broadcast to HSM listeners */
-	rc = libcfs_kkuc_group_put(KUC_GRP_HSM, lh);
-
-	return rc;
+	return libcfs_kkuc_group_put(KUC_GRP_HSM, lh);
 }
 
 /**
@@ -2148,11 +2144,11 @@ static int mdc_kuc_reregister(struct obd_import *imp)
 					 (void *)imp);
 }
 
-int mdc_set_info_async(const struct lu_env *env,
-		       struct obd_export *exp,
-		       u32 keylen, void *key,
-		       u32 vallen, void *val,
-		       struct ptlrpc_request_set *set)
+static int mdc_set_info_async(const struct lu_env *env,
+			      struct obd_export *exp,
+			      u32 keylen, void *key,
+			      u32 vallen, void *val,
+			      struct ptlrpc_request_set *set)
 {
 	struct obd_import	*imp = class_exp2cliimp(exp);
 	int			 rc;
@@ -2199,9 +2195,9 @@ int mdc_set_info_async(const struct lu_env *env,
 	return -EINVAL;
 }
 
-int mdc_get_info(const struct lu_env *env, struct obd_export *exp,
-		 __u32 keylen, void *key, __u32 *vallen, void *val,
-		 struct lov_stripe_md *lsm)
+static int mdc_get_info(const struct lu_env *env, struct obd_export *exp,
+			__u32 keylen, void *key, __u32 *vallen, void *val,
+			struct lov_stripe_md *lsm)
 {
 	int rc = -EINVAL;
 
@@ -2263,8 +2259,8 @@ int mdc_get_info(const struct lu_env *env, struct obd_export *exp,
 	return rc;
 }
 
-int mdc_sync(struct obd_export *exp, const struct lu_fid *fid,
-	     struct obd_capa *oc, struct ptlrpc_request **request)
+static int mdc_sync(struct obd_export *exp, const struct lu_fid *fid,
+		    struct obd_capa *oc, struct ptlrpc_request **request)
 {
 	struct ptlrpc_request *req;
 	int		    rc;
@@ -2356,7 +2352,7 @@ int mdc_fid_alloc(struct obd_export *exp, struct lu_fid *fid,
 	return seq_client_alloc_fid(NULL, seq, fid);
 }
 
-struct obd_uuid *mdc_get_uuid(struct obd_export *exp)
+static struct obd_uuid *mdc_get_uuid(struct obd_export *exp)
 {
 	struct client_obd *cli = &exp->exp_obd->u.cli;
 
@@ -2390,7 +2386,7 @@ static int mdc_resource_inode_free(struct ldlm_resource *res)
 	return 0;
 }
 
-struct ldlm_valblock_ops inode_lvbo = {
+static struct ldlm_valblock_ops inode_lvbo = {
 	.lvbo_free = mdc_resource_inode_free,
 };
 
@@ -2427,14 +2423,14 @@ static int mdc_setup(struct obd_device *obd, struct lustre_cfg *cfg)
 	struct lprocfs_static_vars lvars = { NULL };
 	int rc;
 
-	OBD_ALLOC(cli->cl_rpc_lock, sizeof(*cli->cl_rpc_lock));
+	cli->cl_rpc_lock = kzalloc(sizeof(*cli->cl_rpc_lock), GFP_NOFS);
 	if (!cli->cl_rpc_lock)
 		return -ENOMEM;
 	mdc_init_rpc_lock(cli->cl_rpc_lock);
 
 	ptlrpcd_addref();
 
-	OBD_ALLOC(cli->cl_close_lock, sizeof(*cli->cl_close_lock));
+	cli->cl_close_lock = kzalloc(sizeof(*cli->cl_close_lock), GFP_NOFS);
 	if (!cli->cl_close_lock) {
 		rc = -ENOMEM;
 		goto err_rpc_lock;
@@ -2445,7 +2441,7 @@ static int mdc_setup(struct obd_device *obd, struct lustre_cfg *cfg)
 	if (rc)
 		goto err_close_lock;
 	lprocfs_mdc_init_vars(&lvars);
-	lprocfs_obd_setup(obd, lvars.obd_vars);
+	lprocfs_obd_setup(obd, lvars.obd_vars, lvars.sysfs_vars);
 	sptlrpc_lprocfs_cliobd_attach(obd);
 	ptlrpc_lprocfs_register_obd(obd);
 
@@ -2462,9 +2458,9 @@ static int mdc_setup(struct obd_device *obd, struct lustre_cfg *cfg)
 	return rc;
 
 err_close_lock:
-	OBD_FREE(cli->cl_close_lock, sizeof(*cli->cl_close_lock));
+	kfree(cli->cl_close_lock);
 err_rpc_lock:
-	OBD_FREE(cli->cl_rpc_lock, sizeof(*cli->cl_rpc_lock));
+	kfree(cli->cl_rpc_lock);
 	ptlrpcd_decref();
 	return rc;
 }
@@ -2522,8 +2518,8 @@ static int mdc_cleanup(struct obd_device *obd)
 {
 	struct client_obd *cli = &obd->u.cli;
 
-	OBD_FREE(cli->cl_rpc_lock, sizeof(*cli->cl_rpc_lock));
-	OBD_FREE(cli->cl_close_lock, sizeof(*cli->cl_close_lock));
+	kfree(cli->cl_rpc_lock);
+	kfree(cli->cl_close_lock);
 
 	ptlrpcd_decref();
 
@@ -2550,9 +2546,9 @@ static int mdc_process_config(struct obd_device *obd, u32 len, void *buf)
 
 
 /* get remote permission for current user on fid */
-int mdc_get_remote_perm(struct obd_export *exp, const struct lu_fid *fid,
-			struct obd_capa *oc, __u32 suppgid,
-			struct ptlrpc_request **request)
+static int mdc_get_remote_perm(struct obd_export *exp, const struct lu_fid *fid,
+			       struct obd_capa *oc, __u32 suppgid,
+			       struct ptlrpc_request **request)
 {
 	struct ptlrpc_request  *req;
 	int		    rc;
@@ -2647,7 +2643,7 @@ static int mdc_renew_capa(struct obd_export *exp, struct obd_capa *oc,
 	return 0;
 }
 
-struct obd_ops mdc_obd_ops = {
+static struct obd_ops mdc_obd_ops = {
 	.o_owner	    = THIS_MODULE,
 	.o_setup	    = mdc_setup,
 	.o_precleanup       = mdc_precleanup,
@@ -2670,7 +2666,7 @@ struct obd_ops mdc_obd_ops = {
 	.o_quotacheck       = mdc_quotacheck
 };
 
-struct md_ops mdc_md_ops = {
+static struct md_ops mdc_md_ops = {
 	.m_getstatus	= mdc_getstatus,
 	.m_null_inode	    = mdc_null_inode,
 	.m_find_cbdata      = mdc_find_cbdata,
@@ -2705,16 +2701,14 @@ struct md_ops mdc_md_ops = {
 	.m_revalidate_lock      = mdc_revalidate_lock
 };
 
-int __init mdc_init(void)
+static int __init mdc_init(void)
 {
-	int rc;
 	struct lprocfs_static_vars lvars = { NULL };
 
 	lprocfs_mdc_init_vars(&lvars);
 
-	rc = class_register_type(&mdc_obd_ops, &mdc_md_ops, lvars.module_vars,
+	return class_register_type(&mdc_obd_ops, &mdc_md_ops,
 				 LUSTRE_MDC_NAME, NULL);
-	return rc;
 }
 
 static void /*__exit*/ mdc_exit(void)

@@ -53,6 +53,13 @@
 #include "icp_qat_fw_loader_handle.h"
 #include "icp_qat_hal.h"
 
+#define ADF_MAJOR_VERSION	0
+#define ADF_MINOR_VERSION	1
+#define ADF_BUILD_VERSION	3
+#define ADF_DRV_VERSION		__stringify(ADF_MAJOR_VERSION) "." \
+				__stringify(ADF_MINOR_VERSION) "." \
+				__stringify(ADF_BUILD_VERSION)
+
 #define ADF_STATUS_RESTARTING 0
 #define ADF_STATUS_STARTING 1
 #define ADF_STATUS_CONFIGURED 2
@@ -93,7 +100,7 @@ int adf_service_unregister(struct service_hndl *service);
 int adf_dev_init(struct adf_accel_dev *accel_dev);
 int adf_dev_start(struct adf_accel_dev *accel_dev);
 int adf_dev_stop(struct adf_accel_dev *accel_dev);
-int adf_dev_shutdown(struct adf_accel_dev *accel_dev);
+void adf_dev_shutdown(struct adf_accel_dev *accel_dev);
 
 int adf_ctl_dev_register(void);
 void adf_ctl_dev_unregister(void);
@@ -115,7 +122,7 @@ int adf_dev_restarted_notify(struct adf_accel_dev *accel_dev);
 int adf_ae_init(struct adf_accel_dev *accel_dev);
 int adf_ae_shutdown(struct adf_accel_dev *accel_dev);
 int adf_ae_fw_load(struct adf_accel_dev *accel_dev);
-int adf_ae_fw_release(struct adf_accel_dev *accel_dev);
+void adf_ae_fw_release(struct adf_accel_dev *accel_dev);
 int adf_ae_start(struct adf_accel_dev *accel_dev);
 int adf_ae_stop(struct adf_accel_dev *accel_dev);
 

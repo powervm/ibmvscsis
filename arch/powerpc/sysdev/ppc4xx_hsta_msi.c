@@ -128,6 +128,7 @@ static int hsta_msi_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct resource *mem;
 	int irq, ret, irq_count;
+	struct pci_controller *phb;
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (IS_ERR(mem)) {
@@ -145,7 +146,7 @@ static int hsta_msi_probe(struct platform_device *pdev)
 	ppc4xx_hsta_msi.address = mem->start;
 	ppc4xx_hsta_msi.data = ioremap(mem->start, resource_size(mem));
 	ppc4xx_hsta_msi.irq_count = irq_count;
-	if (IS_ERR(ppc4xx_hsta_msi.data)) {
+	if (!ppc4xx_hsta_msi.data) {
 		dev_err(dev, "Unable to map memory\n");
 		return -ENOMEM;
 	}
@@ -171,8 +172,10 @@ static int hsta_msi_probe(struct platform_device *pdev)
 		}
 	}
 
-	ppc_md.setup_msi_irqs = hsta_setup_msi_irqs;
-	ppc_md.teardown_msi_irqs = hsta_teardown_msi_irqs;
+	list_for_each_entry(phb, &hose_list, list_node) {
+		phb->controller_ops.setup_msi_irqs = hsta_setup_msi_irqs;
+		phb->controller_ops.teardown_msi_irqs = hsta_teardown_msi_irqs;
+	}
 	return 0;
 
 out2:

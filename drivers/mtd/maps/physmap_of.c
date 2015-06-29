@@ -147,7 +147,7 @@ static void of_free_probes(const char * const *probes)
 		kfree(probes);
 }
 
-static struct of_device_id of_flash_match[];
+static const struct of_device_id of_flash_match[];
 static int of_flash_probe(struct platform_device *dev)
 {
 	const char * const *part_probe_types;
@@ -269,6 +269,16 @@ static int of_flash_probe(struct platform_device *dev)
 			info->list[i].mtd = obsolete_probe(dev,
 							   &info->list[i].map);
 		}
+
+		/* Fall back to mapping region as ROM */
+		if (!info->list[i].mtd) {
+			dev_warn(&dev->dev,
+				"do_map_probe() failed for type %s\n",
+				 probe_type);
+
+			info->list[i].mtd = do_map_probe("map_rom",
+							 &info->list[i].map);
+		}
 		mtd_list[i] = info->list[i].mtd;
 
 		err = -ENXIO;
@@ -317,7 +327,7 @@ err_flash_remove:
 	return err;
 }
 
-static struct of_device_id of_flash_match[] = {
+static const struct of_device_id of_flash_match[] = {
 	{
 		.compatible	= "cfi-flash",
 		.data		= (void *)"cfi_probe",

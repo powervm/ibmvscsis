@@ -22,8 +22,8 @@
  *
  */
 
-#include "drmP.h"
-#include "i915_drm.h"
+#include <drm/drmP.h>
+#include <drm/i915_drm.h>
 #include "i915_drv.h"
 #include "i915_trace.h"
 #include "intel_drv.h"
@@ -113,7 +113,10 @@ restart:
 			continue;
 
 		obj = mo->obj;
-		drm_gem_object_reference(&obj->base);
+
+		if (!kref_get_unless_zero(&obj->base.refcount))
+			continue;
+
 		spin_unlock(&mn->lock);
 
 		cancel_userptr(obj);
@@ -149,7 +152,20 @@ static void i915_gem_userptr_mn_invalidate_range_start(struct mmu_notifier *_mn,
 			it = interval_tree_iter_first(&mn->objects, start, end);
 		if (it != NULL) {
 			obj = container_of(it, struct i915_mmu_object, it)->obj;
-			drm_gem_object_reference(&obj->base);
+
+			/* The mmu_object is released late when destroying the
+			 * GEM object so it is entirely possible to gain a
+			 * reference on an object in the process of being freed
+			 * since our serialisation is via the spinlock and not
+			 * the struct_mutex - and consequently use it after it
+			 * is freed and then double free it.
+			 */
+			if (!kref_get_unless_zero(&obj->base.refcount)) {
+				spin_unlock(&mn->lock);
+				serial = 0;
+				continue;
+			}
+
 			serial = mn->serial;
 		}
 		spin_unlock(&mn->lock);
@@ -203,11 +219,14 @@ i915_mmu_notifier_add(struct drm_device *dev,
 		      struct i915_mmu_object *mo)
 {
 	struct interval_tree_node *it;
-	int ret;
+	int ret = 0;
 
-	ret = i915_mutex_lock_interruptible(dev);
-	if (ret)
-		return ret;
+	/* By this point we have already done a lot of expensive setup that
+	 * we do not want to repeat just because the caller (e.g. X) has a
+	 * signal pending (and partly because of that expensive setup, X
+	 * using an interrupt timer is likely to get stuck in an EINTR loop).
+	 */
+	mutex_lock(&dev->struct_mutex);
 
 	/* Make sure we drop the final active reference (and thereby
 	 * remove the objects from the interval tree) before we do

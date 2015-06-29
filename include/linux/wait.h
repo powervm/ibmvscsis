@@ -267,6 +267,21 @@ do {									\
 	__wait_event(wq, condition);					\
 } while (0)
 
+#define __io_wait_event(wq, condition)					\
+	(void)___wait_event(wq, condition, TASK_UNINTERRUPTIBLE, 0, 0,	\
+			    io_schedule())
+
+/*
+ * io_wait_event() -- like wait_event() but with io_schedule()
+ */
+#define io_wait_event(wq, condition)					\
+do {									\
+	might_sleep();							\
+	if (condition)							\
+		break;							\
+	__io_wait_event(wq, condition);					\
+} while (0)
+
 #define __wait_event_freezable(wq, condition)				\
 	___wait_event(wq, condition, TASK_INTERRUPTIBLE, 0, 0,		\
 			    schedule(); try_to_freeze())
@@ -342,6 +357,19 @@ do {									\
 		__ret = __wait_event_freezable_timeout(wq, condition, timeout);	\
 	__ret;								\
 })
+
+#define __wait_event_exclusive_cmd(wq, condition, cmd1, cmd2)		\
+	(void)___wait_event(wq, condition, TASK_UNINTERRUPTIBLE, 1, 0,	\
+			    cmd1; schedule(); cmd2)
+/*
+ * Just like wait_event_cmd(), except it sets exclusive flag
+ */
+#define wait_event_exclusive_cmd(wq, condition, cmd1, cmd2)		\
+do {									\
+	if (condition)							\
+		break;							\
+	__wait_event_exclusive_cmd(wq, condition, cmd1, cmd2);		\
+} while (0)
 
 #define __wait_event_cmd(wq, condition, cmd1, cmd2)			\
 	(void)___wait_event(wq, condition, TASK_UNINTERRUPTIBLE, 0, 0,	\
@@ -954,7 +982,7 @@ extern int bit_wait_io_timeout(struct wait_bit_key *);
  * on that signal.
  */
 static inline int
-wait_on_bit(void *word, int bit, unsigned mode)
+wait_on_bit(unsigned long *word, int bit, unsigned mode)
 {
 	might_sleep();
 	if (!test_bit(bit, word))
@@ -979,7 +1007,7 @@ wait_on_bit(void *word, int bit, unsigned mode)
  * on that signal.
  */
 static inline int
-wait_on_bit_io(void *word, int bit, unsigned mode)
+wait_on_bit_io(unsigned long *word, int bit, unsigned mode)
 {
 	might_sleep();
 	if (!test_bit(bit, word))
@@ -1005,7 +1033,8 @@ wait_on_bit_io(void *word, int bit, unsigned mode)
  * received a signal and the mode permitted wakeup on that signal.
  */
 static inline int
-wait_on_bit_timeout(void *word, int bit, unsigned mode, unsigned long timeout)
+wait_on_bit_timeout(unsigned long *word, int bit, unsigned mode,
+		    unsigned long timeout)
 {
 	might_sleep();
 	if (!test_bit(bit, word))
@@ -1032,7 +1061,8 @@ wait_on_bit_timeout(void *word, int bit, unsigned mode, unsigned long timeout)
  * on that signal.
  */
 static inline int
-wait_on_bit_action(void *word, int bit, wait_bit_action_f *action, unsigned mode)
+wait_on_bit_action(unsigned long *word, int bit, wait_bit_action_f *action,
+		   unsigned mode)
 {
 	might_sleep();
 	if (!test_bit(bit, word))
@@ -1060,7 +1090,7 @@ wait_on_bit_action(void *word, int bit, wait_bit_action_f *action, unsigned mode
  * the @mode allows that signal to wake the process.
  */
 static inline int
-wait_on_bit_lock(void *word, int bit, unsigned mode)
+wait_on_bit_lock(unsigned long *word, int bit, unsigned mode)
 {
 	might_sleep();
 	if (!test_and_set_bit(bit, word))
@@ -1084,7 +1114,7 @@ wait_on_bit_lock(void *word, int bit, unsigned mode)
  * the @mode allows that signal to wake the process.
  */
 static inline int
-wait_on_bit_lock_io(void *word, int bit, unsigned mode)
+wait_on_bit_lock_io(unsigned long *word, int bit, unsigned mode)
 {
 	might_sleep();
 	if (!test_and_set_bit(bit, word))
@@ -1110,7 +1140,8 @@ wait_on_bit_lock_io(void *word, int bit, unsigned mode)
  * the @mode allows that signal to wake the process.
  */
 static inline int
-wait_on_bit_lock_action(void *word, int bit, wait_bit_action_f *action, unsigned mode)
+wait_on_bit_lock_action(unsigned long *word, int bit, wait_bit_action_f *action,
+			unsigned mode)
 {
 	might_sleep();
 	if (!test_and_set_bit(bit, word))

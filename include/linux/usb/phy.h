@@ -1,5 +1,5 @@
-/* USB OTG (On The Go) defines */
 /*
+ * USB PHY defines
  *
  * These APIs may be used between USB controllers.  USB device drivers
  * (for either host or peripheral roles) don't use these calls; they
@@ -106,7 +106,7 @@ struct usb_phy {
 	int	(*set_power)(struct usb_phy *x,
 				unsigned mA);
 
-	/* for non-OTG B devices: set transceiver into suspend mode */
+	/* Set transceiver into suspend mode */
 	int	(*set_suspend)(struct usb_phy *x,
 				int suspend);
 
@@ -205,6 +205,8 @@ extern struct usb_phy *usb_get_phy_dev(struct device *dev, u8 index);
 extern struct usb_phy *devm_usb_get_phy_dev(struct device *dev, u8 index);
 extern struct usb_phy *devm_usb_get_phy_by_phandle(struct device *dev,
 	const char *phandle, u8 index);
+extern struct usb_phy *devm_usb_get_phy_by_node(struct device *dev,
+	struct device_node *node, struct notifier_block *nb);
 extern void usb_put_phy(struct usb_phy *);
 extern void devm_usb_put_phy(struct device *dev, struct usb_phy *x);
 extern int usb_bind_phy(const char *dev_name, u8 index,
@@ -234,6 +236,12 @@ static inline struct usb_phy *devm_usb_get_phy_dev(struct device *dev, u8 index)
 
 static inline struct usb_phy *devm_usb_get_phy_by_phandle(struct device *dev,
 	const char *phandle, u8 index)
+{
+	return ERR_PTR(-ENXIO);
+}
+
+static inline struct usb_phy *devm_usb_get_phy_by_node(struct device *dev,
+	struct device_node *node, struct notifier_block *nb)
 {
 	return ERR_PTR(-ENXIO);
 }

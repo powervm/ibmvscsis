@@ -37,10 +37,20 @@
 
 #define PCI_DEVICE_ID_INTEL_LYNXPOINT_XHCI	0x8c31
 #define PCI_DEVICE_ID_INTEL_LYNXPOINT_LP_XHCI	0x9c31
+#define PCI_DEVICE_ID_INTEL_CHERRYVIEW_XHCI		0x22b5
+#define PCI_DEVICE_ID_INTEL_SUNRISEPOINT_H_XHCI		0xa12f
+#define PCI_DEVICE_ID_INTEL_SUNRISEPOINT_LP_XHCI	0x9d2f
 
 static const char hcd_name[] = "xhci_hcd";
 
 static struct hc_driver __read_mostly xhci_pci_hc_driver;
+
+static int xhci_pci_setup(struct usb_hcd *hcd);
+
+static const struct xhci_driver_overrides xhci_pci_overrides __initconst = {
+	.extra_priv_size = sizeof(struct xhci_hcd),
+	.reset = xhci_pci_setup,
+};
 
 /* called after powerup, by probe or system-pm "wakeup" */
 static int xhci_pci_reinit(struct xhci_hcd *xhci, struct pci_dev *pdev)
@@ -112,6 +122,7 @@ static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 	if (pdev->vendor == PCI_VENDOR_ID_INTEL) {
 		xhci->quirks |= XHCI_LPM_SUPPORT;
 		xhci->quirks |= XHCI_INTEL_HOST;
+		xhci->quirks |= XHCI_AVOID_BEI;
 	}
 	if (pdev->vendor == PCI_VENDOR_ID_INTEL &&
 			pdev->device == PCI_DEVICE_ID_INTEL_PANTHERPOINT_XHCI) {
@@ -127,11 +138,16 @@ static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 		 * PPT chipsets.
 		 */
 		xhci->quirks |= XHCI_SPURIOUS_REBOOT;
-		xhci->quirks |= XHCI_AVOID_BEI;
 	}
 	if (pdev->vendor == PCI_VENDOR_ID_INTEL &&
 		pdev->device == PCI_DEVICE_ID_INTEL_LYNXPOINT_LP_XHCI) {
 		xhci->quirks |= XHCI_SPURIOUS_REBOOT;
+	}
+	if (pdev->vendor == PCI_VENDOR_ID_INTEL &&
+		(pdev->device == PCI_DEVICE_ID_INTEL_SUNRISEPOINT_LP_XHCI ||
+		 pdev->device == PCI_DEVICE_ID_INTEL_SUNRISEPOINT_H_XHCI ||
+		 pdev->device == PCI_DEVICE_ID_INTEL_CHERRYVIEW_XHCI)) {
+		xhci->quirks |= XHCI_PME_STUCK_QUIRK;
 	}
 	if (pdev->vendor == PCI_VENDOR_ID_ETRON &&
 			pdev->device == PCI_DEVICE_ID_EJ168) {
@@ -159,6 +175,21 @@ static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 				"QUIRK: Resetting on resume");
 }
 
+/*
+ * Make sure PME works on some Intel xHCI controllers by writing 1 to clear
+ * the Internal PME flag bit in vendor specific PMCTRL register at offset 0x80a4
+ */
+static void xhci_pme_quirk(struct xhci_hcd *xhci)
+{
+	u32 val;
+	void __iomem *reg;
+
+	reg = (void __iomem *) xhci->cap_regs + 0x80a4;
+	val = readl(reg);
+	writel(val | BIT(28), reg);
+	readl(reg);
+}
+
 /* called during probe() after chip reset completes */
 static int xhci_pci_setup(struct usb_hcd *hcd)
 {
@@ -182,7 +213,6 @@ static int xhci_pci_setup(struct usb_hcd *hcd)
 	if (!retval)
 		return retval;
 
-	kfree(xhci);
 	return retval;
 }
 
@@ -223,11 +253,6 @@ static int xhci_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 		goto dealloc_usb2_hcd;
 	}
 
-	/* Set the xHCI pointer before xhci_pci_setup() (aka hcd_driver.reset)
-	 * is called by usb_add_hcd().
-	 */
-	*((struct xhci_hcd **) xhci->shared_hcd->hcd_priv) = xhci;
-
 	retval = usb_add_hcd(xhci->shared_hcd, dev->irq,
 			IRQF_SHARED);
 	if (retval)
@@ -266,8 +291,6 @@ static void xhci_pci_remove(struct pci_dev *dev)
 	/* Workaround for spurious wakeups at shutdown with HSW */
 	if (xhci->quirks & XHCI_SPURIOUS_WAKEUP)
 		pci_set_power_state(dev, PCI_D3hot);
-
-	kfree(xhci);
 }
 
 #ifdef CONFIG_PM
@@ -282,6 +305,9 @@ static int xhci_pci_suspend(struct usb_hcd *hcd, bool do_wakeup)
 	 */
 	if (xhci->quirks & XHCI_COMP_MODE_QUIRK)
 		pdev->no_d3cold = true;
+
+	if (xhci->quirks & XHCI_PME_STUCK_QUIRK)
+		xhci_pme_quirk(xhci);
 
 	return xhci_suspend(xhci, do_wakeup);
 }
@@ -312,6 +338,9 @@ static int xhci_pci_resume(struct usb_hcd *hcd, bool hibernated)
 
 	if (pdev->vendor == PCI_VENDOR_ID_INTEL)
 		usb_enable_intel_xhci_ports(pdev);
+
+	if (xhci->quirks & XHCI_PME_STUCK_QUIRK)
+		xhci_pme_quirk(xhci);
 
 	retval = xhci_resume(xhci, hibernated);
 	return retval;
@@ -349,7 +378,7 @@ static struct pci_driver xhci_pci_driver = {
 
 static int __init xhci_pci_init(void)
 {
-	xhci_init_driver(&xhci_pci_hc_driver, xhci_pci_setup);
+	xhci_init_driver(&xhci_pci_hc_driver, &xhci_pci_overrides);
 #ifdef CONFIG_PM
 	xhci_pci_hc_driver.pci_suspend = xhci_pci_suspend;
 	xhci_pci_hc_driver.pci_resume = xhci_pci_resume;

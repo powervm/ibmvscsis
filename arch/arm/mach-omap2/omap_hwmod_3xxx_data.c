@@ -29,8 +29,6 @@
 #include <linux/platform_data/mailbox-omap.h>
 #include <plat/dmtimer.h>
 
-#include "am35xx.h"
-
 #include "soc.h"
 #include "omap_hwmod.h"
 #include "omap_hwmod_common_data.h"
@@ -49,6 +47,8 @@
  * is driver-specific or driver-kernel integration-specific belongs
  * elsewhere.
  */
+
+#define AM35XX_IPSS_USBOTGSS_BASE      0x5C040000
 
 /*
  * IP blocks
@@ -2169,16 +2169,8 @@ static struct omap_hwmod omap3xxx_gpmc_hwmod = {
 	.clkdm_name	= "core_l3_clkdm",
 	.mpu_irqs	= omap3xxx_gpmc_irqs,
 	.main_clk	= "gpmc_fck",
-	/*
-	 * XXX HWMOD_INIT_NO_RESET should not be needed for this IP
-	 * block.  It is not being added due to any known bugs with
-	 * resetting the GPMC IP block, but rather because any timings
-	 * set by the bootloader are not being correctly programmed by
-	 * the kernel from the board file or DT data.
-	 * HWMOD_INIT_NO_RESET should be removed ASAP.
-	 */
-	.flags		= (HWMOD_INIT_NO_IDLE | HWMOD_INIT_NO_RESET |
-			   HWMOD_NO_IDLEST),
+	/* Skip reset for CONFIG_OMAP_GPMC_DEBUG for bootloader timings */
+	.flags		= HWMOD_NO_IDLEST | DEBUG_OMAP_GPMC_HWMOD_FLAGS,
 };
 
 /*
@@ -3459,15 +3451,6 @@ static struct omap_hwmod_ocp_if am35xx_mdio__l3 = {
 	.user		= OCP_USER_MPU,
 };
 
-static struct omap_hwmod_addr_space am35xx_mdio_addrs[] = {
-	{
-		.pa_start	= AM35XX_IPSS_MDIO_BASE,
-		.pa_end		= AM35XX_IPSS_MDIO_BASE + SZ_4K - 1,
-		.flags		= ADDR_TYPE_RT,
-	},
-	{ }
-};
-
 /* l4_core -> davinci mdio  */
 /*
  * XXX Should be connected to an IPSS hwmod, not the L4_CORE directly;
@@ -3478,16 +3461,7 @@ static struct omap_hwmod_ocp_if am35xx_l4_core__mdio = {
 	.master		= &omap3xxx_l4_core_hwmod,
 	.slave		= &am35xx_mdio_hwmod,
 	.clk		= "emac_fck",
-	.addr		= am35xx_mdio_addrs,
 	.user		= OCP_USER_MPU,
-};
-
-static struct omap_hwmod_irq_info am35xx_emac_mpu_irqs[] = {
-	{ .name = "rxthresh",	.irq = 67 + OMAP_INTC_START, },
-	{ .name = "rx_pulse",	.irq = 68 + OMAP_INTC_START, },
-	{ .name = "tx_pulse",	.irq = 69 + OMAP_INTC_START },
-	{ .name = "misc_pulse",	.irq = 70 + OMAP_INTC_START },
-	{ .irq = -1 },
 };
 
 static struct omap_hwmod_class am35xx_emac_class = {
@@ -3496,7 +3470,6 @@ static struct omap_hwmod_class am35xx_emac_class = {
 
 static struct omap_hwmod am35xx_emac_hwmod = {
 	.name		= "davinci_emac",
-	.mpu_irqs	= am35xx_emac_mpu_irqs,
 	.class		= &am35xx_emac_class,
 	/*
 	 * According to Mark Greer, the MPU will not return from WFI
@@ -3519,15 +3492,6 @@ static struct omap_hwmod_ocp_if am35xx_emac__l3 = {
 	.user		= OCP_USER_MPU,
 };
 
-static struct omap_hwmod_addr_space am35xx_emac_addrs[] = {
-	{
-		.pa_start	= AM35XX_IPSS_EMAC_BASE,
-		.pa_end		= AM35XX_IPSS_EMAC_BASE + 0x30000 - 1,
-		.flags		= ADDR_TYPE_RT,
-	},
-	{ }
-};
-
 /* l4_core -> davinci emac  */
 /*
  * XXX Should be connected to an IPSS hwmod, not the L4_CORE directly;
@@ -3538,7 +3502,6 @@ static struct omap_hwmod_ocp_if am35xx_l4_core__emac = {
 	.master		= &omap3xxx_l4_core_hwmod,
 	.slave		= &am35xx_emac_hwmod,
 	.clk		= "emac_ick",
-	.addr		= am35xx_emac_addrs,
 	.user		= OCP_USER_MPU,
 };
 
@@ -3773,29 +3736,54 @@ static struct omap_hwmod_ocp_if *omap3xxx_hwmod_ocp_ifs[] __initdata = {
 /* GP-only hwmod links */
 static struct omap_hwmod_ocp_if *omap34xx_gp_hwmod_ocp_ifs[] __initdata = {
 	&omap3xxx_l4_sec__timer12,
-	&omap3xxx_l4_core__sham,
-	&omap3xxx_l4_core__aes,
 	NULL
 };
 
 static struct omap_hwmod_ocp_if *omap36xx_gp_hwmod_ocp_ifs[] __initdata = {
 	&omap3xxx_l4_sec__timer12,
-	&omap3xxx_l4_core__sham,
-	&omap3xxx_l4_core__aes,
 	NULL
 };
 
 static struct omap_hwmod_ocp_if *am35xx_gp_hwmod_ocp_ifs[] __initdata = {
 	&omap3xxx_l4_sec__timer12,
-	/*
-	 * Apparently the SHA/MD5 and AES accelerator IP blocks are
-	 * only present on some AM35xx chips, and no one knows which
-	 * ones.  See
-	 * http://www.spinics.net/lists/arm-kernel/msg215466.html So
-	 * if you need these IP blocks on an AM35xx, try uncommenting
-	 * the following lines.
-	 */
+	NULL
+};
+
+/* crypto hwmod links */
+static struct omap_hwmod_ocp_if *omap34xx_sham_hwmod_ocp_ifs[] __initdata = {
+	&omap3xxx_l4_core__sham,
+	NULL
+};
+
+static struct omap_hwmod_ocp_if *omap34xx_aes_hwmod_ocp_ifs[] __initdata = {
+	&omap3xxx_l4_core__aes,
+	NULL
+};
+
+static struct omap_hwmod_ocp_if *omap36xx_sham_hwmod_ocp_ifs[] __initdata = {
+	&omap3xxx_l4_core__sham,
+	NULL
+};
+
+static struct omap_hwmod_ocp_if *omap36xx_aes_hwmod_ocp_ifs[] __initdata = {
+	&omap3xxx_l4_core__aes,
+	NULL
+};
+
+/*
+ * Apparently the SHA/MD5 and AES accelerator IP blocks are
+ * only present on some AM35xx chips, and no one knows which
+ * ones.  See
+ * http://www.spinics.net/lists/arm-kernel/msg215466.html So
+ * if you need these IP blocks on an AM35xx, try uncommenting
+ * the following lines.
+ */
+static struct omap_hwmod_ocp_if *am35xx_sham_hwmod_ocp_ifs[] __initdata = {
 	/* &omap3xxx_l4_core__sham, */
+	NULL
+};
+
+static struct omap_hwmod_ocp_if *am35xx_aes_hwmod_ocp_ifs[] __initdata = {
 	/* &omap3xxx_l4_core__aes, */
 	NULL
 };
@@ -3897,10 +3885,41 @@ static struct omap_hwmod_ocp_if *omap3xxx_dss_hwmod_ocp_ifs[] __initdata = {
 	NULL
 };
 
+/**
+ * omap3xxx_hwmod_is_hs_ip_block_usable - is a security IP block accessible?
+ * @bus: struct device_node * for the top-level OMAP DT data
+ * @dev_name: device name used in the DT file
+ *
+ * Determine whether a "secure" IP block @dev_name is usable by Linux.
+ * There doesn't appear to be a 100% reliable way to determine this,
+ * so we rely on heuristics.  If @bus is null, meaning there's no DT
+ * data, then we only assume the IP block is accessible if the OMAP is
+ * fused as a 'general-purpose' SoC.  If however DT data is present,
+ * test to see if the IP block is described in the DT data and set to
+ * 'status = "okay"'.  If so then we assume the ODM has configured the
+ * OMAP firewalls to allow access to the IP block.
+ *
+ * Return: 0 if device named @dev_name is not likely to be accessible,
+ * or 1 if it is likely to be accessible.
+ */
+static int __init omap3xxx_hwmod_is_hs_ip_block_usable(struct device_node *bus,
+						       const char *dev_name)
+{
+	if (!bus)
+		return (omap_type() == OMAP2_DEVICE_TYPE_GP) ? 1 : 0;
+
+	if (of_device_is_available(of_find_node_by_name(bus, dev_name)))
+		return 1;
+
+	return 0;
+}
+
 int __init omap3xxx_hwmod_init(void)
 {
 	int r;
-	struct omap_hwmod_ocp_if **h = NULL, **h_gp = NULL;
+	struct omap_hwmod_ocp_if **h = NULL, **h_gp = NULL, **h_sham = NULL;
+	struct omap_hwmod_ocp_if **h_aes = NULL;
+	struct device_node *bus = NULL;
 	unsigned int rev;
 
 	omap_hwmod_init();
@@ -3922,13 +3941,19 @@ int __init omap3xxx_hwmod_init(void)
 	    rev == OMAP3430_REV_ES3_1 || rev == OMAP3430_REV_ES3_1_2) {
 		h = omap34xx_hwmod_ocp_ifs;
 		h_gp = omap34xx_gp_hwmod_ocp_ifs;
+		h_sham = omap34xx_sham_hwmod_ocp_ifs;
+		h_aes = omap34xx_aes_hwmod_ocp_ifs;
 	} else if (rev == AM35XX_REV_ES1_0 || rev == AM35XX_REV_ES1_1) {
 		h = am35xx_hwmod_ocp_ifs;
 		h_gp = am35xx_gp_hwmod_ocp_ifs;
+		h_sham = am35xx_sham_hwmod_ocp_ifs;
+		h_aes = am35xx_aes_hwmod_ocp_ifs;
 	} else if (rev == OMAP3630_REV_ES1_0 || rev == OMAP3630_REV_ES1_1 ||
 		   rev == OMAP3630_REV_ES1_2) {
 		h = omap36xx_hwmod_ocp_ifs;
 		h_gp = omap36xx_gp_hwmod_ocp_ifs;
+		h_sham = omap36xx_sham_hwmod_ocp_ifs;
+		h_aes = omap36xx_aes_hwmod_ocp_ifs;
 	} else {
 		WARN(1, "OMAP3 hwmod family init: unknown chip type\n");
 		return -EINVAL;
@@ -3945,6 +3970,25 @@ int __init omap3xxx_hwmod_init(void)
 			return r;
 	}
 
+	/*
+	 * Register crypto hwmod links only if they are not disabled in DT.
+	 * If DT information is missing, enable them only for GP devices.
+	 */
+
+	if (of_have_populated_dt())
+		bus = of_find_node_by_name(NULL, "ocp");
+
+	if (h_sham && omap3xxx_hwmod_is_hs_ip_block_usable(bus, "sham")) {
+		r = omap_hwmod_register_links(h_sham);
+		if (r < 0)
+			return r;
+	}
+
+	if (h_aes && omap3xxx_hwmod_is_hs_ip_block_usable(bus, "aes")) {
+		r = omap_hwmod_register_links(h_aes);
+		if (r < 0)
+			return r;
+	}
 
 	/*
 	 * Register hwmod links specific to certain ES levels of a

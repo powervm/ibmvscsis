@@ -31,6 +31,7 @@
 
 #include "entry-header.S"
 #include <asm/entry-macro-multi.S>
+#include <asm/probes.h>
 
 /*
  * Interrupt handling.
@@ -39,7 +40,7 @@
 #ifdef CONFIG_MULTI_IRQ_HANDLER
 	ldr	r1, =handle_arch_irq
 	mov	r0, sp
-	adr	lr, BSYM(9997f)
+	badr	lr, 9997f
 	ldr	pc, [r1]
 #else
 	arch_irq_handler_default
@@ -249,7 +250,7 @@ __und_svc:
 	@ If a kprobe is about to simulate a "stmdb sp..." instruction,
 	@ it obviously needs free stack space which then will belong to
 	@ the saved context.
-	svc_entry 64
+	svc_entry MAX_STACK_SIZE
 #else
 	svc_entry
 #endif
@@ -272,7 +273,7 @@ __und_svc:
 	str	r4, [sp, #S_PC]
 	orr	r0, r9, r0, lsl #16
 #endif
-	adr	r9, BSYM(__und_svc_finish)
+	badr	r9, __und_svc_finish
 	mov	r2, r4
 	bl	call_fpe
 
@@ -468,7 +469,7 @@ __und_usr:
 	@ instruction, or the more conventional lr if we are to treat
 	@ this as a real undefined instruction
 	@
-	adr	r9, BSYM(ret_from_exception)
+	badr	r9, ret_from_exception
 
 	@ IRQs must be enabled before attempting to read the instruction from
 	@ user space since that could cause a page/translation fault if the
@@ -485,7 +486,7 @@ __und_usr:
 	@ r2 = PC value for the following instruction (:= regs->ARM_pc)
 	@ r4 = PC value for the faulting instruction
 	@ lr = 32-bit undefined instruction function
-	adr	lr, BSYM(__und_usr_fault_32)
+	badr	lr, __und_usr_fault_32
 	b	call_fpe
 
 __und_usr_thumb:
@@ -521,7 +522,7 @@ ARM_BE8(rev16	r0, r0)				@ little endian instruction
 	add	r2, r2, #2			@ r2 is PC + 2, make it PC + 4
 	str	r2, [sp, #S_PC]			@ it's a 2x16bit instr, update
 	orr	r0, r0, r5, lsl #16
-	adr	lr, BSYM(__und_usr_fault_32)
+	badr	lr, __und_usr_fault_32
 	@ r0 = the two 16-bit Thumb instructions which caused the exception
 	@ r2 = PC value for the following Thumb instruction (:= regs->ARM_pc)
 	@ r4 = PC value for the first 16-bit Thumb instruction
@@ -544,7 +545,7 @@ ENDPROC(__und_usr)
 /*
  * The out of line fixup for the ldrt instructions above.
  */
-	.pushsection .fixup, "ax"
+	.pushsection .text.fixup, "ax"
 	.align	2
 4:	str     r4, [sp, #S_PC]			@ retry current instruction
 	ret	r9
@@ -715,7 +716,7 @@ __und_usr_fault_32:
 __und_usr_fault_16:
 	mov	r1, #2
 1:	mov	r0, sp
-	adr	lr, BSYM(ret_from_exception)
+	badr	lr, ret_from_exception
 	b	__und_fault
 ENDPROC(__und_usr_fault_32)
 ENDPROC(__und_usr_fault_16)

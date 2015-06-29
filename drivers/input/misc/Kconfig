@@ -115,6 +115,18 @@ config INPUT_PCSPKR
 	  To compile this driver as a module, choose M here: the
 	  module will be called pcspkr.
 
+config INPUT_PM8941_PWRKEY
+	tristate "Qualcomm PM8941 power key support"
+	depends on MFD_SPMI_PMIC
+	help
+	  Say Y here if you want support for the power key usually found
+	  on boards using a Qualcomm PM8941 compatible PMIC.
+
+	  If unsure, say Y.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pm8941-pwrkey.
+
 config INPUT_PM8XXX_VIBRATOR
 	tristate "Qualcomm PM8XXX vibrator support"
 	depends on MFD_PM8XXX
@@ -164,6 +176,18 @@ config INPUT_MAX77693_HAPTIC
 
 	  To compile this driver as module, choose M here: the
 	  module will be called max77693-haptic.
+
+config INPUT_MAX77843_HAPTIC
+    tristate "MAXIM MAX77843 haptic controller support"
+    depends on MFD_MAX77843 && REGULATOR
+    select INPUT_FF_MEMLESS
+    help
+      This option enables support for the haptic controller on
+      MAXIM MAX77843 chip. The driver supports ff-memless interface
+      from input framework.
+
+      To compile this driver as module, choose M here: the
+      module will be called max77843-haptic.
 
 config INPUT_MAX8925_ONKEY
 	tristate "MAX8925 ONKEY support"
@@ -586,6 +610,16 @@ config INPUT_DA9055_ONKEY
 	  To compile this driver as a module, choose M here: the module
 	  will be called da9055_onkey.
 
+config INPUT_DA9063_ONKEY
+	tristate "Dialog DA9063 OnKey"
+	depends on MFD_DA9063
+	help
+	  Support the ONKEY of Dialog DA9063 Power Management IC as an
+	  input device reporting power button statue.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called da9063_onkey.
+
 config INPUT_DM355EVM
 	tristate "TI DaVinci DM355 EVM Keypad and IR Remote"
 	depends on MFD_DM355EVM_MSP
@@ -751,6 +785,17 @@ config INPUT_DRV260X_HAPTICS
 	  To compile this driver as a module, choose M here: the
 	  module will be called drv260x-haptics.
 
+config INPUT_DRV2665_HAPTICS
+	tristate "TI DRV2665 haptics support"
+	depends on INPUT && I2C
+	select INPUT_FF_MEMLESS
+	select REGMAP_I2C
+	help
+	  Say Y to enable support for the TI DRV2665 haptics driver.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called drv2665-haptics.
+
 config INPUT_DRV2667_HAPTICS
 	tristate "TI DRV2667 haptics support"
 	depends on INPUT && I2C
@@ -760,6 +805,6 @@ config INPUT_DRV2667_HAPTICS
 	  Say Y to enable support for the TI DRV2667 haptics driver.
 
 	  To compile this driver as a module, choose M here: the
-	  module will be called drv260x-haptics.
+	  module will be called drv2667-haptics.
 
 endif

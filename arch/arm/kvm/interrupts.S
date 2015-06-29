@@ -66,6 +66,17 @@ ENTRY(__kvm_tlb_flush_vmid_ipa)
 	bx	lr
 ENDPROC(__kvm_tlb_flush_vmid_ipa)
 
+/**
+ * void __kvm_tlb_flush_vmid(struct kvm *kvm) - Flush per-VMID TLBs
+ *
+ * Reuses __kvm_tlb_flush_vmid_ipa() for ARMv7, without passing address
+ * parameter
+ */
+
+ENTRY(__kvm_tlb_flush_vmid)
+	b	__kvm_tlb_flush_vmid_ipa
+ENDPROC(__kvm_tlb_flush_vmid)
+
 /********************************************************************
  * Flush TLBs and instruction caches of all CPUs inside the inner-shareable
  * domain, for all VMIDs
@@ -159,13 +170,9 @@ __kvm_vcpu_return:
 	@ Don't trap coprocessor accesses for host kernel
 	set_hstr vmexit
 	set_hdcr vmexit
-	set_hcptr vmexit, (HCPTR_TTA | HCPTR_TCP(10) | HCPTR_TCP(11))
+	set_hcptr vmexit, (HCPTR_TTA | HCPTR_TCP(10) | HCPTR_TCP(11)), after_vfp_restore
 
 #ifdef CONFIG_VFPv3
-	@ Save floating point registers we if let guest use them.
-	tst	r2, #(HCPTR_TCP(10) | HCPTR_TCP(11))
-	bne	after_vfp_restore
-
 	@ Switch VFP/NEON hardware state to the host's
 	add	r7, vcpu, #VCPU_VFP_GUEST
 	store_vfp_state r7
@@ -177,6 +184,8 @@ after_vfp_restore:
 	@ Restore FPEXC_EN which we clobbered on entry
 	pop	{r2}
 	VFPFMXR FPEXC, r2
+#else
+after_vfp_restore:
 #endif
 
 	@ Reset Hyp-role
@@ -298,7 +307,7 @@ ENTRY(kvm_call_hyp)
 THUMB(	orr	r2, r2, #PSR_T_BIT	)
 	msr	spsr_cxsf, r2
 	mrs	r1, ELR_hyp
-	ldr	r2, =BSYM(panic)
+	ldr	r2, =panic
 	msr	ELR_hyp, r2
 	ldr	r0, =\panic_str
 	clrex				@ Clear exclusive monitor
@@ -472,7 +481,7 @@ switch_to_guest_vfp:
 	push	{r3-r7}
 
 	@ NEON/VFP used.  Turn on VFP access.
-	set_hcptr vmexit, (HCPTR_TCP(10) | HCPTR_TCP(11))
+	set_hcptr vmtrap, (HCPTR_TCP(10) | HCPTR_TCP(11))
 
 	@ Switch VFP/NEON hardware state to the guest's
 	add	r7, r0, #VCPU_VFP_HOST

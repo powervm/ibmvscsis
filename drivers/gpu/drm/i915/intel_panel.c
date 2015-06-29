@@ -30,6 +30,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/kernel.h>
 #include <linux/moduleparam.h>
 #include "intel_drv.h"
 
@@ -98,13 +99,13 @@ intel_find_panel_downclock(struct drm_device *dev,
 /* adjusted_mode has been preset to be the panel's fixed mode */
 void
 intel_pch_panel_fitting(struct intel_crtc *intel_crtc,
-			struct intel_crtc_config *pipe_config,
+			struct intel_crtc_state *pipe_config,
 			int fitting_mode)
 {
 	struct drm_display_mode *adjusted_mode;
 	int x, y, width, height;
 
-	adjusted_mode = &pipe_config->adjusted_mode;
+	adjusted_mode = &pipe_config->base.adjusted_mode;
 
 	x = y = width = height = 0;
 
@@ -223,10 +224,10 @@ static inline u32 panel_fitter_scaling(u32 source, u32 target)
 	return (FACTOR * ratio + FACTOR/2) / FACTOR;
 }
 
-static void i965_scale_aspect(struct intel_crtc_config *pipe_config,
+static void i965_scale_aspect(struct intel_crtc_state *pipe_config,
 			      u32 *pfit_control)
 {
-	struct drm_display_mode *adjusted_mode = &pipe_config->adjusted_mode;
+	struct drm_display_mode *adjusted_mode = &pipe_config->base.adjusted_mode;
 	u32 scaled_width = adjusted_mode->hdisplay *
 		pipe_config->pipe_src_h;
 	u32 scaled_height = pipe_config->pipe_src_w *
@@ -243,11 +244,11 @@ static void i965_scale_aspect(struct intel_crtc_config *pipe_config,
 		*pfit_control |= PFIT_ENABLE | PFIT_SCALING_AUTO;
 }
 
-static void i9xx_scale_aspect(struct intel_crtc_config *pipe_config,
+static void i9xx_scale_aspect(struct intel_crtc_state *pipe_config,
 			      u32 *pfit_control, u32 *pfit_pgm_ratios,
 			      u32 *border)
 {
-	struct drm_display_mode *adjusted_mode = &pipe_config->adjusted_mode;
+	struct drm_display_mode *adjusted_mode = &pipe_config->base.adjusted_mode;
 	u32 scaled_width = adjusted_mode->hdisplay *
 		pipe_config->pipe_src_h;
 	u32 scaled_height = pipe_config->pipe_src_w *
@@ -301,14 +302,14 @@ static void i9xx_scale_aspect(struct intel_crtc_config *pipe_config,
 }
 
 void intel_gmch_panel_fitting(struct intel_crtc *intel_crtc,
-			      struct intel_crtc_config *pipe_config,
+			      struct intel_crtc_state *pipe_config,
 			      int fitting_mode)
 {
 	struct drm_device *dev = intel_crtc->base.dev;
 	u32 pfit_control = 0, pfit_pgm_ratios = 0, border = 0;
 	struct drm_display_mode *adjusted_mode;
 
-	adjusted_mode = &pipe_config->adjusted_mode;
+	adjusted_mode = &pipe_config->base.adjusted_mode;
 
 	/* Native modes don't need fitting */
 	if (adjusted_mode->hdisplay == pipe_config->pipe_src_w &&
@@ -535,6 +536,14 @@ static u32 vlv_get_backlight(struct intel_connector *connector)
 	return _vlv_get_backlight(dev, pipe);
 }
 
+static u32 bxt_get_backlight(struct intel_connector *connector)
+{
+	struct drm_device *dev = connector->base.dev;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	return I915_READ(BXT_BLC_PWM_DUTY1);
+}
+
 static u32 intel_panel_get_backlight(struct intel_connector *connector)
 {
 	struct drm_device *dev = connector->base.dev;
@@ -613,6 +622,14 @@ static void vlv_set_backlight(struct intel_connector *connector, u32 level)
 
 	tmp = I915_READ(VLV_BLC_PWM_CTL(pipe)) & ~BACKLIGHT_DUTY_CYCLE_MASK;
 	I915_WRITE(VLV_BLC_PWM_CTL(pipe), tmp | level);
+}
+
+static void bxt_set_backlight(struct intel_connector *connector, u32 level)
+{
+	struct drm_device *dev = connector->base.dev;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	I915_WRITE(BXT_BLC_PWM_DUTY1, level);
 }
 
 static void
@@ -738,6 +755,18 @@ static void vlv_disable_backlight(struct intel_connector *connector)
 
 	tmp = I915_READ(VLV_BLC_PWM_CTL2(pipe));
 	I915_WRITE(VLV_BLC_PWM_CTL2(pipe), tmp & ~BLM_PWM_ENABLE);
+}
+
+static void bxt_disable_backlight(struct intel_connector *connector)
+{
+	struct drm_device *dev = connector->base.dev;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	u32 tmp;
+
+	intel_panel_actually_set_backlight(connector, 0);
+
+	tmp = I915_READ(BXT_BLC_PWM_CTL1);
+	I915_WRITE(BXT_BLC_PWM_CTL1, tmp & ~BXT_BLC_PWM_ENABLE);
 }
 
 void intel_panel_disable_backlight(struct intel_connector *connector)
@@ -944,6 +973,33 @@ static void vlv_enable_backlight(struct intel_connector *connector)
 	I915_WRITE(VLV_BLC_PWM_CTL2(pipe), ctl2);
 	POSTING_READ(VLV_BLC_PWM_CTL2(pipe));
 	I915_WRITE(VLV_BLC_PWM_CTL2(pipe), ctl2 | BLM_PWM_ENABLE);
+}
+
+static void bxt_enable_backlight(struct intel_connector *connector)
+{
+	struct drm_device *dev = connector->base.dev;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct intel_panel *panel = &connector->panel;
+	u32 pwm_ctl;
+
+	pwm_ctl = I915_READ(BXT_BLC_PWM_CTL1);
+	if (pwm_ctl & BXT_BLC_PWM_ENABLE) {
+		DRM_DEBUG_KMS("backlight already enabled\n");
+		pwm_ctl &= ~BXT_BLC_PWM_ENABLE;
+		I915_WRITE(BXT_BLC_PWM_CTL1, pwm_ctl);
+	}
+
+	I915_WRITE(BXT_BLC_PWM_FREQ1, panel->backlight.max);
+
+	intel_panel_actually_set_backlight(connector, panel->backlight.level);
+
+	pwm_ctl = 0;
+	if (panel->backlight.active_low_pwm)
+		pwm_ctl |= BXT_BLC_PWM_POLARITY;
+
+	I915_WRITE(BXT_BLC_PWM_CTL1, pwm_ctl);
+	POSTING_READ(BXT_BLC_PWM_CTL1);
+	I915_WRITE(BXT_BLC_PWM_CTL1, pwm_ctl | BXT_BLC_PWM_ENABLE);
 }
 
 void intel_panel_enable_backlight(struct intel_connector *connector)
@@ -1298,6 +1354,30 @@ static int vlv_setup_backlight(struct intel_connector *connector, enum pipe pipe
 	return 0;
 }
 
+static int
+bxt_setup_backlight(struct intel_connector *connector, enum pipe unused)
+{
+	struct drm_device *dev = connector->base.dev;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct intel_panel *panel = &connector->panel;
+	u32 pwm_ctl, val;
+
+	pwm_ctl = I915_READ(BXT_BLC_PWM_CTL1);
+	panel->backlight.active_low_pwm = pwm_ctl & BXT_BLC_PWM_POLARITY;
+
+	panel->backlight.max = I915_READ(BXT_BLC_PWM_FREQ1);
+	if (!panel->backlight.max)
+		return -ENODEV;
+
+	val = bxt_get_backlight(connector);
+	panel->backlight.level = intel_panel_compute_brightness(connector, val);
+
+	panel->backlight.enabled = (pwm_ctl & BXT_BLC_PWM_ENABLE) &&
+		panel->backlight.level != 0;
+
+	return 0;
+}
+
 int intel_panel_setup_backlight(struct drm_connector *connector, enum pipe pipe)
 {
 	struct drm_device *dev = connector->dev;
@@ -1349,7 +1429,13 @@ void intel_panel_init_backlight_funcs(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
 
-	if (IS_BROADWELL(dev) || (INTEL_INFO(dev)->gen >= 9)) {
+	if (IS_BROXTON(dev)) {
+		dev_priv->display.setup_backlight = bxt_setup_backlight;
+		dev_priv->display.enable_backlight = bxt_enable_backlight;
+		dev_priv->display.disable_backlight = bxt_disable_backlight;
+		dev_priv->display.set_backlight = bxt_set_backlight;
+		dev_priv->display.get_backlight = bxt_get_backlight;
+	} else if (IS_BROADWELL(dev) || IS_SKYLAKE(dev)) {
 		dev_priv->display.setup_backlight = bdw_setup_backlight;
 		dev_priv->display.enable_backlight = bdw_enable_backlight;
 		dev_priv->display.disable_backlight = pch_disable_backlight;

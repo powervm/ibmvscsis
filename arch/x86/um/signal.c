@@ -157,7 +157,7 @@ static int copy_sc_from_user(struct pt_regs *regs,
 	int err, pid;
 
 	/* Always make any pending restarted system calls return -EINTR */
-	current_thread_info()->restart_block.fn = do_no_restart_syscall;
+	current->restart_block.fn = do_no_restart_syscall;
 
 	err = copy_from_user(&sc, from, sizeof(sc));
 	if (err)
@@ -541,20 +541,14 @@ int setup_signal_stack_si(unsigned long stack_top, struct ksignal *ksig,
 	 */
 	/* x86-64 should always use SA_RESTORER. */
 	if (ksig->ka.sa.sa_flags & SA_RESTORER)
-		err |= __put_user(ksig->ka.sa.sa_restorer, &frame->pretcode);
+		err |= __put_user((void *)ksig->ka.sa.sa_restorer,
+				  &frame->pretcode);
 	else
 		/* could use a vstub here */
 		return err;
 
 	if (err)
 		return err;
-
-	/* Set up registers for signal handler */
-	{
-		struct exec_domain *ed = current_thread_info()->exec_domain;
-		if (unlikely(ed && ed->signal_invmap && sig < 32))
-			sig = ed->signal_invmap[sig];
-	}
 
 	PT_REGS_SP(regs) = (unsigned long) frame;
 	PT_REGS_DI(regs) = sig;

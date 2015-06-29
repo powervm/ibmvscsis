@@ -211,17 +211,21 @@ int tty_unthrottle_safe(struct tty_struct *tty)
 void tty_wait_until_sent(struct tty_struct *tty, long timeout)
 {
 #ifdef TTY_DEBUG_WAIT_UNTIL_SENT
-	char buf[64];
-
-	printk(KERN_DEBUG "%s wait until sent...\n", tty_name(tty, buf));
+	printk(KERN_DEBUG "%s wait until sent...\n", tty_name(tty));
 #endif
 	if (!timeout)
 		timeout = MAX_SCHEDULE_TIMEOUT;
-	if (wait_event_interruptible_timeout(tty->write_wait,
-			!tty_chars_in_buffer(tty), timeout) >= 0) {
-		if (tty->ops->wait_until_sent)
-			tty->ops->wait_until_sent(tty, timeout);
-	}
+
+	timeout = wait_event_interruptible_timeout(tty->write_wait,
+			!tty_chars_in_buffer(tty), timeout);
+	if (timeout <= 0)
+		return;
+
+	if (timeout == MAX_SCHEDULE_TIMEOUT)
+		timeout = 0;
+
+	if (tty->ops->wait_until_sent)
+		tty->ops->wait_until_sent(tty, timeout);
 }
 EXPORT_SYMBOL(tty_wait_until_sent);
 

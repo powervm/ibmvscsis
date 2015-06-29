@@ -71,7 +71,7 @@ static void print_cfs_group_stats(struct seq_file *m, int cpu, struct task_group
 	if (!se) {
 		struct sched_avg *avg = &cpu_rq(cpu)->avg;
 		P(avg->runnable_avg_sum);
-		P(avg->runnable_avg_period);
+		P(avg->avg_period);
 		return;
 	}
 
@@ -94,8 +94,10 @@ static void print_cfs_group_stats(struct seq_file *m, int cpu, struct task_group
 	P(se->load.weight);
 #ifdef CONFIG_SMP
 	P(se->avg.runnable_avg_sum);
-	P(se->avg.runnable_avg_period);
+	P(se->avg.running_avg_sum);
+	P(se->avg.avg_period);
 	P(se->avg.load_avg_contrib);
+	P(se->avg.utilization_avg_contrib);
 	P(se->avg.decay_count);
 #endif
 #undef PN
@@ -130,12 +132,14 @@ print_task(struct seq_file *m, struct rq *rq, struct task_struct *p)
 		p->prio);
 #ifdef CONFIG_SCHEDSTATS
 	SEQ_printf(m, "%9Ld.%06ld %9Ld.%06ld %9Ld.%06ld",
-		SPLIT_NS(p->se.vruntime),
+		SPLIT_NS(p->se.statistics.wait_sum),
 		SPLIT_NS(p->se.sum_exec_runtime),
 		SPLIT_NS(p->se.statistics.sum_sleep_runtime));
 #else
-	SEQ_printf(m, "%15Ld %15Ld %15Ld.%06ld %15Ld.%06ld %15Ld.%06ld",
-		0LL, 0LL, 0LL, 0L, 0LL, 0L, 0LL, 0L);
+	SEQ_printf(m, "%9Ld.%06ld %9Ld.%06ld %9Ld.%06ld",
+		0LL, 0L,
+		SPLIT_NS(p->se.sum_exec_runtime),
+		0LL, 0L);
 #endif
 #ifdef CONFIG_NUMA_BALANCING
 	SEQ_printf(m, " %d", task_node(p));
@@ -154,7 +158,7 @@ static void print_rq(struct seq_file *m, struct rq *rq, int rq_cpu)
 	SEQ_printf(m,
 	"\nrunnable tasks:\n"
 	"            task   PID         tree-key  switches  prio"
-	"     exec-runtime         sum-exec        sum-sleep\n"
+	"     wait-time             sum-exec        sum-sleep\n"
 	"------------------------------------------------------"
 	"----------------------------------------------------\n");
 
@@ -214,6 +218,8 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 			cfs_rq->runnable_load_avg);
 	SEQ_printf(m, "  .%-30s: %ld\n", "blocked_load_avg",
 			cfs_rq->blocked_load_avg);
+	SEQ_printf(m, "  .%-30s: %ld\n", "utilization_load_avg",
+			cfs_rq->utilization_load_avg);
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	SEQ_printf(m, "  .%-30s: %ld\n", "tg_load_contrib",
 			cfs_rq->tg_load_contrib);
@@ -226,8 +232,6 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 #endif
 #endif
 #ifdef CONFIG_CFS_BANDWIDTH
-	SEQ_printf(m, "  .%-30s: %d\n", "tg->cfs_bandwidth.timer_active",
-			cfs_rq->tg->cfs_bandwidth.timer_active);
 	SEQ_printf(m, "  .%-30s: %d\n", "throttled",
 			cfs_rq->throttled);
 	SEQ_printf(m, "  .%-30s: %d\n", "throttle_count",
@@ -578,6 +582,7 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 	nr_switches = p->nvcsw + p->nivcsw;
 
 #ifdef CONFIG_SCHEDSTATS
+	PN(se.statistics.sum_sleep_runtime);
 	PN(se.statistics.wait_start);
 	PN(se.statistics.sleep_start);
 	PN(se.statistics.block_start);
@@ -636,8 +641,10 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 	P(se.load.weight);
 #ifdef CONFIG_SMP
 	P(se.avg.runnable_avg_sum);
-	P(se.avg.runnable_avg_period);
+	P(se.avg.running_avg_sum);
+	P(se.avg.avg_period);
 	P(se.avg.load_avg_contrib);
+	P(se.avg.utilization_avg_contrib);
 	P(se.avg.decay_count);
 #endif
 	P(policy);

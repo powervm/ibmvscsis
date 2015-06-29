@@ -47,6 +47,8 @@
 #include "../include/lustre_net.h"
 #include "../include/lustre_sec.h"
 
+#include "ptlrpc_internal.h"
+
 #define SEC_GC_INTERVAL (30 * 60)
 
 
@@ -162,7 +164,7 @@ static void sec_do_gc(struct ptlrpc_sec *sec)
 static int sec_gc_main(void *arg)
 {
 	struct ptlrpc_thread *thread = (struct ptlrpc_thread *) arg;
-	struct l_wait_info    lwi;
+	struct l_wait_info lwi;
 
 	unshare_fs_struct();
 

@@ -726,7 +726,7 @@ static void cpsw_rx_handler(void *token, int len, int status)
 		if (ndev_status && (status >= 0)) {
 			/* The packet received is for the interface which
 			 * is already down and the other interface is up
-			 * and running, intead of freeing which results
+			 * and running, instead of freeing which results
 			 * in reducing of the number of rx descriptor in
 			 * DMA engine, requeue skb back to cpdma.
 			 */
@@ -1103,7 +1103,7 @@ static inline void cpsw_add_dual_emac_def_ale_entries(
 	cpsw_ale_add_mcast(priv->ale, priv->ndev->broadcast,
 			   port_mask, ALE_VLAN, slave->port_vlan, 0);
 	cpsw_ale_add_ucast(priv->ale, priv->mac_addr,
-		priv->host_port, ALE_VLAN, slave->port_vlan);
+		priv->host_port, ALE_VLAN | ALE_SECURE, slave->port_vlan);
 }
 
 static void soft_reset_slave(struct cpsw_slave *slave)
@@ -1361,7 +1361,6 @@ static int cpsw_ndo_stop(struct net_device *ndev)
 	if (cpsw_common_res_usage_state(priv) <= 1) {
 		cpts_unregister(priv->cpts);
 		cpsw_intr_disable(priv);
-		cpdma_ctlr_int_ctrl(priv->dma, false);
 		cpdma_ctlr_stop(priv->dma);
 		cpsw_ale_stop(priv->ale);
 	}
@@ -1456,7 +1455,7 @@ static void cpsw_hwtstamp_v2(struct cpsw_priv *priv)
 
 		if (priv->cpts->rx_enable)
 			ctrl |= CTRL_V2_RX_TS_BITS;
-	break;
+		break;
 	case CPSW_VERSION_3:
 	default:
 		ctrl &= ~CTRL_V3_ALL_TS_MASK;
@@ -1466,7 +1465,7 @@ static void cpsw_hwtstamp_v2(struct cpsw_priv *priv)
 
 		if (priv->cpts->rx_enable)
 			ctrl |= CTRL_V3_RX_TS_BITS;
-	break;
+		break;
 	}
 
 	mtype = (30 << TS_SEQ_ID_OFFSET_SHIFT) | EVENT_MSG_BITS;
@@ -1589,10 +1588,8 @@ static void cpsw_ndo_tx_timeout(struct net_device *ndev)
 	cpsw_err(priv, tx_err, "transmit timeout, restarting dma\n");
 	ndev->stats.tx_errors++;
 	cpsw_intr_disable(priv);
-	cpdma_ctlr_int_ctrl(priv->dma, false);
 	cpdma_chan_stop(priv->txch);
 	cpdma_chan_start(priv->txch);
-	cpdma_ctlr_int_ctrl(priv->dma, true);
 	cpsw_intr_enable(priv);
 }
 
@@ -1629,10 +1626,8 @@ static void cpsw_ndo_poll_controller(struct net_device *ndev)
 	struct cpsw_priv *priv = netdev_priv(ndev);
 
 	cpsw_intr_disable(priv);
-	cpdma_ctlr_int_ctrl(priv->dma, false);
 	cpsw_rx_interrupt(priv->irqs_table[0], priv);
 	cpsw_tx_interrupt(priv->irqs_table[1], priv);
-	cpdma_ctlr_int_ctrl(priv->dma, true);
 	cpsw_intr_enable(priv);
 }
 #endif
@@ -2466,6 +2461,7 @@ static int cpsw_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_SLEEP
 static int cpsw_suspend(struct device *dev)
 {
 	struct platform_device	*pdev = to_platform_device(dev);
@@ -2518,11 +2514,9 @@ static int cpsw_resume(struct device *dev)
 	}
 	return 0;
 }
+#endif
 
-static const struct dev_pm_ops cpsw_pm_ops = {
-	.suspend	= cpsw_suspend,
-	.resume		= cpsw_resume,
-};
+static SIMPLE_DEV_PM_OPS(cpsw_pm_ops, cpsw_suspend, cpsw_resume);
 
 static const struct of_device_id cpsw_of_mtable[] = {
 	{ .compatible = "ti,cpsw", },

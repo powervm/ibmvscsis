@@ -299,9 +299,9 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 		bool compressed;
 		size_t total_len;
 
-		if (big_oops_buf) {
+		if (big_oops_buf && is_locked) {
 			dst = big_oops_buf;
-			hsize = sprintf(dst, "%s#%d Part%d\n", why,
+			hsize = sprintf(dst, "%s#%d Part%u\n", why,
 							oopscount, part);
 			size = big_oops_buf_sz - hsize;
 
@@ -321,7 +321,7 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 			}
 		} else {
 			dst = psinfo->buf;
-			hsize = sprintf(dst, "%s#%d Part%d\n", why, oopscount,
+			hsize = sprintf(dst, "%s#%d Part%u\n", why, oopscount,
 									part);
 			size = psinfo->bufsize - hsize;
 			dst += hsize;
@@ -447,6 +447,7 @@ int pstore_register(struct pstore_info *psi)
 	if ((psi->flags & PSTORE_FLAGS_FRAGILE) == 0) {
 		pstore_register_console();
 		pstore_register_ftrace();
+		pstore_register_pmsg();
 	}
 
 	if (pstore_update_ms >= 0) {
@@ -454,6 +455,12 @@ int pstore_register(struct pstore_info *psi)
 			msecs_to_jiffies(pstore_update_ms);
 		add_timer(&pstore_timer);
 	}
+
+	/*
+	 * Update the module parameter backend, so it is visible
+	 * through /sys/module/pstore/parameters/backend
+	 */
+	backend = psi->name;
 
 	pr_info("Registered %s as persistent store backend\n", psi->name);
 

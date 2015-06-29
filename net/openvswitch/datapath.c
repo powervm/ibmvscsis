@@ -203,7 +203,6 @@ static void destroy_dp_rcu(struct rcu_head *rcu)
 
 	ovs_flow_tbl_destroy(&dp->table);
 	free_percpu(dp->stats_percpu);
-	release_net(ovs_dp_get_net(dp));
 	kfree(dp->ports);
 	kfree(dp);
 }
@@ -273,10 +272,9 @@ void ovs_dp_process_packet(struct sk_buff *skb, struct sw_flow_key *key)
 		struct dp_upcall_info upcall;
 		int error;
 
+		memset(&upcall, 0, sizeof(upcall));
 		upcall.cmd = OVS_PACKET_CMD_MISS;
-		upcall.userdata = NULL;
 		upcall.portid = ovs_vport_find_upcall_portid(p, skb);
-		upcall.egress_tun_info = NULL;
 		error = ovs_dp_upcall(dp, skb, key, &upcall);
 		if (unlikely(error))
 			kfree_skb(skb);
@@ -398,6 +396,10 @@ static size_t upcall_msg_size(const struct dp_upcall_info *upcall_info,
 	if (upcall_info->egress_tun_info)
 		size += nla_total_size(ovs_tun_key_attr_size());
 
+	/* OVS_PACKET_ATTR_ACTIONS */
+	if (upcall_info->actions_len)
+		size += nla_total_size(upcall_info->actions_len);
+
 	return size;
 }
 
@@ -479,6 +481,17 @@ static int queue_userspace_packet(struct datapath *dp, struct sk_buff *skb,
 		nla_nest_end(user_skb, nla);
 	}
 
+	if (upcall_info->actions_len) {
+		nla = nla_nest_start(user_skb, OVS_PACKET_ATTR_ACTIONS);
+		err = ovs_nla_put_actions(upcall_info->actions,
+					  upcall_info->actions_len,
+					  user_skb);
+		if (!err)
+			nla_nest_end(user_skb, nla);
+		else
+			nla_nest_cancel(user_skb, nla);
+	}
+
 	/* Only reserve room for attribute header, packet data is added
 	 * in skb_zerocopy() */
 	if (!(nla = nla_reserve(user_skb, OVS_PACKET_ATTR_PACKET, 0))) {
@@ -546,7 +559,7 @@ static int ovs_packet_cmd_execute(struct sk_buff *skb, struct genl_info *info)
 	/* Normally, setting the skb 'protocol' field would be handled by a
 	 * call to eth_type_trans(), but it assumes there's a sending
 	 * device, which we may not have. */
-	if (ntohs(eth->h_proto) >= ETH_P_802_3_MIN)
+	if (eth_proto_is_802_3(eth->h_proto))
 		packet->protocol = eth->h_proto;
 	else
 		packet->protocol = htons(ETH_P_802_2);
@@ -1501,7 +1514,7 @@ static int ovs_dp_cmd_new(struct sk_buff *skb, struct genl_info *info)
 	if (dp == NULL)
 		goto err_free_reply;
 
-	ovs_dp_set_net(dp, hold_net(sock_net(skb->sk)));
+	ovs_dp_set_net(dp, sock_net(skb->sk));
 
 	/* Allocate table. */
 	err = ovs_flow_tbl_init(&dp->table);
@@ -1575,7 +1588,6 @@ err_destroy_percpu:
 err_destroy_table:
 	ovs_flow_tbl_destroy(&dp->table);
 err_free_dp:
-	release_net(ovs_dp_get_net(dp));
 	kfree(dp);
 err_free_reply:
 	kfree_skb(reply);
@@ -2194,14 +2206,55 @@ static int __net_init ovs_init_net(struct net *net)
 	return 0;
 }
 
-static void __net_exit ovs_exit_net(struct net *net)
+static void __net_exit list_vports_from_net(struct net *net, struct net *dnet,
+					    struct list_head *head)
+{
+	struct ovs_net *ovs_net = net_generic(net, ovs_net_id);
+	struct datapath *dp;
+
+	list_for_each_entry(dp, &ovs_net->dps, list_node) {
+		int i;
+
+		for (i = 0; i < DP_VPORT_HASH_BUCKETS; i++) {
+			struct vport *vport;
+
+			hlist_for_each_entry(vport, &dp->ports[i], dp_hash_node) {
+				struct netdev_vport *netdev_vport;
+
+				if (vport->ops->type != OVS_VPORT_TYPE_INTERNAL)
+					continue;
+
+				netdev_vport = netdev_vport_priv(vport);
+				if (dev_net(netdev_vport->dev) == dnet)
+					list_add(&vport->detach_list, head);
+			}
+		}
+	}
+}
+
+static void __net_exit ovs_exit_net(struct net *dnet)
 {
 	struct datapath *dp, *dp_next;
-	struct ovs_net *ovs_net = net_generic(net, ovs_net_id);
+	struct ovs_net *ovs_net = net_generic(dnet, ovs_net_id);
+	struct vport *vport, *vport_next;
+	struct net *net;
+	LIST_HEAD(head);
 
 	ovs_lock();
 	list_for_each_entry_safe(dp, dp_next, &ovs_net->dps, list_node)
 		__dp_destroy(dp);
+
+	rtnl_lock();
+	for_each_net(net)
+		list_vports_from_net(net, dnet, &head);
+	rtnl_unlock();
+
+	/* Detach all vports from given namespace. */
+	list_for_each_entry_safe(vport, vport_next, &head, detach_list) {
+		list_del(&vport->detach_list);
+		ovs_dp_detach_port(vport);
+	}
+
 	ovs_unlock();
 
 	cancel_work_sync(&ovs_net->dp_notify_work);

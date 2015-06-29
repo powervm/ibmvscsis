@@ -1,5 +1,11 @@
-nvme-rdma-y	:= nvme-fabrics.o nvme-fabrics-rdma.o nvme-common.o nvme-sysfs.o
-obj-m		+= nvme-rdma.o
+ifeq ("$(KDIR)","")
+CONFIG_NVME_FABRICS:=m
+endif
+
+obj-$(CONFIG_NVME_FABRICS)		+= nvme-rdma.o
+nvme-rdma-y	:= nvme-fabrics.o \
+		   nvme-fabrics-rdma.o \
+		   nvme-common.o nvme-sysfs.o
 
 ifeq ("$(KDIR)","")
 # build out-of-tree kernel module
@@ -14,13 +20,12 @@ else
   OFED_DIR:=
 endif
 
-KDIR ?= /lib/modules/`uname -r`/build
-#KDIR := /home/cayton/master
+#KDIR ?= /lib/modules/`uname -r`/build
+KDIR ?=../../../
 autoconf_h=$(shell /bin/ls -1 $(KDIR)/include/*/autoconf.h | head -1)
 kconfig_h=$(shell /bin/ls -1 $(KDIR)/include/*/kconfig.h 2>/dev/null | head -1)
 
 MODULE_DIR:=$(PWD)
-#BASE_DIR:=$(MODULE_DIR)/..
 
 ifneq ("$(OFED_DIR)","")
  KSYM += $(OFED_DIR)/Module.symvers

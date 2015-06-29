@@ -22,6 +22,7 @@
 /*
  * exynos drm gem buffer structure.
  *
+ * @cookie: cookie returned by dma_alloc_attrs
  * @kvaddr: kernel virtual address to allocated memory region.
  * *userptr: user space address.
  * @dma_addr: bus address(accessed by dma) to allocated memory region.
@@ -35,6 +36,7 @@
  *	VM_PFNMAP or not.
  */
 struct exynos_drm_gem_buf {
+	void 			*cookie;
 	void __iomem		*kvaddr;
 	unsigned long		userptr;
 	dma_addr_t		dma_addr;
@@ -59,7 +61,6 @@ struct exynos_drm_gem_buf {
  *	or at framebuffer creation.
  * @size: size requested from user, in bytes and this size is aligned
  *	in page unit.
- * @vma: a pointer to vm_area.
  * @flags: indicate memory type to allocated buffer and cache attruibute.
  *
  * P.S. this object would be transferred to user as kms_bo.handle so
@@ -69,7 +70,6 @@ struct exynos_drm_gem_obj {
 	struct drm_gem_object		base;
 	struct exynos_drm_gem_buf	*buffer;
 	unsigned long			size;
-	struct vm_area_struct		*vma;
 	unsigned int			flags;
 };
 

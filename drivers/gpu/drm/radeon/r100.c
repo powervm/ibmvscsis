@@ -728,6 +728,10 @@ int r100_irq_set(struct radeon_device *rdev)
 		tmp |= RADEON_FP2_DETECT_MASK;
 	}
 	WREG32(RADEON_GEN_INT_CNTL, tmp);
+
+	/* read back to post the write */
+	RREG32(RADEON_GEN_INT_CNTL);
+
 	return 0;
 }
 
@@ -4084,6 +4088,28 @@ int r100_init(struct radeon_device *rdev)
 		rdev->accel_working = false;
 	}
 	return 0;
+}
+
+uint32_t r100_mm_rreg_slow(struct radeon_device *rdev, uint32_t reg)
+{
+	unsigned long flags;
+	uint32_t ret;
+
+	spin_lock_irqsave(&rdev->mmio_idx_lock, flags);
+	writel(reg, ((void __iomem *)rdev->rmmio) + RADEON_MM_INDEX);
+	ret = readl(((void __iomem *)rdev->rmmio) + RADEON_MM_DATA);
+	spin_unlock_irqrestore(&rdev->mmio_idx_lock, flags);
+	return ret;
+}
+
+void r100_mm_wreg_slow(struct radeon_device *rdev, uint32_t reg, uint32_t v)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&rdev->mmio_idx_lock, flags);
+	writel(reg, ((void __iomem *)rdev->rmmio) + RADEON_MM_INDEX);
+	writel(v, ((void __iomem *)rdev->rmmio) + RADEON_MM_DATA);
+	spin_unlock_irqrestore(&rdev->mmio_idx_lock, flags);
 }
 
 u32 r100_io_rreg(struct radeon_device *rdev, u32 reg)

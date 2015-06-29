@@ -21,8 +21,10 @@
 #include <linux/init.h>
 #include <linux/linkage.h>
 
+#include <asm/alternative.h>
 #include <asm/assembler.h>
 #include <asm/asm-offsets.h>
+#include <asm/cpufeature.h>
 #include <asm/errno.h>
 #include <asm/esr.h>
 #include <asm/thread_info.h>
@@ -120,6 +122,27 @@
 	ct_user_enter
 	ldr	x23, [sp, #S_SP]		// load return stack pointer
 	msr	sp_el0, x23
+
+#ifdef CONFIG_ARM64_ERRATUM_845719
+
+#undef SEQUENCE_ORG
+#undef SEQUENCE_ALT
+
+#ifdef CONFIG_PID_IN_CONTEXTIDR
+
+#define SEQUENCE_ORG	"nop ; nop ; nop"
+#define SEQUENCE_ALT	"tbz x22, #4, 1f ; mrs x29, contextidr_el1; msr contextidr_el1, x29; 1:"
+
+#else
+
+#define SEQUENCE_ORG	"nop ; nop"
+#define SEQUENCE_ALT	"tbz x22, #4, 1f ; msr contextidr_el1, xzr; 1:"
+
+#endif
+
+	alternative_insn SEQUENCE_ORG, SEQUENCE_ALT, ARM64_WORKAROUND_845719
+
+#endif
 	.endif
 	msr	elr_el1, x21			// set up the return data
 	msr	spsr_el1, x22
@@ -269,18 +292,18 @@ ENDPROC(el1_error_invalid)
 el1_sync:
 	kernel_entry 1
 	mrs	x1, esr_el1			// read the syndrome register
-	lsr	x24, x1, #ESR_EL1_EC_SHIFT	// exception class
-	cmp	x24, #ESR_EL1_EC_DABT_EL1	// data abort in EL1
+	lsr	x24, x1, #ESR_ELx_EC_SHIFT	// exception class
+	cmp	x24, #ESR_ELx_EC_DABT_CUR	// data abort in EL1
 	b.eq	el1_da
-	cmp	x24, #ESR_EL1_EC_SYS64		// configurable trap
+	cmp	x24, #ESR_ELx_EC_SYS64		// configurable trap
 	b.eq	el1_undef
-	cmp	x24, #ESR_EL1_EC_SP_ALIGN	// stack alignment exception
+	cmp	x24, #ESR_ELx_EC_SP_ALIGN	// stack alignment exception
 	b.eq	el1_sp_pc
-	cmp	x24, #ESR_EL1_EC_PC_ALIGN	// pc alignment exception
+	cmp	x24, #ESR_ELx_EC_PC_ALIGN	// pc alignment exception
 	b.eq	el1_sp_pc
-	cmp	x24, #ESR_EL1_EC_UNKNOWN	// unknown exception in EL1
+	cmp	x24, #ESR_ELx_EC_UNKNOWN	// unknown exception in EL1
 	b.eq	el1_undef
-	cmp	x24, #ESR_EL1_EC_BREAKPT_EL1	// debug exception in EL1
+	cmp	x24, #ESR_ELx_EC_BREAKPT_CUR	// debug exception in EL1
 	b.ge	el1_dbg
 	b	el1_inv
 el1_da:
@@ -318,7 +341,7 @@ el1_dbg:
 	/*
 	 * Debug exception handling
 	 */
-	cmp	x24, #ESR_EL1_EC_BRK64		// if BRK64
+	cmp	x24, #ESR_ELx_EC_BRK64		// if BRK64
 	cinc	x24, x24, eq			// set bit '0'
 	tbz	x24, #0, el1_inv		// EL1 only
 	mrs	x0, far_el1
@@ -375,26 +398,26 @@ el1_preempt:
 el0_sync:
 	kernel_entry 0
 	mrs	x25, esr_el1			// read the syndrome register
-	lsr	x24, x25, #ESR_EL1_EC_SHIFT	// exception class
-	cmp	x24, #ESR_EL1_EC_SVC64		// SVC in 64-bit state
+	lsr	x24, x25, #ESR_ELx_EC_SHIFT	// exception class
+	cmp	x24, #ESR_ELx_EC_SVC64		// SVC in 64-bit state
 	b.eq	el0_svc
-	cmp	x24, #ESR_EL1_EC_DABT_EL0	// data abort in EL0
+	cmp	x24, #ESR_ELx_EC_DABT_LOW	// data abort in EL0
 	b.eq	el0_da
-	cmp	x24, #ESR_EL1_EC_IABT_EL0	// instruction abort in EL0
+	cmp	x24, #ESR_ELx_EC_IABT_LOW	// instruction abort in EL0
 	b.eq	el0_ia
-	cmp	x24, #ESR_EL1_EC_FP_ASIMD	// FP/ASIMD access
+	cmp	x24, #ESR_ELx_EC_FP_ASIMD	// FP/ASIMD access
 	b.eq	el0_fpsimd_acc
-	cmp	x24, #ESR_EL1_EC_FP_EXC64	// FP/ASIMD exception
+	cmp	x24, #ESR_ELx_EC_FP_EXC64	// FP/ASIMD exception
 	b.eq	el0_fpsimd_exc
-	cmp	x24, #ESR_EL1_EC_SYS64		// configurable trap
+	cmp	x24, #ESR_ELx_EC_SYS64		// configurable trap
 	b.eq	el0_undef
-	cmp	x24, #ESR_EL1_EC_SP_ALIGN	// stack alignment exception
+	cmp	x24, #ESR_ELx_EC_SP_ALIGN	// stack alignment exception
 	b.eq	el0_sp_pc
-	cmp	x24, #ESR_EL1_EC_PC_ALIGN	// pc alignment exception
+	cmp	x24, #ESR_ELx_EC_PC_ALIGN	// pc alignment exception
 	b.eq	el0_sp_pc
-	cmp	x24, #ESR_EL1_EC_UNKNOWN	// unknown exception in EL0
+	cmp	x24, #ESR_ELx_EC_UNKNOWN	// unknown exception in EL0
 	b.eq	el0_undef
-	cmp	x24, #ESR_EL1_EC_BREAKPT_EL0	// debug exception in EL0
+	cmp	x24, #ESR_ELx_EC_BREAKPT_LOW	// debug exception in EL0
 	b.ge	el0_dbg
 	b	el0_inv
 
@@ -403,37 +426,37 @@ el0_sync:
 el0_sync_compat:
 	kernel_entry 0, 32
 	mrs	x25, esr_el1			// read the syndrome register
-	lsr	x24, x25, #ESR_EL1_EC_SHIFT	// exception class
-	cmp	x24, #ESR_EL1_EC_SVC32		// SVC in 32-bit state
+	lsr	x24, x25, #ESR_ELx_EC_SHIFT	// exception class
+	cmp	x24, #ESR_ELx_EC_SVC32		// SVC in 32-bit state
 	b.eq	el0_svc_compat
-	cmp	x24, #ESR_EL1_EC_DABT_EL0	// data abort in EL0
+	cmp	x24, #ESR_ELx_EC_DABT_LOW	// data abort in EL0
 	b.eq	el0_da
-	cmp	x24, #ESR_EL1_EC_IABT_EL0	// instruction abort in EL0
+	cmp	x24, #ESR_ELx_EC_IABT_LOW	// instruction abort in EL0
 	b.eq	el0_ia
-	cmp	x24, #ESR_EL1_EC_FP_ASIMD	// FP/ASIMD access
+	cmp	x24, #ESR_ELx_EC_FP_ASIMD	// FP/ASIMD access
 	b.eq	el0_fpsimd_acc
-	cmp	x24, #ESR_EL1_EC_FP_EXC32	// FP/ASIMD exception
+	cmp	x24, #ESR_ELx_EC_FP_EXC32	// FP/ASIMD exception
 	b.eq	el0_fpsimd_exc
-	cmp	x24, #ESR_EL1_EC_UNKNOWN	// unknown exception in EL0
+	cmp	x24, #ESR_ELx_EC_UNKNOWN	// unknown exception in EL0
 	b.eq	el0_undef
-	cmp	x24, #ESR_EL1_EC_CP15_32	// CP15 MRC/MCR trap
+	cmp	x24, #ESR_ELx_EC_CP15_32	// CP15 MRC/MCR trap
 	b.eq	el0_undef
-	cmp	x24, #ESR_EL1_EC_CP15_64	// CP15 MRRC/MCRR trap
+	cmp	x24, #ESR_ELx_EC_CP15_64	// CP15 MRRC/MCRR trap
 	b.eq	el0_undef
-	cmp	x24, #ESR_EL1_EC_CP14_MR	// CP14 MRC/MCR trap
+	cmp	x24, #ESR_ELx_EC_CP14_MR	// CP14 MRC/MCR trap
 	b.eq	el0_undef
-	cmp	x24, #ESR_EL1_EC_CP14_LS	// CP14 LDC/STC trap
+	cmp	x24, #ESR_ELx_EC_CP14_LS	// CP14 LDC/STC trap
 	b.eq	el0_undef
-	cmp	x24, #ESR_EL1_EC_CP14_64	// CP14 MRRC/MCRR trap
+	cmp	x24, #ESR_ELx_EC_CP14_64	// CP14 MRRC/MCRR trap
 	b.eq	el0_undef
-	cmp	x24, #ESR_EL1_EC_BREAKPT_EL0	// debug exception in EL0
+	cmp	x24, #ESR_ELx_EC_BREAKPT_LOW	// debug exception in EL0
 	b.ge	el0_dbg
 	b	el0_inv
 el0_svc_compat:
 	/*
 	 * AArch32 syscall handling
 	 */
-	adr	stbl, compat_sys_call_table	// load compat syscall table pointer
+	adrp	stbl, compat_sys_call_table	// load compat syscall table pointer
 	uxtw	scno, w7			// syscall number in w7 (r7)
 	mov     sc_nr, #__NR_compat_syscalls
 	b	el0_svc_naked
@@ -497,6 +520,7 @@ el0_sp_pc:
 	mrs	x26, far_el1
 	// enable interrupts before calling the main handler
 	enable_dbg_and_irq
+	ct_user_exit
 	mov	x0, x26
 	mov	x1, x25
 	mov	x2, sp
@@ -588,11 +612,16 @@ ENDPROC(cpu_switch_to)
  */
 ret_fast_syscall:
 	disable_irq				// disable interrupts
-	ldr	x1, [tsk, #TI_FLAGS]
+	ldr	x1, [tsk, #TI_FLAGS]		// re-check for syscall tracing
+	and	x2, x1, #_TIF_SYSCALL_WORK
+	cbnz	x2, ret_fast_syscall_trace
 	and	x2, x1, #_TIF_WORK_MASK
 	cbnz	x2, fast_work_pending
 	enable_step_tsk x1, x2
 	kernel_exit 0, ret = 1
+ret_fast_syscall_trace:
+	enable_irq				// enable interrupts
+	b	__sys_trace_return
 
 /*
  * Ok, we need to do extra processing, enter the slow path.

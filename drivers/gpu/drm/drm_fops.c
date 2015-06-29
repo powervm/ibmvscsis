@@ -167,6 +167,7 @@ static int drm_open_helper(struct file *filp, struct drm_minor *minor)
 	INIT_LIST_HEAD(&priv->lhead);
 	INIT_LIST_HEAD(&priv->fbs);
 	mutex_init(&priv->fbs_lock);
+	INIT_LIST_HEAD(&priv->blobs);
 	INIT_LIST_HEAD(&priv->event_list);
 	init_waitqueue_head(&priv->event_wait);
 	priv->event_space = 4096; /* set aside 4k for event buffer */
@@ -380,6 +381,8 @@ int drm_release(struct inode *inode, struct file *filp)
 
 	mutex_lock(&dev->struct_mutex);
 	list_del(&file_priv->lhead);
+	if (file_priv->magic)
+		idr_remove(&file_priv->master->magic_map, file_priv->magic);
 	mutex_unlock(&dev->struct_mutex);
 
 	if (dev->driver->preclose)
@@ -394,11 +397,6 @@ int drm_release(struct inode *inode, struct file *filp)
 		  (long)old_encode_dev(file_priv->minor->kdev->devt),
 		  dev->open_count);
 
-	/* Release any auth tokens that might point to this file_priv,
-	   (do that under the drm_global_mutex) */
-	if (file_priv->magic)
-		(void) drm_remove_magic(file_priv->master, file_priv->magic);
-
 	/* if the master has gone away we can't do anything with the lock */
 	if (file_priv->minor->master)
 		drm_master_release(dev, filp);
@@ -408,8 +406,10 @@ int drm_release(struct inode *inode, struct file *filp)
 
 	drm_events_release(file_priv);
 
-	if (drm_core_check_feature(dev, DRIVER_MODESET))
+	if (drm_core_check_feature(dev, DRIVER_MODESET)) {
 		drm_fb_release(file_priv);
+		drm_property_destroy_user_blobs(dev, file_priv);
+	}
 
 	if (drm_core_check_feature(dev, DRIVER_GEM))
 		drm_gem_release(dev, file_priv);
@@ -478,64 +478,59 @@ int drm_release(struct inode *inode, struct file *filp)
 }
 EXPORT_SYMBOL(drm_release);
 
-static bool
-drm_dequeue_event(struct drm_file *file_priv,
-		  size_t total, size_t max, struct drm_pending_event **out)
-{
-	struct drm_device *dev = file_priv->minor->dev;
-	struct drm_pending_event *e;
-	unsigned long flags;
-	bool ret = false;
-
-	spin_lock_irqsave(&dev->event_lock, flags);
-
-	*out = NULL;
-	if (list_empty(&file_priv->event_list))
-		goto out;
-	e = list_first_entry(&file_priv->event_list,
-			     struct drm_pending_event, link);
-	if (e->event->length + total > max)
-		goto out;
-
-	file_priv->event_space += e->event->length;
-	list_del(&e->link);
-	*out = e;
-	ret = true;
-
-out:
-	spin_unlock_irqrestore(&dev->event_lock, flags);
-	return ret;
-}
-
 ssize_t drm_read(struct file *filp, char __user *buffer,
 		 size_t count, loff_t *offset)
 {
 	struct drm_file *file_priv = filp->private_data;
-	struct drm_pending_event *e;
-	size_t total;
-	ssize_t ret;
+	struct drm_device *dev = file_priv->minor->dev;
+	ssize_t ret = 0;
 
-	if ((filp->f_flags & O_NONBLOCK) == 0) {
-		ret = wait_event_interruptible(file_priv->event_wait,
-					       !list_empty(&file_priv->event_list));
-		if (ret < 0)
-			return ret;
-	}
+	if (!access_ok(VERIFY_WRITE, buffer, count))
+		return -EFAULT;
 
-	total = 0;
-	while (drm_dequeue_event(file_priv, total, count, &e)) {
-		if (copy_to_user(buffer + total,
-				 e->event, e->event->length)) {
-			total = -EFAULT;
+	spin_lock_irq(&dev->event_lock);
+	for (;;) {
+		if (list_empty(&file_priv->event_list)) {
+			if (ret)
+				break;
+
+			if (filp->f_flags & O_NONBLOCK) {
+				ret = -EAGAIN;
+				break;
+			}
+
+			spin_unlock_irq(&dev->event_lock);
+			ret = wait_event_interruptible(file_priv->event_wait,
+						       !list_empty(&file_priv->event_list));
+			spin_lock_irq(&dev->event_lock);
+			if (ret < 0)
+				break;
+
+			ret = 0;
+		} else {
+			struct drm_pending_event *e;
+
+			e = list_first_entry(&file_priv->event_list,
+					     struct drm_pending_event, link);
+			if (e->event->length + ret > count)
+				break;
+
+			if (__copy_to_user_inatomic(buffer + ret,
+						    e->event, e->event->length)) {
+				if (ret == 0)
+					ret = -EFAULT;
+				break;
+			}
+
+			file_priv->event_space += e->event->length;
+			ret += e->event->length;
+			list_del(&e->link);
 			e->destroy(e);
-			break;
 		}
-
-		total += e->event->length;
-		e->destroy(e);
 	}
+	spin_unlock_irq(&dev->event_lock);
 
-	return total ?: -EAGAIN;
+	return ret;
 }
 EXPORT_SYMBOL(drm_read);
 

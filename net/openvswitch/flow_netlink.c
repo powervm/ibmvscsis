@@ -535,11 +535,11 @@ static int ipv4_tun_from_nlattr(const struct nlattr *attr,
 			break;
 		case OVS_TUNNEL_KEY_ATTR_IPV4_SRC:
 			SW_FLOW_KEY_PUT(match, tun_key.ipv4_src,
-					nla_get_be32(a), is_mask);
+					nla_get_in_addr(a), is_mask);
 			break;
 		case OVS_TUNNEL_KEY_ATTR_IPV4_DST:
 			SW_FLOW_KEY_PUT(match, tun_key.ipv4_dst,
-					nla_get_be32(a), is_mask);
+					nla_get_in_addr(a), is_mask);
 			break;
 		case OVS_TUNNEL_KEY_ATTR_TOS:
 			SW_FLOW_KEY_PUT(match, tun_key.ipv4_tos,
@@ -648,10 +648,12 @@ static int __ipv4_tun_to_nlattr(struct sk_buff *skb,
 	    nla_put_be64(skb, OVS_TUNNEL_KEY_ATTR_ID, output->tun_id))
 		return -EMSGSIZE;
 	if (output->ipv4_src &&
-	    nla_put_be32(skb, OVS_TUNNEL_KEY_ATTR_IPV4_SRC, output->ipv4_src))
+	    nla_put_in_addr(skb, OVS_TUNNEL_KEY_ATTR_IPV4_SRC,
+			    output->ipv4_src))
 		return -EMSGSIZE;
 	if (output->ipv4_dst &&
-	    nla_put_be32(skb, OVS_TUNNEL_KEY_ATTR_IPV4_DST, output->ipv4_dst))
+	    nla_put_in_addr(skb, OVS_TUNNEL_KEY_ATTR_IPV4_DST,
+			    output->ipv4_dst))
 		return -EMSGSIZE;
 	if (output->ipv4_tos &&
 	    nla_put_u8(skb, OVS_TUNNEL_KEY_ATTR_TOS, output->ipv4_tos))
@@ -814,7 +816,7 @@ static int ovs_key_from_nlattrs(struct sw_flow_match *match, u64 attrs,
 		if (is_mask) {
 			/* Always exact match EtherType. */
 			eth_type = htons(0xffff);
-		} else if (ntohs(eth_type) < ETH_P_802_3_MIN) {
+		} else if (!eth_proto_is_802_3(eth_type)) {
 			OVS_NLERR(log, "EtherType %x is less than min %x",
 				  ntohs(eth_type), ETH_P_802_3_MIN);
 			return -EINVAL;
@@ -1516,7 +1518,7 @@ int ovs_nla_put_identifier(const struct sw_flow *flow, struct sk_buff *skb)
 /* Called with ovs_mutex or RCU read lock. */
 int ovs_nla_put_masked_key(const struct sw_flow *flow, struct sk_buff *skb)
 {
-	return ovs_nla_put_key(&flow->mask->key, &flow->key,
+	return ovs_nla_put_key(&flow->key, &flow->key,
 				OVS_FLOW_ATTR_KEY, false, skb);
 }
 
@@ -1746,7 +1748,7 @@ static int validate_and_copy_set_tun(const struct nlattr *attr,
 	struct sw_flow_key key;
 	struct ovs_tunnel_info *tun_info;
 	struct nlattr *a;
-	int err, start, opts_type;
+	int err = 0, start, opts_type;
 
 	ovs_match_init(&match, &key, NULL);
 	opts_type = ipv4_tun_from_nlattr(nla_data(attr), &match, false, log);
@@ -2253,14 +2255,20 @@ static int masked_set_action_to_set_action_attr(const struct nlattr *a,
 						struct sk_buff *skb)
 {
 	const struct nlattr *ovs_key = nla_data(a);
+	struct nlattr *nla;
 	size_t key_len = nla_len(ovs_key) / 2;
 
 	/* Revert the conversion we did from a non-masked set action to
 	 * masked set action.
 	 */
-	if (nla_put(skb, OVS_ACTION_ATTR_SET, nla_len(a) - key_len, ovs_key))
+	nla = nla_nest_start(skb, OVS_ACTION_ATTR_SET);
+	if (!nla)
 		return -EMSGSIZE;
 
+	if (nla_put(skb, nla_type(ovs_key), key_len, nla_data(ovs_key)))
+		return -EMSGSIZE;
+
+	nla_nest_end(skb, nla);
 	return 0;
 }
 

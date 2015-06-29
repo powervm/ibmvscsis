@@ -136,16 +136,8 @@ extern spinlock_t osc_ast_guard;
 int osc_cleanup(struct obd_device *obd);
 int osc_setup(struct obd_device *obd, struct lustre_cfg *lcfg);
 
-#if defined (CONFIG_PROC_FS)
 int lproc_osc_attach_seqstat(struct obd_device *dev);
 void lprocfs_osc_init_vars(struct lprocfs_static_vars *lvars);
-#else
-static inline int lproc_osc_attach_seqstat(struct obd_device *dev) {return 0;}
-static inline void lprocfs_osc_init_vars(struct lprocfs_static_vars *lvars)
-{
-	memset(lvars, 0, sizeof(*lvars));
-}
-#endif
 
 extern struct lu_device_type osc_device_type;
 
@@ -159,11 +151,6 @@ static inline unsigned long rpcs_in_flight(struct client_obd *cli)
 {
 	return cli->cl_r_in_flight + cli->cl_w_in_flight;
 }
-
-#ifndef min_t
-#define min_t(type, x, y) \
-	({ type __x = (x); type __y = (y); __x < __y ? __x: __y; })
-#endif
 
 struct osc_device {
 	struct cl_device    od_cl;

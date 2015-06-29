@@ -40,7 +40,7 @@ static void proc_evict_inode(struct inode *inode)
 	put_pid(PROC_I(inode)->pid);
 
 	/* Let go of any associated proc directory entry */
-	de = PROC_I(inode)->pde;
+	de = PDE(inode);
 	if (de)
 		pde_put(de);
 	head = PROC_I(inode)->sysctl;
@@ -392,6 +392,26 @@ static const struct file_operations proc_reg_file_ops_no_compat = {
 	.release	= proc_reg_release,
 };
 #endif
+
+static const char *proc_follow_link(struct dentry *dentry, void **cookie)
+{
+	struct proc_dir_entry *pde = PDE(d_inode(dentry));
+	if (unlikely(!use_pde(pde)))
+		return ERR_PTR(-EINVAL);
+	*cookie = pde;
+	return pde->data;
+}
+
+static void proc_put_link(struct inode *unused, void *p)
+{
+	unuse_pde(p);
+}
+
+const struct inode_operations proc_link_inode_operations = {
+	.readlink	= generic_readlink,
+	.follow_link	= proc_follow_link,
+	.put_link	= proc_put_link,
+};
 
 struct inode *proc_get_inode(struct super_block *sb, struct proc_dir_entry *de)
 {

@@ -12,7 +12,7 @@
 #include <linux/timer.h>
 #include <linux/workqueue.h>
 #include <linux/pagemap.h>
-#include <linux/backing-dev.h>
+#include <linux/backing-dev-defs.h>
 #include <linux/wait.h>
 #include <linux/mempool.h>
 #include <linux/bio.h>
@@ -22,15 +22,13 @@
 #include <linux/smp.h>
 #include <linux/rcupdate.h>
 #include <linux/percpu-refcount.h>
-
-#include <asm/scatterlist.h>
+#include <linux/scatterlist.h>
 
 struct module;
 struct scsi_ioctl_command;
 
 struct request_queue;
 struct elevator_queue;
-struct request_pm_state;
 struct blk_trace;
 struct request;
 struct sg_io_hdr;
@@ -75,18 +73,7 @@ struct request_list {
 enum rq_cmd_type_bits {
 	REQ_TYPE_FS		= 1,	/* fs request */
 	REQ_TYPE_BLOCK_PC,		/* scsi command */
-	REQ_TYPE_SENSE,			/* sense request */
-	REQ_TYPE_PM_SUSPEND,		/* suspend request */
-	REQ_TYPE_PM_RESUME,		/* resume request */
-	REQ_TYPE_PM_SHUTDOWN,		/* shutdown request */
-	REQ_TYPE_SPECIAL,		/* driver defined type */
-	/*
-	 * for ATA/ATAPI devices. this really doesn't belong here, ide should
-	 * use REQ_TYPE_SPECIAL and use rq->cmd[0] with the range of driver
-	 * private REQ_LB opcodes to differentiate what type of request this is
-	 */
-	REQ_TYPE_ATA_TASKFILE,
-	REQ_TYPE_ATA_PC,
+	REQ_TYPE_DRV_PRIV,		/* driver defined types from here */
 };
 
 #define BLK_MAX_CDB	16
@@ -108,7 +95,7 @@ struct request {
 	struct blk_mq_ctx *mq_ctx;
 
 	u64 cmd_flags;
-	enum rq_cmd_type_bits cmd_type;
+	unsigned cmd_type;
 	unsigned long atomic_flags;
 
 	int cpu;
@@ -216,19 +203,6 @@ static inline unsigned short req_get_ioprio(struct request *req)
 	return req->ioprio;
 }
 
-/*
- * State information carried for REQ_TYPE_PM_SUSPEND and REQ_TYPE_PM_RESUME
- * requests. Some step values could eventually be made generic.
- */
-struct request_pm_state
-{
-	/* PM state machine step value, currently driver specific */
-	int	pm_step;
-	/* requested PM state value (S1, S2, S3, S4, ...) */
-	u32	pm_state;
-	void*	data;		/* for driver use */
-};
-
 #include <linux/elevator.h>
 
 struct blk_queue_ctx;
@@ -272,7 +246,11 @@ struct blk_queue_tag {
 	int max_depth;			/* what we will send to device */
 	int real_max_depth;		/* what the array can hold */
 	atomic_t refcnt;		/* map can be shared */
+	int alloc_policy;		/* tag allocation policy */
+	int next_tag;			/* next tag */
 };
+#define BLK_TAG_ALLOC_FIFO 0 /* allocate starting from 0 */
+#define BLK_TAG_ALLOC_RR 1 /* allocate starting from last allocated tag */
 
 #define BLK_SCSI_MAX_CMDS	(256)
 #define BLK_SCSI_CMD_PER_LONG	(BLK_SCSI_MAX_CMDS / (sizeof(long) * 8))
@@ -465,7 +443,7 @@ struct request_queue {
 	struct mutex		sysfs_lock;
 
 	int			bypass_depth;
-	int			mq_freeze_depth;
+	atomic_t		mq_freeze_depth;
 
 #if defined(CONFIG_BLK_DEV_BSG)
 	bsg_job_fn		*bsg_job_fn;
@@ -516,6 +494,7 @@ struct request_queue {
 				 (1 << QUEUE_FLAG_ADD_RANDOM))
 
 #define QUEUE_FLAG_MQ_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
+				 (1 << QUEUE_FLAG_STACKABLE)	|	\
 				 (1 << QUEUE_FLAG_SAME_COMP))
 
 static inline void queue_lockdep_assert_held(struct request_queue *q)
@@ -604,10 +583,6 @@ static inline void queue_flag_clear(unsigned int flag, struct request_queue *q)
 #define blk_account_rq(rq) \
 	(((rq)->cmd_flags & REQ_STARTED) && \
 	 ((rq)->cmd_type == REQ_TYPE_FS))
-
-#define blk_pm_request(rq)	\
-	((rq)->cmd_type == REQ_TYPE_PM_SUSPEND || \
-	 (rq)->cmd_type == REQ_TYPE_PM_RESUME)
 
 #define blk_rq_cpu_valid(rq)	((rq)->cpu != -1)
 #define blk_bidi_rq(rq)		((rq)->next_rq != NULL)
@@ -816,32 +791,12 @@ extern int scsi_cmd_ioctl(struct request_queue *, struct gendisk *, fmode_t,
 extern int sg_scsi_ioctl(struct request_queue *, struct gendisk *, fmode_t,
 			 struct scsi_ioctl_command __user *);
 
-extern void blk_queue_bio(struct request_queue *q, struct bio *bio);
-
-/*
- * A queue has just exitted congestion.  Note this in the global counter of
- * congested queues, and wake up anyone who was waiting for requests to be
- * put back.
- */
-static inline void blk_clear_queue_congested(struct request_queue *q, int sync)
-{
-	clear_bdi_congested(&q->backing_dev_info, sync);
-}
-
-/*
- * A queue has just entered congestion.  Flag that in the queue's VM-visible
- * state flags and increment the global gounter of congested queues.
- */
-static inline void blk_set_queue_congested(struct request_queue *q, int sync)
-{
-	set_bdi_congested(&q->backing_dev_info, sync);
-}
-
 extern void blk_start_queue(struct request_queue *q);
 extern void blk_stop_queue(struct request_queue *q);
 extern void blk_sync_queue(struct request_queue *q);
 extern void __blk_stop_queue(struct request_queue *q);
 extern void __blk_run_queue(struct request_queue *q);
+extern void __blk_run_queue_uncond(struct request_queue *q);
 extern void blk_run_queue(struct request_queue *);
 extern void blk_run_queue_async(struct request_queue *q);
 extern int blk_rq_map_user(struct request_queue *, struct request *,
@@ -850,8 +805,8 @@ extern int blk_rq_map_user(struct request_queue *, struct request *,
 extern int blk_rq_unmap_user(struct bio *);
 extern int blk_rq_map_kern(struct request_queue *, struct request *, void *, unsigned int, gfp_t);
 extern int blk_rq_map_user_iov(struct request_queue *, struct request *,
-			       struct rq_map_data *, const struct sg_iovec *,
-			       int, unsigned int, gfp_t);
+			       struct rq_map_data *, const struct iov_iter *,
+			       gfp_t);
 extern int blk_execute_rq(struct request_queue *, struct gendisk *,
 			  struct request *, int);
 extern void blk_execute_rq_nowait(struct request_queue *, struct gendisk *,
@@ -930,7 +885,7 @@ static inline unsigned int blk_rq_get_max_sectors(struct request *rq)
 	if (unlikely(rq->cmd_type == REQ_TYPE_BLOCK_PC))
 		return q->limits.max_hw_sectors;
 
-	if (!q->limits.chunk_sectors)
+	if (!q->limits.chunk_sectors || (rq->cmd_flags & REQ_DISCARD))
 		return blk_queue_get_max_sectors(q, rq->cmd_flags);
 
 	return min(blk_max_size_offset(q, blk_rq_pos(rq)),
@@ -1044,8 +999,6 @@ extern void blk_queue_flush_queueable(struct request_queue *q, bool queueable);
 extern struct backing_dev_info *blk_get_backing_dev_info(struct block_device *bdev);
 
 extern int blk_rq_map_sg(struct request_queue *, struct request *, struct scatterlist *);
-extern int blk_bio_map_sg(struct request_queue *q, struct bio *bio,
-			  struct scatterlist *sglist);
 extern void blk_dump_rq_flags(struct request *, char *);
 extern long nr_blockdev_pages(void);
 
@@ -1053,6 +1006,7 @@ bool __must_check blk_get_queue(struct request_queue *);
 struct request_queue *blk_alloc_queue(gfp_t);
 struct request_queue *blk_alloc_queue_node(gfp_t, int);
 extern void blk_put_queue(struct request_queue *);
+extern void blk_set_queue_dying(struct request_queue *);
 
 /*
  * block layer runtime pm functions
@@ -1139,11 +1093,11 @@ static inline bool blk_needs_flush_plug(struct task_struct *tsk)
 extern int blk_queue_start_tag(struct request_queue *, struct request *);
 extern struct request *blk_queue_find_tag(struct request_queue *, int);
 extern void blk_queue_end_tag(struct request_queue *, struct request *);
-extern int blk_queue_init_tags(struct request_queue *, int, struct blk_queue_tag *);
+extern int blk_queue_init_tags(struct request_queue *, int, struct blk_queue_tag *, int);
 extern void blk_queue_free_tags(struct request_queue *);
 extern int blk_queue_resize_tags(struct request_queue *, int);
 extern void blk_queue_invalidate_tags(struct request_queue *);
-extern struct blk_queue_tag *blk_init_tags(int);
+extern struct blk_queue_tag *blk_init_tags(int, int);
 extern void blk_free_tags(struct blk_queue_tag *);
 
 static inline struct request *blk_map_queue_find_tag(struct blk_queue_tag *bqt,
@@ -1162,7 +1116,7 @@ extern int blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 extern int blkdev_issue_write_same(struct block_device *bdev, sector_t sector,
 		sector_t nr_sects, gfp_t gfp_mask, struct page *page);
 extern int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
-			sector_t nr_sects, gfp_t gfp_mask);
+		sector_t nr_sects, gfp_t gfp_mask, bool discard);
 static inline int sb_issue_discard(struct super_block *sb, sector_t block,
 		sector_t nr_blocks, gfp_t gfp_mask, unsigned long flags)
 {
@@ -1176,7 +1130,7 @@ static inline int sb_issue_zeroout(struct super_block *sb, sector_t block,
 	return blkdev_issue_zeroout(sb->s_bdev,
 				    block << (sb->s_blocksize_bits - 9),
 				    nr_blocks << (sb->s_blocksize_bits - 9),
-				    gfp_mask);
+				    gfp_mask, true);
 }
 
 extern int blk_verify_command(unsigned char *cmd, fmode_t has_write_perm);
@@ -1601,8 +1555,8 @@ struct block_device_operations {
 	int (*rw_page)(struct block_device *, sector_t, struct page *, int rw);
 	int (*ioctl) (struct block_device *, fmode_t, unsigned, unsigned long);
 	int (*compat_ioctl) (struct block_device *, fmode_t, unsigned, unsigned long);
-	int (*direct_access) (struct block_device *, sector_t,
-						void **, unsigned long *);
+	long (*direct_access)(struct block_device *, sector_t,
+					void **, unsigned long *pfn, long size);
 	unsigned int (*check_events) (struct gendisk *disk,
 				      unsigned int clearing);
 	/* ->media_changed() is DEPRECATED, use ->check_events() instead */
@@ -1620,6 +1574,8 @@ extern int __blkdev_driver_ioctl(struct block_device *, fmode_t, unsigned int,
 extern int bdev_read_page(struct block_device *, sector_t, struct page *);
 extern int bdev_write_page(struct block_device *, sector_t, struct page *,
 						struct writeback_control *);
+extern long bdev_direct_access(struct block_device *, sector_t, void **addr,
+						unsigned long *pfn, long size);
 #else /* CONFIG_BLOCK */
 
 struct block_device;

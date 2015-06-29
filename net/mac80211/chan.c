@@ -664,6 +664,8 @@ out:
 		ieee80211_bss_info_change_notify(sdata,
 						 BSS_CHANGED_IDLE);
 
+	ieee80211_check_fast_xmit_iface(sdata);
+
 	return ret;
 }
 
@@ -1008,6 +1010,8 @@ ieee80211_vif_use_reserved_reassign(struct ieee80211_sub_if_data *sdata)
 	if (WARN_ON(!chandef))
 		return -EINVAL;
 
+	ieee80211_change_chanctx(local, new_ctx, chandef);
+
 	vif_chsw[0].vif = &sdata->vif;
 	vif_chsw[0].old_ctx = &old_ctx->conf;
 	vif_chsw[0].new_ctx = &new_ctx->conf;
@@ -1029,6 +1033,8 @@ ieee80211_vif_use_reserved_reassign(struct ieee80211_sub_if_data *sdata)
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP)
 		__ieee80211_vif_copy_chanctx_to_vlans(sdata, false);
+
+	ieee80211_check_fast_xmit_iface(sdata);
 
 	if (ieee80211_chanctx_refcount(local, old_ctx) == 0)
 		ieee80211_free_chanctx(local, old_ctx);
@@ -1078,6 +1084,8 @@ ieee80211_vif_use_reserved_assign(struct ieee80211_sub_if_data *sdata)
 				&sdata->reserved_chandef);
 	if (WARN_ON(!chandef))
 		return -EINVAL;
+
+	ieee80211_change_chanctx(local, new_ctx, chandef);
 
 	list_del(&sdata->reserved_chanctx_list);
 	sdata->reserved_chanctx = NULL;
@@ -1376,6 +1384,8 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 				__ieee80211_vif_copy_chanctx_to_vlans(sdata,
 								      false);
 
+			ieee80211_check_fast_xmit_iface(sdata);
+
 			sdata->radar_required = sdata->reserved_radar_required;
 
 			if (sdata->vif.bss_conf.chandef.width !=
@@ -1508,6 +1518,8 @@ static void __ieee80211_vif_release_channel(struct ieee80211_sub_if_data *sdata)
 	if (ieee80211_chanctx_refcount(local, ctx) == 0)
 		ieee80211_free_chanctx(local, ctx);
 
+	sdata->radar_required = false;
+
 	/* Unreserving may ready an in-place reservation. */
 	if (use_reserved_switch)
 		ieee80211_vif_use_reserved_switch(local);
@@ -1566,6 +1578,9 @@ int ieee80211_vif_use_channel(struct ieee80211_sub_if_data *sdata,
 	ieee80211_recalc_smps_chanctx(local, ctx);
 	ieee80211_recalc_radar_chanctx(local, ctx);
  out:
+	if (ret)
+		sdata->radar_required = false;
+
 	mutex_unlock(&local->chanctx_mtx);
 	return ret;
 }

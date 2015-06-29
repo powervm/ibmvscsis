@@ -43,9 +43,12 @@ void irq_pm_install_action(struct irq_desc *desc, struct irqaction *action)
 
 	if (action->flags & IRQF_NO_SUSPEND)
 		desc->no_suspend_depth++;
+	else if (action->flags & IRQF_COND_SUSPEND)
+		desc->cond_suspend_depth++;
 
 	WARN_ON_ONCE(desc->no_suspend_depth &&
-		     desc->no_suspend_depth != desc->nr_actions);
+		     (desc->no_suspend_depth +
+			desc->cond_suspend_depth) != desc->nr_actions);
 }
 
 /*
@@ -61,6 +64,8 @@ void irq_pm_remove_action(struct irq_desc *desc, struct irqaction *action)
 
 	if (action->flags & IRQF_NO_SUSPEND)
 		desc->no_suspend_depth--;
+	else if (action->flags & IRQF_COND_SUSPEND)
+		desc->cond_suspend_depth--;
 }
 
 static bool suspend_device_irq(struct irq_desc *desc, int irq)
@@ -118,6 +123,8 @@ void suspend_device_irqs(void)
 		unsigned long flags;
 		bool sync;
 
+		if (irq_settings_is_nested_thread(desc))
+			continue;
 		raw_spin_lock_irqsave(&desc->lock, flags);
 		sync = suspend_device_irq(desc, irq);
 		raw_spin_unlock_irqrestore(&desc->lock, flags);
@@ -157,6 +164,8 @@ static void resume_irqs(bool want_early)
 			desc->action->flags & IRQF_EARLY_RESUME;
 
 		if (!is_early && want_early)
+			continue;
+		if (irq_settings_is_nested_thread(desc))
 			continue;
 
 		raw_spin_lock_irqsave(&desc->lock, flags);

@@ -171,9 +171,10 @@ static int start_stream(struct snd_oxfw *oxfw, struct amdtp_stream *stream,
 	}
 
 	/* Wait first packet */
-	err = amdtp_stream_wait_callback(stream, CALLBACK_TIMEOUT);
-	if (err < 0)
+	if (!amdtp_stream_wait_callback(stream, CALLBACK_TIMEOUT)) {
 		stop_stream(oxfw, stream);
+		err = -ETIMEDOUT;
+	}
 end:
 	return err;
 }
@@ -231,9 +232,15 @@ int snd_oxfw_stream_init_simplex(struct snd_oxfw *oxfw,
 		goto end;
 	}
 
-	/* OXFW starts to transmit packets with non-zero dbc. */
+	/*
+	 * OXFW starts to transmit packets with non-zero dbc.
+	 * OXFW postpone transferring packets till handling any asynchronous
+	 * packets. As a result, next isochronous packet includes more data
+	 * blocks than IEC 61883-6 defines.
+	 */
 	if (stream == &oxfw->tx_stream)
-		oxfw->tx_stream.flags |= CIP_SKIP_INIT_DBC_CHECK;
+		oxfw->tx_stream.flags |= CIP_SKIP_INIT_DBC_CHECK |
+					 CIP_JUMBO_PAYLOAD;
 end:
 	return err;
 }
@@ -337,6 +344,10 @@ void snd_oxfw_stream_stop_simplex(struct snd_oxfw *oxfw,
 	stop_stream(oxfw, stream);
 }
 
+/*
+ * This function should be called before starting the stream or after stopping
+ * the streams.
+ */
 void snd_oxfw_stream_destroy_simplex(struct snd_oxfw *oxfw,
 				     struct amdtp_stream *stream)
 {
@@ -346,8 +357,6 @@ void snd_oxfw_stream_destroy_simplex(struct snd_oxfw *oxfw,
 		conn = &oxfw->out_conn;
 	else
 		conn = &oxfw->in_conn;
-
-	stop_stream(oxfw, stream);
 
 	amdtp_stream_destroy(stream);
 	cmp_connection_destroy(conn);

@@ -14,9 +14,10 @@
 #include <linux/slab.h>
 #include <linux/pid.h>
 #include <asm/cputable.h>
-#include <misc/cxl.h>
+#include <misc/cxl-base.h>
 
 #include "cxl.h"
+#include "trace.h"
 
 /* XXX: This is implementation specific */
 static irqreturn_t handle_psl_slice_error(struct cxl_context *ctx, u64 dsisr, u64 errstat)
@@ -100,6 +101,8 @@ static irqreturn_t cxl_irq(int irq, void *data, struct cxl_irq_info *irq_info)
 	dsisr = irq_info->dsisr;
 	dar = irq_info->dar;
 
+	trace_cxl_psl_irq(ctx, irq, dsisr, dar);
+
 	pr_devel("CXL interrupt %i for afu pe: %i DSISR: %#llx DAR: %#llx\n", irq, ctx->pe, dsisr, dar);
 
 	if (dsisr & CXL_PSL_DSISR_An_DS) {
@@ -167,6 +170,7 @@ static irqreturn_t cxl_irq(int irq, void *data, struct cxl_irq_info *irq_info)
 		}
 
 		cxl_ack_irq(ctx, CXL_PSL_TFC_An_A, 0);
+		return IRQ_HANDLED;
 	}
 	if (dsisr & CXL_PSL_DSISR_An_OC)
 		pr_devel("CXL interrupt: OS Context Warning\n");
@@ -237,6 +241,7 @@ static irqreturn_t cxl_irq_afu(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
+	trace_cxl_afu_irq(ctx, afu_irq, irq, hwirq);
 	pr_devel("Received AFU interrupt %i for pe: %i (virq %i hwirq %lx)\n",
 	       afu_irq, ctx->pe, irq, hwirq);
 
@@ -411,9 +416,8 @@ void afu_irq_name_free(struct cxl_context *ctx)
 	}
 }
 
-int afu_register_irqs(struct cxl_context *ctx, u32 count)
+int afu_allocate_irqs(struct cxl_context *ctx, u32 count)
 {
-	irq_hw_number_t hwirq;
 	int rc, r, i, j = 1;
 	struct cxl_irq_name *irq_name;
 
@@ -436,7 +440,7 @@ int afu_register_irqs(struct cxl_context *ctx, u32 count)
 	 */
 	INIT_LIST_HEAD(&ctx->irq_names);
 	for (r = 1; r < CXL_IRQ_RANGES; r++) {
-		for (i = 0; i < ctx->irqs.range[r]; hwirq++, i++) {
+		for (i = 0; i < ctx->irqs.range[r]; i++) {
 			irq_name = kmalloc(sizeof(struct cxl_irq_name),
 					   GFP_KERNEL);
 			if (!irq_name)
@@ -453,6 +457,18 @@ int afu_register_irqs(struct cxl_context *ctx, u32 count)
 			j++;
 		}
 	}
+	return 0;
+
+out:
+	afu_irq_name_free(ctx);
+	return -ENOMEM;
+}
+
+void afu_register_hwirqs(struct cxl_context *ctx)
+{
+	irq_hw_number_t hwirq;
+	struct cxl_irq_name *irq_name;
+	int r,i;
 
 	/* We've allocated all memory now, so let's do the irq allocations */
 	irq_name = list_first_entry(&ctx->irq_names, struct cxl_irq_name, list);
@@ -464,15 +480,21 @@ int afu_register_irqs(struct cxl_context *ctx, u32 count)
 			irq_name = list_next_entry(irq_name, list);
 		}
 	}
-
-	return 0;
-
-out:
-	afu_irq_name_free(ctx);
-	return -ENOMEM;
 }
 
-void afu_release_irqs(struct cxl_context *ctx)
+int afu_register_irqs(struct cxl_context *ctx, u32 count)
+{
+	int rc;
+
+	rc = afu_allocate_irqs(ctx, count);
+	if (rc)
+		return rc;
+
+	afu_register_hwirqs(ctx);
+	return 0;
+ }
+
+void afu_release_irqs(struct cxl_context *ctx, void *cookie)
 {
 	irq_hw_number_t hwirq;
 	unsigned int virq;
@@ -483,7 +505,7 @@ void afu_release_irqs(struct cxl_context *ctx)
 		for (i = 0; i < ctx->irqs.range[r]; hwirq++, i++) {
 			virq = irq_find_mapping(NULL, hwirq);
 			if (virq)
-				cxl_unmap_irq(virq, ctx);
+				cxl_unmap_irq(virq, cookie);
 		}
 	}
 

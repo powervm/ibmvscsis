@@ -11,9 +11,6 @@ menuconfig NEW_LEDS
 	  Say Y to enable Linux LED support.  This allows control of supported
 	  LEDs from both userspace and optionally, by kernel events (triggers).
 
-	  This is not related to standard keyboard LEDs which are controlled
-	  via the input system.
-
 if NEW_LEDS
 
 config LEDS_CLASS
@@ -21,6 +18,16 @@ config LEDS_CLASS
 	help
 	  This option enables the led sysfs class in /sys/class/leds.  You'll
 	  need this to do anything useful with LEDs.  If unsure, say N.
+
+config LEDS_CLASS_FLASH
+	tristate "LED Flash Class Support"
+	depends on LEDS_CLASS
+	help
+	  This option enables the flash led sysfs class in /sys/class/leds.
+	  It wrapps LED Class and adds flash LEDs specific sysfs attributes
+	  and kernel internal API to it. You'll need this to provide support
+	  for the flash related features of a LED device. It can be built
+	  as a module.
 
 comment "LED drivers"
 
@@ -515,6 +522,14 @@ config LEDS_VERSATILE
 	help
 	  This option enabled support for the LEDs on the ARM Versatile
 	  and RealView boards. Say Y to enabled these.
+
+config LEDS_PM8941_WLED
+	tristate "LED support for the Qualcomm PM8941 WLED block"
+	depends on LEDS_CLASS
+	select REGMAP
+	help
+	  This option enables support for the 'White' LED block
+	  on Qualcomm PM8941 PMICs.
 
 comment "LED Triggers"
 source "drivers/leds/trigger/Kconfig"

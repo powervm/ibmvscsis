@@ -493,7 +493,7 @@ console_initcall(altera_uart_console_init);
 
 #define	ALTERA_UART_CONSOLE	NULL
 
-#endif /* CONFIG_ALTERA_UART_CONSOLE */
+#endif /* CONFIG_SERIAL_ALTERA_UART_CONSOLE */
 
 /*
  *	Define the altera_uart UART driver structure.
@@ -589,6 +589,7 @@ static int altera_uart_probe(struct platform_device *pdev)
 	port->iotype = SERIAL_IO_MEM;
 	port->ops = &altera_uart_ops;
 	port->flags = UPF_BOOT_AUTOCONF;
+	port->dev = &pdev->dev;
 
 	platform_set_drvdata(pdev, port);
 

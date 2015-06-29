@@ -37,8 +37,6 @@
 
 #include <linux/export.h>
 
-#define FILE_DATA(_file) ((_file)->f_path.dentry->d_inode)
-
 #define DEFINE_SIMPLE_DEBUGFS_FILE(name) \
 static int name##_open(struct inode *inode, struct file *file) \
 { \
@@ -55,7 +53,7 @@ static const struct file_operations name##_debugfs_fops = { \
 struct t4_debugfs_entry {
 	const char *name;
 	const struct file_operations *ops;
-	mode_t mode;
+	umode_t mode;
 	unsigned char data;
 };
 

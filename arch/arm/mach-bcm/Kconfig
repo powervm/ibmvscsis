@@ -19,6 +19,7 @@ config ARCH_BCM_IPROC
 	select ARCH_REQUIRE_GPIOLIB
 	select ARM_AMBA
 	select PINCTRL
+	select MTD_NAND_BRCMNAND
 	help
 	  This enables support for systems based on Broadcom IPROC architected SoCs.
 	  The IPROC complex contains one or more ARM CPUs along with common
@@ -68,7 +69,7 @@ config ARCH_BCM_MOBILE
 	  This enables support for systems based on Broadcom mobile SoCs.
 
 config ARCH_BCM_281XX
-	bool "Broadcom BCM281XX SoC family"
+	bool "Broadcom BCM281XX SoC family" if ARCH_MULTI_V7
 	select ARCH_BCM_MOBILE
 	select HAVE_SMP
 	help
@@ -77,7 +78,7 @@ config ARCH_BCM_281XX
 	  variants.
 
 config ARCH_BCM_21664
-	bool "Broadcom BCM21664 SoC family"
+	bool "Broadcom BCM21664 SoC family" if ARCH_MULTI_V7
 	select ARCH_BCM_MOBILE
 	select HAVE_SMP
 	help
@@ -144,6 +145,7 @@ config ARCH_BRCMSTB
 	select BRCMSTB_GISB_ARB
 	select BRCMSTB_L2_IRQ
 	select BCM7120_L2_IRQ
+	select ARCH_WANT_OPTIONAL_GPIOLIB
 	help
 	  Say Y if you intend to run the kernel on a Broadcom ARM-based STB
 	  chipset.

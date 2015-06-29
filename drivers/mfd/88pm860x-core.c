@@ -566,7 +566,7 @@ static int pm860x_irq_domain_map(struct irq_domain *d, unsigned int virq,
 	return 0;
 }
 
-static struct irq_domain_ops pm860x_irq_domain_ops = {
+static const struct irq_domain_ops pm860x_irq_domain_ops = {
 	.map	= pm860x_irq_domain_map,
 	.xlate	= irq_domain_xlate_onetwocell,
 };
@@ -1111,7 +1111,7 @@ static int verify_addr(struct i2c_client *i2c)
 	return 0;
 }
 
-static struct regmap_config pm860x_regmap_config = {
+static const struct regmap_config pm860x_regmap_config = {
 	.reg_bits = 8,
 	.val_bits = 8,
 };

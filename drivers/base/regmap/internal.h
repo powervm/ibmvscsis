@@ -131,7 +131,10 @@ struct regmap {
 	struct reg_default *reg_defaults;
 	const void *reg_defaults_raw;
 	void *cache;
+	/* if set, the cache contains newer data than the HW */
 	u32 cache_dirty;
+	/* if set, the HW registers are known to match map->reg_defaults */
+	bool no_sync_defaults;
 
 	struct reg_default *patch;
 	int patch_regs;
@@ -242,5 +245,13 @@ enum regmap_endian regmap_get_val_endian(struct device *dev,
 extern struct regcache_ops regcache_rbtree_ops;
 extern struct regcache_ops regcache_lzo_ops;
 extern struct regcache_ops regcache_flat_ops;
+
+static inline const char *regmap_name(const struct regmap *map)
+{
+	if (map->dev)
+		return dev_name(map->dev);
+
+	return map->name;
+}
 
 #endif

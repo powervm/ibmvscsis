@@ -17,7 +17,7 @@
 #include <linux/mutex.h>
 #include <linux/completion.h>
 #include <linux/slab.h>
-#include <linux/unaligned/access_ok.h>
+#include <asm/unaligned.h>
 #include <linux/crc-itu-t.h>
 #include "cyapa.h"
 
@@ -352,7 +352,7 @@ struct gen5_app_cmd_head {
 	u8 parameter_data[0];  /* Parameter data variable based on cmd_code */
 } __packed;
 
-/* Applicaton get/set parameter command data structure */
+/* Application get/set parameter command data structure */
 struct gen5_app_set_parameter_data {
 	u8 parameter_id;
 	u8 parameter_size;
@@ -832,7 +832,7 @@ static int gen5_hid_description_header_parse(struct cyapa *cyapa, u8 *reg_data)
 	int ret;
 
 	/* 0x20 0x00 0xF7 is Gen5 Application HID Description Header;
-	 * 0x20 0x00 0xFF is Gen5 Booloader HID Description Header.
+	 * 0x20 0x00 0xFF is Gen5 Bootloader HID Description Header.
 	 *
 	 * Must read HID Description content through out,
 	 * otherwise Gen5 trackpad cannot response next command
@@ -1654,8 +1654,8 @@ static int cyapa_gen5_set_power_mode(struct cyapa *cyapa,
 		 * that trackpad unable to report signal to wake system up
 		 * in the special situation that system is in suspending, and
 		 * at the same time, user touch trackpad to wake system up.
-		 * This function can avoid the data to be buffured when system
-		 * is suspending which may cause interrput line unable to be
+		 * This function can avoid the data to be buffered when system
+		 * is suspending which may cause interrupt line unable to be
 		 * asserted again.
 		 */
 		cyapa_empty_pip_output_data(cyapa, NULL, NULL, NULL);
@@ -1926,7 +1926,7 @@ static int cyapa_gen5_read_idac_data(struct cyapa *cyapa,
 				electrodes_tx = cyapa->electrodes_x;
 			max_element_cnt = ((cyapa->aligned_electrodes_rx + 7) &
 						~7u) * electrodes_tx;
-		} else if (idac_data_type == GEN5_RETRIEVE_SELF_CAP_PWC_DATA) {
+		} else {
 			offset = 2;
 			max_element_cnt = cyapa->electrodes_x +
 						cyapa->electrodes_y;
@@ -2546,16 +2546,11 @@ static bool cyapa_gen5_irq_cmd_handler(struct cyapa *cyapa)
 			gen5_pip->resp_sort_func(cyapa,
 				gen5_pip->irq_cmd_buf, length))) {
 			/*
-			 * Cover the Gen5 V1 firmware issue.
-			 * The issue is there is no interrut will be
-			 * asserted to notityf host to read a command
-			 * data out when always has finger touch on
-			 * trackpad during the command is issued to
-			 * trackad device.
-			 * This issue has the scenario is that,
-			 * user always has his fingers touched on
-			 * trackpad device when booting/rebooting
-			 * their chrome book.
+			 * Work around the Gen5 V1 firmware
+			 * that does not assert interrupt signalling
+			 * that command response is ready if user
+			 * keeps touching the trackpad while command
+			 * is sent to the device.
 			 */
 			length = 0;
 			if (gen5_pip->resp_len)

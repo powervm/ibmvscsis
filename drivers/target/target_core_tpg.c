@@ -32,8 +32,7 @@
 #include <linux/export.h>
 #include <net/sock.h>
 #include <net/tcp.h>
-#include <scsi/scsi.h>
-#include <scsi/scsi_cmnd.h>
+#include <scsi/scsi_proto.h>
 
 #include <target/target_core_base.h>
 #include <target/target_core_backend.h>
@@ -672,7 +671,7 @@ static int core_tpg_setup_virtual_lun0(struct se_portal_group *se_tpg)
 }
 
 int core_tpg_register(
-	struct target_core_fabric_ops *tfo,
+	const struct target_core_fabric_ops *tfo,
 	struct se_wwn *se_wwn,
 	struct se_portal_group *se_tpg,
 	void *tpg_fabric_ptr,

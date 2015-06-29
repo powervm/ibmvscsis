@@ -217,7 +217,7 @@ static DEFINE_RAW_SPINLOCK(tlbivax_lock);
 static int mm_is_core_local(struct mm_struct *mm)
 {
 	return cpumask_subset(mm_cpumask(mm),
-			      topology_thread_cpumask(smp_processor_id()));
+			      topology_sibling_cpumask(smp_processor_id()));
 }
 
 struct tlb_flush_param {
@@ -284,8 +284,15 @@ void __flush_tlb_page(struct mm_struct *mm, unsigned long vmaddr,
 	struct cpumask *cpu_mask;
 	unsigned int pid;
 
+	/*
+	 * This function as well as __local_flush_tlb_page() must only be called
+	 * for user contexts.
+	 */
+	if (unlikely(WARN_ON(!mm)))
+		return;
+
 	preempt_disable();
-	pid = mm ? mm->context.id : 0;
+	pid = mm->context.id;
 	if (unlikely(pid == MMU_NO_CONTEXT))
 		goto bail;
 	cpu_mask = mm_cpumask(mm);

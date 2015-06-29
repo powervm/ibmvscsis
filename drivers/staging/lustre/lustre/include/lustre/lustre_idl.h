@@ -92,6 +92,7 @@
 #define _LUSTRE_IDL_H_
 
 #include "../../../include/linux/libcfs/libcfs.h"
+#include "../../../include/linux/lnet/types.h"
 
 /* Defn's shared with user-space. */
 #include "lustre_user.h"
@@ -104,6 +105,11 @@
  * FOO_REPLY_PORTAL   is for incoming replies on the FOO
  * FOO_BULK_PORTAL    is for incoming bulk on the FOO
  */
+
+/* Lustre service names are following the format
+ * service name + MDT + seq name
+ */
+#define LUSTRE_MDT_MAXNAMELEN	80
 
 #define CONNMGR_REQUEST_PORTAL	  1
 #define CONNMGR_REPLY_PORTAL	    2

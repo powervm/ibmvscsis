@@ -31,19 +31,6 @@
 #include <asm/tlbflush.h>
 #include <asm/pgalloc.h>
 
-#ifndef CONFIG_ARCH_WANT_HUGE_PMD_SHARE
-int huge_pmd_unshare(struct mm_struct *mm, unsigned long *addr, pte_t *ptep)
-{
-	return 0;
-}
-#endif
-
-struct page *follow_huge_addr(struct mm_struct *mm, unsigned long address,
-			      int write)
-{
-	return ERR_PTR(-EINVAL);
-}
-
 int pmd_huge(pmd_t pmd)
 {
 	return !(pmd_val(pmd) & PMD_TABLE_BIT);

@@ -115,7 +115,13 @@ struct nvme_id_ns {
 	__le16			nawun;
 	__le16			nawupf;
 	__le16			nacwu;
-	__u8			rsvd40[80];
+	__le16			nabsn;
+	__le16			nabo;
+	__le16			nabspf;
+	__u16			rsvd46;
+	__le64			nvmcap[2];
+	__u8			rsvd64[40];
+	__u8			nguid[16];
 	__u8			eui64[8];
 	struct nvme_lbaf	lbaf[16];
 	__u8			rsvd192[192];
@@ -124,10 +130,22 @@ struct nvme_id_ns {
 
 enum {
 	NVME_NS_FEAT_THIN	= 1 << 0,
+	NVME_NS_FLBAS_LBA_MASK	= 0xf,
+	NVME_NS_FLBAS_META_EXT	= 0x10,
 	NVME_LBAF_RP_BEST	= 0,
 	NVME_LBAF_RP_BETTER	= 1,
 	NVME_LBAF_RP_GOOD	= 2,
 	NVME_LBAF_RP_DEGRADED	= 3,
+	NVME_NS_DPC_PI_LAST	= 1 << 4,
+	NVME_NS_DPC_PI_FIRST	= 1 << 3,
+	NVME_NS_DPC_PI_TYPE3	= 1 << 2,
+	NVME_NS_DPC_PI_TYPE2	= 1 << 1,
+	NVME_NS_DPC_PI_TYPE1	= 1 << 0,
+	NVME_NS_DPS_PI_FIRST	= 1 << 3,
+	NVME_NS_DPS_PI_MASK	= 0x7,
+	NVME_NS_DPS_PI_TYPE1	= 1,
+	NVME_NS_DPS_PI_TYPE2	= 2,
+	NVME_NS_DPS_PI_TYPE3	= 3,
 };
 
 struct nvme_smart_log {
@@ -159,6 +177,10 @@ enum {
 	NVME_SMART_CRIT_RELIABILITY	= 1 << 2,
 	NVME_SMART_CRIT_MEDIA		= 1 << 3,
 	NVME_SMART_CRIT_VOLATILE_MEMORY	= 1 << 4,
+};
+
+enum {
+	NVME_AER_NOTICE_NS_CHANGED	= 0x0002,
 };
 
 struct nvme_lba_range_type {
@@ -261,6 +283,10 @@ enum {
 	NVME_RW_DSM_LATENCY_LOW		= 3 << 4,
 	NVME_RW_DSM_SEQ_REQ		= 1 << 6,
 	NVME_RW_DSM_COMPRESSED		= 1 << 7,
+	NVME_RW_PRINFO_PRCHK_REF	= 1 << 10,
+	NVME_RW_PRINFO_PRCHK_APP	= 1 << 11,
+	NVME_RW_PRINFO_PRCHK_GUARD	= 1 << 12,
+	NVME_RW_PRINFO_PRACT		= 1 << 13,
 };
 
 struct nvme_dsm_cmd {
@@ -549,11 +575,14 @@ struct nvme_passthru_cmd {
 	__u32	result;
 };
 
+#define NVME_VS(major, minor) (((major) << 16) | ((minor) << 8))
+
 #define nvme_admin_cmd nvme_passthru_cmd
 
 #define NVME_IOCTL_ID		_IO('N', 0x40)
 #define NVME_IOCTL_ADMIN_CMD	_IOWR('N', 0x41, struct nvme_admin_cmd)
 #define NVME_IOCTL_SUBMIT_IO	_IOW('N', 0x42, struct nvme_user_io)
 #define NVME_IOCTL_IO_CMD	_IOWR('N', 0x43, struct nvme_passthru_cmd)
+#define NVME_IOCTL_RESET	_IO('N', 0x44)
 
 #endif /* _UAPI_LINUX_NVME_H */

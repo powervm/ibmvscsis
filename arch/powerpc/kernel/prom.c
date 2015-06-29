@@ -46,7 +46,6 @@
 #include <asm/mmu.h>
 #include <asm/paca.h>
 #include <asm/pgtable.h>
-#include <asm/pci.h>
 #include <asm/iommu.h>
 #include <asm/btext.h>
 #include <asm/sections.h>
@@ -573,6 +572,7 @@ static void __init early_reserve_mem_dt(void)
 	int len;
 	const __be32 *prop;
 
+	early_init_fdt_reserve_self();
 	early_init_fdt_scan_reserved_mem();
 
 	dt_root = of_get_flat_dt_root();
@@ -652,9 +652,6 @@ void __init early_init_devtree(void *params)
 	if (!early_init_dt_verify(params))
 		panic("BUG: Failed verifying flat device tree, bad version?");
 
-	/* Setup flat device-tree pointer */
-	initial_boot_params = params;
-
 #ifdef CONFIG_PPC_RTAS
 	/* Some machines might need RTAS info for debugging, grab it now. */
 	of_scan_flat_dt(early_init_dt_scan_rtas, NULL);
@@ -724,7 +721,7 @@ void __init early_init_devtree(void *params)
 	 */
 	of_scan_flat_dt(early_init_dt_scan_cpus, NULL);
 	if (boot_cpuid < 0) {
-		printk("Failed to indentify boot CPU !\n");
+		printk("Failed to identify boot CPU !\n");
 		BUG();
 	}
 
@@ -803,6 +800,7 @@ int of_get_ibm_chip_id(struct device_node *np)
 	}
 	return -1;
 }
+EXPORT_SYMBOL(of_get_ibm_chip_id);
 
 /**
  * cpu_to_chip_id - Return the cpus chip-id

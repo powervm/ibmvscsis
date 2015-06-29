@@ -36,6 +36,7 @@
 #include "intel_drv.h"
 #include <drm/i915_drm.h>
 #include "i915_drv.h"
+#include "i915_vgpu.h"
 #include "i915_trace.h"
 #include <linux/pci.h>
 #include <linux/console.h>
@@ -67,6 +68,9 @@ static int i915_getparam(struct drm_device *dev, void *data,
 	case I915_PARAM_CHIPSET_ID:
 		value = dev->pdev->device;
 		break;
+	case I915_PARAM_REVISION:
+		value = dev->pdev->revision;
+		break;
 	case I915_PARAM_HAS_GEM:
 		value = 1;
 		break;
@@ -91,6 +95,9 @@ static int i915_getparam(struct drm_device *dev, void *data,
 		break;
 	case I915_PARAM_HAS_VEBOX:
 		value = intel_ring_initialized(&dev_priv->ring[VECS]);
+		break;
+	case I915_PARAM_HAS_BSD2:
+		value = intel_ring_initialized(&dev_priv->ring[VCS2]);
 		break;
 	case I915_PARAM_HAS_RELAXED_FENCING:
 		value = 1;
@@ -142,6 +149,19 @@ static int i915_getparam(struct drm_device *dev, void *data,
 		break;
 	case I915_PARAM_HAS_COHERENT_PHYS_GTT:
 		value = 1;
+		break;
+	case I915_PARAM_MMAP_VERSION:
+		value = 1;
+		break;
+	case I915_PARAM_SUBSLICE_TOTAL:
+		value = INTEL_INFO(dev)->subslice_total;
+		if (!value)
+			return -ENODEV;
+		break;
+	case I915_PARAM_EU_TOTAL:
+		value = INTEL_INFO(dev)->eu_total;
+		if (!value)
+			return -ENODEV;
 		break;
 	default:
 		DRM_DEBUG("Unknown parameter %d\n", param->param);
@@ -544,6 +564,140 @@ static void i915_dump_device_info(struct drm_i915_private *dev_priv)
 #undef SEP_COMMA
 }
 
+static void cherryview_sseu_info_init(struct drm_device *dev)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct intel_device_info *info;
+	u32 fuse, eu_dis;
+
+	info = (struct intel_device_info *)&dev_priv->info;
+	fuse = I915_READ(CHV_FUSE_GT);
+
+	info->slice_total = 1;
+
+	if (!(fuse & CHV_FGT_DISABLE_SS0)) {
+		info->subslice_per_slice++;
+		eu_dis = fuse & (CHV_FGT_EU_DIS_SS0_R0_MASK |
+				 CHV_FGT_EU_DIS_SS0_R1_MASK);
+		info->eu_total += 8 - hweight32(eu_dis);
+	}
+
+	if (!(fuse & CHV_FGT_DISABLE_SS1)) {
+		info->subslice_per_slice++;
+		eu_dis = fuse & (CHV_FGT_EU_DIS_SS1_R0_MASK |
+				 CHV_FGT_EU_DIS_SS1_R1_MASK);
+		info->eu_total += 8 - hweight32(eu_dis);
+	}
+
+	info->subslice_total = info->subslice_per_slice;
+	/*
+	 * CHV expected to always have a uniform distribution of EU
+	 * across subslices.
+	*/
+	info->eu_per_subslice = info->subslice_total ?
+				info->eu_total / info->subslice_total :
+				0;
+	/*
+	 * CHV supports subslice power gating on devices with more than
+	 * one subslice, and supports EU power gating on devices with
+	 * more than one EU pair per subslice.
+	*/
+	info->has_slice_pg = 0;
+	info->has_subslice_pg = (info->subslice_total > 1);
+	info->has_eu_pg = (info->eu_per_subslice > 2);
+}
+
+static void gen9_sseu_info_init(struct drm_device *dev)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct intel_device_info *info;
+	int s_max = 3, ss_max = 4, eu_max = 8;
+	int s, ss;
+	u32 fuse2, s_enable, ss_disable, eu_disable;
+	u8 eu_mask = 0xff;
+
+	/*
+	 * BXT has a single slice. BXT also has at most 6 EU per subslice,
+	 * and therefore only the lowest 6 bits of the 8-bit EU disable
+	 * fields are valid.
+	*/
+	if (IS_BROXTON(dev)) {
+		s_max = 1;
+		eu_max = 6;
+		eu_mask = 0x3f;
+	}
+
+	info = (struct intel_device_info *)&dev_priv->info;
+	fuse2 = I915_READ(GEN8_FUSE2);
+	s_enable = (fuse2 & GEN8_F2_S_ENA_MASK) >>
+		   GEN8_F2_S_ENA_SHIFT;
+	ss_disable = (fuse2 & GEN9_F2_SS_DIS_MASK) >>
+		     GEN9_F2_SS_DIS_SHIFT;
+
+	info->slice_total = hweight32(s_enable);
+	/*
+	 * The subslice disable field is global, i.e. it applies
+	 * to each of the enabled slices.
+	*/
+	info->subslice_per_slice = ss_max - hweight32(ss_disable);
+	info->subslice_total = info->slice_total *
+			       info->subslice_per_slice;
+
+	/*
+	 * Iterate through enabled slices and subslices to
+	 * count the total enabled EU.
+	*/
+	for (s = 0; s < s_max; s++) {
+		if (!(s_enable & (0x1 << s)))
+			/* skip disabled slice */
+			continue;
+
+		eu_disable = I915_READ(GEN9_EU_DISABLE(s));
+		for (ss = 0; ss < ss_max; ss++) {
+			int eu_per_ss;
+
+			if (ss_disable & (0x1 << ss))
+				/* skip disabled subslice */
+				continue;
+
+			eu_per_ss = eu_max - hweight8((eu_disable >> (ss*8)) &
+						      eu_mask);
+
+			/*
+			 * Record which subslice(s) has(have) 7 EUs. we
+			 * can tune the hash used to spread work among
+			 * subslices if they are unbalanced.
+			 */
+			if (eu_per_ss == 7)
+				info->subslice_7eu[s] |= 1 << ss;
+
+			info->eu_total += eu_per_ss;
+		}
+	}
+
+	/*
+	 * SKL is expected to always have a uniform distribution
+	 * of EU across subslices with the exception that any one
+	 * EU in any one subslice may be fused off for die
+	 * recovery. BXT is expected to be perfectly uniform in EU
+	 * distribution.
+	*/
+	info->eu_per_subslice = info->subslice_total ?
+				DIV_ROUND_UP(info->eu_total,
+					     info->subslice_total) : 0;
+	/*
+	 * SKL supports slice power gating on devices with more than
+	 * one slice, and supports EU power gating on devices with
+	 * more than one EU pair per subslice. BXT supports subslice
+	 * power gating on devices with more than one subslice, and
+	 * supports EU power gating on devices with more than one EU
+	 * pair per subslice.
+	*/
+	info->has_slice_pg = (IS_SKYLAKE(dev) && (info->slice_total > 1));
+	info->has_subslice_pg = (IS_BROXTON(dev) && (info->subslice_total > 1));
+	info->has_eu_pg = (info->eu_per_subslice > 2);
+}
+
 /*
  * Determine various intel_device_info fields at runtime.
  *
@@ -565,7 +719,11 @@ static void intel_device_info_runtime_init(struct drm_device *dev)
 
 	info = (struct intel_device_info *)&dev_priv->info;
 
-	if (IS_VALLEYVIEW(dev) || INTEL_INFO(dev)->gen == 9)
+	if (IS_BROXTON(dev)) {
+		info->num_sprites[PIPE_A] = 3;
+		info->num_sprites[PIPE_B] = 3;
+		info->num_sprites[PIPE_C] = 2;
+	} else if (IS_VALLEYVIEW(dev) || INTEL_INFO(dev)->gen == 9)
 		for_each_pipe(dev_priv, pipe)
 			info->num_sprites[pipe] = 2;
 	else
@@ -598,6 +756,24 @@ static void intel_device_info_runtime_init(struct drm_device *dev)
 			info->num_pipes = 0;
 		}
 	}
+
+	/* Initialize slice/subslice/EU info */
+	if (IS_CHERRYVIEW(dev))
+		cherryview_sseu_info_init(dev);
+	else if (INTEL_INFO(dev)->gen >= 9)
+		gen9_sseu_info_init(dev);
+
+	DRM_DEBUG_DRIVER("slice total: %u\n", info->slice_total);
+	DRM_DEBUG_DRIVER("subslice total: %u\n", info->subslice_total);
+	DRM_DEBUG_DRIVER("subslice per slice: %u\n", info->subslice_per_slice);
+	DRM_DEBUG_DRIVER("EU total: %u\n", info->eu_total);
+	DRM_DEBUG_DRIVER("EU per subslice: %u\n", info->eu_per_subslice);
+	DRM_DEBUG_DRIVER("has slice power gating: %s\n",
+			 info->has_slice_pg ? "y" : "n");
+	DRM_DEBUG_DRIVER("has subslice power gating: %s\n",
+			 info->has_subslice_pg ? "y" : "n");
+	DRM_DEBUG_DRIVER("has EU power gating: %s\n",
+			 info->has_eu_pg ? "y" : "n");
 }
 
 /**
@@ -620,17 +796,6 @@ int i915_driver_load(struct drm_device *dev, unsigned long flags)
 
 	info = (struct intel_device_info *) flags;
 
-	/* Refuse to load on gen6+ without kms enabled. */
-	if (info->gen >= 6 && !drm_core_check_feature(dev, DRIVER_MODESET)) {
-		DRM_INFO("Your hardware requires kernel modesetting (KMS)\n");
-		DRM_INFO("See CONFIG_DRM_I915_KMS, nomodeset, and i915.modeset parameters\n");
-		return -ENODEV;
-	}
-
-	/* UMS needs agp support. */
-	if (!drm_core_check_feature(dev, DRIVER_MODESET) && !dev->agp)
-		return -EINVAL;
-
 	dev_priv = kzalloc(sizeof(*dev_priv), GFP_KERNEL);
 	if (dev_priv == NULL)
 		return -ENOMEM;
@@ -649,8 +814,9 @@ int i915_driver_load(struct drm_device *dev, unsigned long flags)
 	spin_lock_init(&dev_priv->uncore.lock);
 	spin_lock_init(&dev_priv->mm.object_stat_lock);
 	spin_lock_init(&dev_priv->mmio_flip_lock);
-	mutex_init(&dev_priv->dpio_lock);
+	mutex_init(&dev_priv->sb_lock);
 	mutex_init(&dev_priv->modeset_restore_lock);
+	mutex_init(&dev_priv->csr_lock);
 
 	intel_pm_setup(dev);
 
@@ -696,24 +862,25 @@ int i915_driver_load(struct drm_device *dev, unsigned long flags)
 
 	intel_uncore_init(dev);
 
+	/* Load CSR Firmware for SKL */
+	intel_csr_ucode_init(dev);
+
 	ret = i915_gem_gtt_init(dev);
 	if (ret)
-		goto out_regs;
+		goto out_freecsr;
 
-	if (drm_core_check_feature(dev, DRIVER_MODESET)) {
-		/* WARNING: Apparently we must kick fbdev drivers before vgacon,
-		 * otherwise the vga fbdev driver falls over. */
-		ret = i915_kick_out_firmware_fb(dev_priv);
-		if (ret) {
-			DRM_ERROR("failed to remove conflicting framebuffer drivers\n");
-			goto out_gtt;
-		}
+	/* WARNING: Apparently we must kick fbdev drivers before vgacon,
+	 * otherwise the vga fbdev driver falls over. */
+	ret = i915_kick_out_firmware_fb(dev_priv);
+	if (ret) {
+		DRM_ERROR("failed to remove conflicting framebuffer drivers\n");
+		goto out_gtt;
+	}
 
-		ret = i915_kick_out_vgacon(dev_priv);
-		if (ret) {
-			DRM_ERROR("failed to remove conflicting VGA console\n");
-			goto out_gtt;
-		}
+	ret = i915_kick_out_vgacon(dev_priv);
+	if (ret) {
+		DRM_ERROR("failed to remove conflicting VGA console\n");
+		goto out_gtt;
 	}
 
 	pci_set_master(dev->pdev);
@@ -773,6 +940,14 @@ int i915_driver_load(struct drm_device *dev, unsigned long flags)
 		goto out_freewq;
 	}
 
+	dev_priv->gpu_error.hangcheck_wq =
+		alloc_ordered_workqueue("i915-hangcheck", 0);
+	if (dev_priv->gpu_error.hangcheck_wq == NULL) {
+		DRM_ERROR("Failed to create our hangcheck workqueue.\n");
+		ret = -ENOMEM;
+		goto out_freedpwq;
+	}
+
 	intel_irq_init(dev_priv);
 	intel_uncore_sanitize(dev);
 
@@ -809,13 +984,18 @@ int i915_driver_load(struct drm_device *dev, unsigned long flags)
 
 	intel_power_domains_init(dev_priv);
 
-	if (drm_core_check_feature(dev, DRIVER_MODESET)) {
-		ret = i915_load_modeset_init(dev);
-		if (ret < 0) {
-			DRM_ERROR("failed to init modeset\n");
-			goto out_power_well;
-		}
+	ret = i915_load_modeset_init(dev);
+	if (ret < 0) {
+		DRM_ERROR("failed to init modeset\n");
+		goto out_power_well;
 	}
+
+	/*
+	 * Notify a valid surface after modesetting,
+	 * when running inside a VM.
+	 */
+	if (intel_vgpu_active(dev))
+		I915_WRITE(vgtif_reg(display_ready), VGT_DRV_DISPLAY_READY);
 
 	i915_setup_sysfs(dev);
 
@@ -847,6 +1027,8 @@ out_gem_unload:
 	intel_teardown_gmbus(dev);
 	intel_teardown_mchbar(dev);
 	pm_qos_remove_request(&dev_priv->pm_qos);
+	destroy_workqueue(dev_priv->gpu_error.hangcheck_wq);
+out_freedpwq:
 	destroy_workqueue(dev_priv->dp_wq);
 out_freewq:
 	destroy_workqueue(dev_priv->wq);
@@ -855,14 +1037,19 @@ out_mtrrfree:
 	io_mapping_free(dev_priv->gtt.mappable);
 out_gtt:
 	i915_global_gtt_cleanup(dev);
-out_regs:
+out_freecsr:
+	intel_csr_ucode_fini(dev);
 	intel_uncore_fini(dev);
 	pci_iounmap(dev->pdev, dev_priv->regs);
 put_bridge:
 	pci_dev_put(dev_priv->bridge_dev);
 free_priv:
-	if (dev_priv->slab)
-		kmem_cache_destroy(dev_priv->slab);
+	if (dev_priv->requests)
+		kmem_cache_destroy(dev_priv->requests);
+	if (dev_priv->vmas)
+		kmem_cache_destroy(dev_priv->vmas);
+	if (dev_priv->objects)
+		kmem_cache_destroy(dev_priv->objects);
 	kfree(dev_priv);
 	return ret;
 }
@@ -894,31 +1081,27 @@ int i915_driver_unload(struct drm_device *dev)
 
 	acpi_video_unregister();
 
-	if (drm_core_check_feature(dev, DRIVER_MODESET))
-		intel_fbdev_fini(dev);
+	intel_fbdev_fini(dev);
 
 	drm_vblank_cleanup(dev);
 
-	if (drm_core_check_feature(dev, DRIVER_MODESET)) {
-		intel_modeset_cleanup(dev);
+	intel_modeset_cleanup(dev);
 
-		/*
-		 * free the memory space allocated for the child device
-		 * config parsed from VBT
-		 */
-		if (dev_priv->vbt.child_dev && dev_priv->vbt.child_dev_num) {
-			kfree(dev_priv->vbt.child_dev);
-			dev_priv->vbt.child_dev = NULL;
-			dev_priv->vbt.child_dev_num = 0;
-		}
-
-		vga_switcheroo_unregister_client(dev->pdev);
-		vga_client_register(dev->pdev, NULL, NULL, NULL);
+	/*
+	 * free the memory space allocated for the child device
+	 * config parsed from VBT
+	 */
+	if (dev_priv->vbt.child_dev && dev_priv->vbt.child_dev_num) {
+		kfree(dev_priv->vbt.child_dev);
+		dev_priv->vbt.child_dev = NULL;
+		dev_priv->vbt.child_dev_num = 0;
 	}
 
+	vga_switcheroo_unregister_client(dev->pdev);
+	vga_client_register(dev->pdev, NULL, NULL, NULL);
+
 	/* Free error state after interrupts are fully disabled. */
-	del_timer_sync(&dev_priv->gpu_error.hangcheck_timer);
-	cancel_work_sync(&dev_priv->gpu_error.work);
+	cancel_delayed_work_sync(&dev_priv->gpu_error.hangcheck_work);
 	i915_destroy_error_state(dev);
 
 	if (dev->pdev->msi_enabled)
@@ -926,22 +1109,23 @@ int i915_driver_unload(struct drm_device *dev)
 
 	intel_opregion_fini(dev);
 
-	if (drm_core_check_feature(dev, DRIVER_MODESET)) {
-		/* Flush any outstanding unpin_work. */
-		flush_workqueue(dev_priv->wq);
+	/* Flush any outstanding unpin_work. */
+	flush_workqueue(dev_priv->wq);
 
-		mutex_lock(&dev->struct_mutex);
-		i915_gem_cleanup_ringbuffer(dev);
-		i915_gem_context_fini(dev);
-		mutex_unlock(&dev->struct_mutex);
-		i915_gem_cleanup_stolen(dev);
-	}
+	mutex_lock(&dev->struct_mutex);
+	i915_gem_cleanup_ringbuffer(dev);
+	i915_gem_context_fini(dev);
+	mutex_unlock(&dev->struct_mutex);
+	i915_gem_cleanup_stolen(dev);
+
+	intel_csr_ucode_fini(dev);
 
 	intel_teardown_gmbus(dev);
 	intel_teardown_mchbar(dev);
 
 	destroy_workqueue(dev_priv->dp_wq);
 	destroy_workqueue(dev_priv->wq);
+	destroy_workqueue(dev_priv->gpu_error.hangcheck_wq);
 	pm_qos_remove_request(&dev_priv->pm_qos);
 
 	i915_global_gtt_cleanup(dev);
@@ -950,8 +1134,12 @@ int i915_driver_unload(struct drm_device *dev)
 	if (dev_priv->regs != NULL)
 		pci_iounmap(dev->pdev, dev_priv->regs);
 
-	if (dev_priv->slab)
-		kmem_cache_destroy(dev_priv->slab);
+	if (dev_priv->requests)
+		kmem_cache_destroy(dev_priv->requests);
+	if (dev_priv->vmas)
+		kmem_cache_destroy(dev_priv->vmas);
+	if (dev_priv->objects)
+		kmem_cache_destroy(dev_priv->objects);
 
 	pci_dev_put(dev_priv->bridge_dev);
 	kfree(dev_priv);
@@ -995,8 +1183,7 @@ void i915_driver_preclose(struct drm_device *dev, struct drm_file *file)
 	i915_gem_release(dev, file);
 	mutex_unlock(&dev->struct_mutex);
 
-	if (drm_core_check_feature(dev, DRIVER_MODESET))
-		intel_modeset_preclose(dev, file);
+	intel_modeset_preclose(dev, file);
 }
 
 void i915_driver_postclose(struct drm_device *dev, struct drm_file *file)
@@ -1006,6 +1193,13 @@ void i915_driver_postclose(struct drm_device *dev, struct drm_file *file)
 	if (file_priv && file_priv->bsd_ring)
 		file_priv->bsd_ring = NULL;
 	kfree(file_priv);
+}
+
+static int
+i915_gem_reject_pin_ioctl(struct drm_device *dev, void *data,
+			  struct drm_file *file)
+{
+	return -ENODEV;
 }
 
 const struct drm_ioctl_desc i915_ioctls[] = {
@@ -1029,8 +1223,8 @@ const struct drm_ioctl_desc i915_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(I915_GEM_INIT, drm_noop, DRM_AUTH|DRM_MASTER|DRM_ROOT_ONLY|DRM_UNLOCKED),
 	DRM_IOCTL_DEF_DRV(I915_GEM_EXECBUFFER, i915_gem_execbuffer, DRM_AUTH|DRM_UNLOCKED),
 	DRM_IOCTL_DEF_DRV(I915_GEM_EXECBUFFER2, i915_gem_execbuffer2, DRM_AUTH|DRM_UNLOCKED|DRM_RENDER_ALLOW),
-	DRM_IOCTL_DEF_DRV(I915_GEM_PIN, i915_gem_pin_ioctl, DRM_AUTH|DRM_ROOT_ONLY|DRM_UNLOCKED),
-	DRM_IOCTL_DEF_DRV(I915_GEM_UNPIN, i915_gem_unpin_ioctl, DRM_AUTH|DRM_ROOT_ONLY|DRM_UNLOCKED),
+	DRM_IOCTL_DEF_DRV(I915_GEM_PIN, i915_gem_reject_pin_ioctl, DRM_AUTH|DRM_ROOT_ONLY|DRM_UNLOCKED),
+	DRM_IOCTL_DEF_DRV(I915_GEM_UNPIN, i915_gem_reject_pin_ioctl, DRM_AUTH|DRM_ROOT_ONLY|DRM_UNLOCKED),
 	DRM_IOCTL_DEF_DRV(I915_GEM_BUSY, i915_gem_busy_ioctl, DRM_AUTH|DRM_UNLOCKED|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_SET_CACHING, i915_gem_set_caching_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_GET_CACHING, i915_gem_get_caching_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
@@ -1052,13 +1246,15 @@ const struct drm_ioctl_desc i915_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(I915_OVERLAY_PUT_IMAGE, intel_overlay_put_image, DRM_MASTER|DRM_CONTROL_ALLOW|DRM_UNLOCKED),
 	DRM_IOCTL_DEF_DRV(I915_OVERLAY_ATTRS, intel_overlay_attrs, DRM_MASTER|DRM_CONTROL_ALLOW|DRM_UNLOCKED),
 	DRM_IOCTL_DEF_DRV(I915_SET_SPRITE_COLORKEY, intel_sprite_set_colorkey, DRM_MASTER|DRM_CONTROL_ALLOW|DRM_UNLOCKED),
-	DRM_IOCTL_DEF_DRV(I915_GET_SPRITE_COLORKEY, intel_sprite_get_colorkey, DRM_MASTER|DRM_CONTROL_ALLOW|DRM_UNLOCKED),
+	DRM_IOCTL_DEF_DRV(I915_GET_SPRITE_COLORKEY, drm_noop, DRM_MASTER|DRM_CONTROL_ALLOW|DRM_UNLOCKED),
 	DRM_IOCTL_DEF_DRV(I915_GEM_WAIT, i915_gem_wait_ioctl, DRM_AUTH|DRM_UNLOCKED|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_CONTEXT_CREATE, i915_gem_context_create_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_CONTEXT_DESTROY, i915_gem_context_destroy_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_REG_READ, i915_reg_read_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GET_RESET_STATS, i915_get_reset_stats_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(I915_GEM_USERPTR, i915_gem_userptr_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(I915_GEM_CONTEXT_GETPARAM, i915_gem_context_getparam_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(I915_GEM_CONTEXT_SETPARAM, i915_gem_context_setparam_ioctl, DRM_UNLOCKED|DRM_RENDER_ALLOW),
 };
 
 int i915_max_ioctl = ARRAY_SIZE(i915_ioctls);

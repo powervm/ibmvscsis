@@ -9,7 +9,7 @@
 #include <linux/blkdev.h>
 #include <linux/bio.h>
 #include <linux/blktrace_api.h>
-#include "blk-cgroup.h"
+#include <linux/blk-cgroup.h>
 #include "blk.h"
 
 /* Max dispatch from a group in 1 round */
@@ -1291,6 +1291,9 @@ static u64 tg_prfill_cpu_rwstat(struct seq_file *sf,
 	struct throtl_grp *tg = pd_to_tg(pd);
 	struct blkg_rwstat rwstat = { }, tmp;
 	int i, cpu;
+
+	if (tg->stats_cpu == NULL)
+		return 0;
 
 	for_each_possible_cpu(cpu) {
 		struct tg_stats_cpu *sc = per_cpu_ptr(tg->stats_cpu, cpu);

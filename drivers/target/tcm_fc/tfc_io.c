@@ -39,10 +39,6 @@
 #include <linux/hash.h>
 #include <linux/ratelimit.h>
 #include <asm/unaligned.h>
-#include <scsi/scsi.h>
-#include <scsi/scsi_host.h>
-#include <scsi/scsi_device.h>
-#include <scsi/scsi_cmnd.h>
 #include <scsi/libfc.h>
 #include <scsi/fc_encode.h>
 
@@ -359,7 +355,7 @@ void ft_invl_hw_context(struct ft_cmd *cmd)
 		ep = fc_seq_exch(seq);
 		if (ep) {
 			lport = ep->lp;
-			if (lport && (ep->xid <= lport->lro_xid))
+			if (lport && (ep->xid <= lport->lro_xid)) {
 				/*
 				 * "ddp_done" trigger invalidation of HW
 				 * specific DDP context
@@ -374,6 +370,7 @@ void ft_invl_hw_context(struct ft_cmd *cmd)
 				 * identified using ep->xid)
 				 */
 				cmd->was_ddp_setup = 0;
+			}
 		}
 	}
 }

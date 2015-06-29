@@ -27,6 +27,8 @@ config TILE
 	select ARCH_HAS_ATOMIC64_DEC_IF_POSITIVE
 	select HAVE_DEBUG_STACKOVERFLOW
 	select ARCH_WANT_FRAME_POINTERS
+	select HAVE_CONTEXT_TRACKING
+	select EDAC_SUPPORT
 
 # FIXME: investigate whether we need/want these options.
 #	select HAVE_IOREMAP_PROT
@@ -146,6 +148,11 @@ config ARCH_DEFCONFIG
 	string
 	default "arch/tile/configs/tilepro_defconfig" if !TILEGX
 	default "arch/tile/configs/tilegx_defconfig" if TILEGX
+
+config PGTABLE_LEVELS
+	int
+	default 3 if 64BIT
+	default 2
 
 source "init/Kconfig"
 

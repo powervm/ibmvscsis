@@ -742,7 +742,7 @@ static struct ipu_devtype ipu_type_imx51 = {
 	.tpm_ofs = 0x1f060000,
 	.csi0_ofs = 0x1f030000,
 	.csi1_ofs = 0x1f038000,
-	.ic_ofs = 0x1f020000,
+	.ic_ofs = 0x1e020000,
 	.disp0_ofs = 0x1e040000,
 	.disp1_ofs = 0x1e048000,
 	.dc_tmpl_ofs = 0x1f080000,
@@ -758,7 +758,7 @@ static struct ipu_devtype ipu_type_imx53 = {
 	.tpm_ofs = 0x07060000,
 	.csi0_ofs = 0x07030000,
 	.csi1_ofs = 0x07038000,
-	.ic_ofs = 0x07020000,
+	.ic_ofs = 0x06020000,
 	.disp0_ofs = 0x06040000,
 	.disp1_ofs = 0x06048000,
 	.dc_tmpl_ofs = 0x07080000,
@@ -1119,10 +1119,9 @@ static int ipu_irq_init(struct ipu_soc *ipu)
 		ct->regs.mask = IPU_INT_CTRL(i / 32);
 	}
 
-	irq_set_chained_handler(ipu->irq_sync, ipu_irq_handler);
-	irq_set_handler_data(ipu->irq_sync, ipu);
-	irq_set_chained_handler(ipu->irq_err, ipu_err_irq_handler);
-	irq_set_handler_data(ipu->irq_err, ipu);
+	irq_set_chained_handler_and_data(ipu->irq_sync, ipu_irq_handler, ipu);
+	irq_set_chained_handler_and_data(ipu->irq_err, ipu_err_irq_handler,
+					 ipu);
 
 	return 0;
 }
@@ -1131,10 +1130,8 @@ static void ipu_irq_exit(struct ipu_soc *ipu)
 {
 	int i, irq;
 
-	irq_set_chained_handler(ipu->irq_err, NULL);
-	irq_set_handler_data(ipu->irq_err, NULL);
-	irq_set_chained_handler(ipu->irq_sync, NULL);
-	irq_set_handler_data(ipu->irq_sync, NULL);
+	irq_set_chained_handler_and_data(ipu->irq_err, NULL, NULL);
+	irq_set_chained_handler_and_data(ipu->irq_sync, NULL, NULL);
 
 	/* TODO: remove irq_domain_generic_chips */
 

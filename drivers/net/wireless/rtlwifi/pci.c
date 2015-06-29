@@ -822,11 +822,8 @@ static void _rtl_pci_rx_interrupt(struct ieee80211_hw *hw)
 
 		/* get a new skb - if fail, old one will be reused */
 		new_skb = dev_alloc_skb(rtlpci->rxbuffersize);
-		if (unlikely(!new_skb)) {
-			pr_err("Allocation of new skb failed in %s\n",
-			       __func__);
+		if (unlikely(!new_skb))
 			goto no_new;
-		}
 		if (rtlpriv->use_new_trx_flow) {
 			buffer_desc =
 			  &rtlpci->rx_ring[rxring_idx].buffer_desc
@@ -890,7 +887,7 @@ static void _rtl_pci_rx_interrupt(struct ieee80211_hw *hw)
 				unicast = true;
 				rtlpriv->stats.rxbytesunicast += skb->len;
 			}
-			rtl_is_special_data(hw, skb, false);
+			rtl_is_special_data(hw, skb, false, true);
 
 			if (ieee80211_is_data(fc)) {
 				rtlpriv->cfg->ops->led_control(hw, LED_CTL_RX);
@@ -1127,12 +1124,22 @@ static void _rtl_pci_prepare_bcn_tasklet(struct ieee80211_hw *hw)
 	/*This is for new trx flow*/
 	struct rtl_tx_buffer_desc *pbuffer_desc = NULL;
 	u8 temp_one = 1;
+	u8 *entry;
 
 	memset(&tcb_desc, 0, sizeof(struct rtl_tcb_desc));
 	ring = &rtlpci->tx_ring[BEACON_QUEUE];
 	pskb = __skb_dequeue(&ring->queue);
-	if (pskb)
+	if (rtlpriv->use_new_trx_flow)
+		entry = (u8 *)(&ring->buffer_desc[ring->idx]);
+	else
+		entry = (u8 *)(&ring->desc[ring->idx]);
+	if (pskb) {
+		pci_unmap_single(rtlpci->pdev,
+				 rtlpriv->cfg->ops->get_desc(
+				 (u8 *)entry, true, HW_DESC_TXBUFF_ADDR),
+				 pskb->len, PCI_DMA_TODEVICE);
 		kfree_skb(pskb);
+	}
 
 	/*NB: the beacon data buffer must be 32-bit aligned. */
 	pskb = ieee80211_beacon_get(hw, mac->vif);

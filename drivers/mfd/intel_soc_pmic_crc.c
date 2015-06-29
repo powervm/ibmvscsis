@@ -111,7 +111,7 @@ static struct mfd_cell crystal_cove_dev[] = {
 	},
 };
 
-static struct regmap_config crystal_cove_regmap_config = {
+static const struct regmap_config crystal_cove_regmap_config = {
 	.reg_bits = 8,
 	.val_bits = 8,
 
@@ -143,7 +143,7 @@ static const struct regmap_irq crystal_cove_irqs[] = {
 	},
 };
 
-static struct regmap_irq_chip crystal_cove_irq_chip = {
+static const struct regmap_irq_chip crystal_cove_irq_chip = {
 	.name = "Crystal Cove",
 	.irqs = crystal_cove_irqs,
 	.num_irqs = ARRAY_SIZE(crystal_cove_irqs),

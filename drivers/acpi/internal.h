@@ -138,6 +138,8 @@ struct acpi_ec {
 	struct transaction *curr;
 	spinlock_t lock;
 	struct work_struct work;
+	unsigned long timestamp;
+	unsigned long nr_pending_queries;
 };
 
 extern struct acpi_ec *first_ec;
@@ -161,7 +163,11 @@ void acpi_ec_remove_query_handler(struct acpi_ec *ec, u8 query_bit);
 /*--------------------------------------------------------------------------
                                   Suspend/Resume
   -------------------------------------------------------------------------- */
+#ifdef CONFIG_ACPI_SYSTEM_POWER_STATES_SUPPORT
 extern int acpi_sleep_init(void);
+#else
+static inline int acpi_sleep_init(void) { return -ENXIO; }
+#endif
 
 #ifdef CONFIG_ACPI_SLEEP
 int acpi_sleep_proc_init(void);
@@ -178,15 +184,10 @@ static inline void suspend_nvs_restore(void) {}
 #endif
 
 /*--------------------------------------------------------------------------
-					Video
-  -------------------------------------------------------------------------- */
-#if defined(CONFIG_ACPI_VIDEO) || defined(CONFIG_ACPI_VIDEO_MODULE)
-bool acpi_osi_is_win8(void);
-#endif
-
-/*--------------------------------------------------------------------------
 				Device properties
   -------------------------------------------------------------------------- */
+#define ACPI_DT_NAMESPACE_HID	"PRP0001"
+
 void acpi_init_properties(struct acpi_device *adev);
 void acpi_free_properties(struct acpi_device *adev);
 
