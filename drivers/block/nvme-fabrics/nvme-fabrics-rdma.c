@@ -117,7 +117,7 @@ static int rdma_parse_addr(struct nvme_fabric_addr *address,
 		dstaddr_in->sin_family = AF_INET;
 		dstaddr_in->sin_addr.s_addr =
 			in_aton(address->addr.ipv4_addr.octet);
-		dstaddr_in->sin_port = 
+		dstaddr_in->sin_port =
 			htons(address->addr.ipv4_addr.tcp_udp_port);
 	} else if (address_type == NVME_FABRIC_IP6) {
 		dstaddr_in->sin_family = AF_INET6;
@@ -439,18 +439,21 @@ static int setup_discover_params(struct nvme_rdma_conn *fabric_conn)
 	if (ret)
 		goto err1;
 
-	/* CAYTONCAYTON - Do we need this? */
-	rdma_ctrl->mr = ib_get_dma_mr(rdma_ctrl->pd,
+#ifndef SUPPORT_REG_PHYS_MR
+	rdma_ctrl->mr = ib_get_dma_mr(pd,
 				      IB_ACCESS_LOCAL_WRITE |
 				      IB_ACCESS_REMOTE_WRITE|
 				      IB_ACCESS_REMOTE_READ);
-
 	if (IS_ERR(rdma_ctrl->mr)) {
 		ret = PTR_ERR(rdma_ctrl->mr);
 		pr_err(DRV_NAME "%s(%d) ib_get_dma_mr returned %d\n",
 		       __func__, __LINE__, ret);
 		goto err2;
 	}
+
+	pr_info(DRV_NAME " %s(%d) rmda_ctrl %p mr %p\n",
+		__func__, __LINE__, rdma_ctrl, rdma_ctrl->mr);
+#endif
 
 	ret = setup_qp(fabric_conn, MAX_DISCOVER_SEND_WR, MAX_DISCOVER_RECV_WR,
 		       MAX_DISCOVER_SEND_SGE, MAX_DISCOVER_RECV_SGE);
@@ -460,8 +463,10 @@ static int setup_discover_params(struct nvme_rdma_conn *fabric_conn)
 	return 0;
 
 err3:
+#ifndef SUPPORT_REG_PHYS_MR
 	ib_dereg_mr(rdma_ctrl->mr);
 err2:
+#endif
 	ib_destroy_cq(fabric_conn->xport_conn.cq);
 err1:
 	ib_dealloc_pd(pd);
@@ -515,11 +520,8 @@ static int setup_aq_params(struct nvme_rdma_conn *fabric_conn)
 	if (ret)
 		goto err1;
 
-	pr_info(DRV_NAME " %s(%d) Remote connect: call get_dma_mr\n",
-		__func__, __LINE__);
-
-	/* CAYTONCAYTON - Do we need this? */
-	rdma_ctrl->mr = ib_get_dma_mr(rdma_ctrl->pd, IB_ACCESS_LOCAL_WRITE  |
+#ifndef SUPPORT_REG_PHYS_MR
+	rdma_ctrl->mr = ib_get_dma_mr(pd, IB_ACCESS_LOCAL_WRITE  |
 				      IB_ACCESS_REMOTE_WRITE |
 				      IB_ACCESS_REMOTE_READ);
 	if (IS_ERR(rdma_ctrl->mr)) {
@@ -528,6 +530,10 @@ static int setup_aq_params(struct nvme_rdma_conn *fabric_conn)
 		       __func__, __LINE__, ret);
 		goto err2;
 	}
+
+	pr_info(DRV_NAME " %s(%d) rmda_ctrl %p mr %p\n",
+		__func__, __LINE__, rdma_ctrl, rdma_ctrl->mr);
+#endif
 
 	ret = setup_qp(fabric_conn, MAX_AQ_SEND_WR, MAX_AQ_RECV_WR,
 		       MAX_AQ_SEND_SGE, MAX_AQ_RECV_SGE);
@@ -539,8 +545,10 @@ static int setup_aq_params(struct nvme_rdma_conn *fabric_conn)
 	return 0;
 
 err3:
+#ifndef SUPPORT_REG_PHYS_MR
 	ib_dereg_mr(rdma_ctrl->mr);
 err2:
+#endif
 	ib_destroy_cq(fabric_conn->xport_conn.cq);
 err1:
 	ib_dealloc_pd(pd);
@@ -986,7 +994,9 @@ static void free_xport_desc(struct xport_desc *desc)
 {
 	int i;
 
+#ifdef SUPPORT_REG_PHYS_MR
 	ib_dereg_mr(desc->mr);
+#endif
 
 	for (i = 0; i < desc->num_sge; i++)
 		ib_dma_unmap_single(desc->ib_dev, desc->sgl[i].addr,
@@ -1003,11 +1013,13 @@ static struct xport_desc *alloc_xport_desc(struct nvme_rdma_conn *fabric_conn,
 	struct ib_mr		*mr;
 	struct ib_phys_buf	 phys_buf;
 	__u64			 dma_addr;
+	int			 ret;
+#ifdef SUPPORT_REG_PHYS_MR
 	__u64			 iovbase;
 	const int		 flags = IB_ACCESS_LOCAL_WRITE |
 					 IB_ACCESS_REMOTE_WRITE|
 					 IB_ACCESS_REMOTE_READ;
-	int			 ret;
+#endif
 
 	rdma_ctrl	= fabric_conn->rdma_ctrl;
 	ib_dev		= rdma_ctrl->ib_dev;
@@ -1027,10 +1039,11 @@ static struct xport_desc *alloc_xport_desc(struct nvme_rdma_conn *fabric_conn,
 		return NULL;
 	}
 
-	iovbase = dma_addr;
-
 	phys_buf.addr = dma_addr;
 	phys_buf.size = len;
+
+#ifdef SUPPORT_REG_PHYS_MR
+	iovbase = dma_addr;
 
 	/* TODO: clean up later - dereg_phys_mr */
 	mr = ib_reg_phys_mr(rdma_ctrl->pd, &phys_buf, 1, flags, &iovbase);
@@ -1040,6 +1053,10 @@ static struct xport_desc *alloc_xport_desc(struct nvme_rdma_conn *fabric_conn,
 		      __func__, __LINE__, PTR_ERR(mr));
 		return NULL;
 	}
+#else
+	mr = rdma_ctrl->mr;
+	pr_info(DRV_NAME " %s(%d) using MR %p\n", __func__, __LINE__, mr);
+#endif
 
 	desc->ib_dev		= ib_dev;
 	desc->mr		= mr;
@@ -1251,7 +1268,7 @@ static int nvme_rdma_connect_create_queue(struct nvme_fabric_subsystem *subsys,
 	memcpy(&fabric_conn->dst, dstaddr_in, sizeof(struct sockaddr_in));
 	init_completion(&fabric_conn->comp);
 	init_waitqueue_head(&fabric_conn->sem);
-	
+
 	/* Create the Discover/Admin/IO Connection */
 	ret = connect_to_rdma_ctrl(fabric_conn);
 	if (ret) {

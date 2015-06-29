@@ -420,7 +420,7 @@ static int create_connect_capsule(union nvme_capsule_cmd *capsule,
 			hostname, NVME_FABRIC_IQN_MAXLEN);
 	}
 
-	pr_info(DRV_NAME " \n%s(%d) === Created Connect Capsule ===\n", __func__, __LINE__);
+	pr_info(DRV_NAME " %s(%d) === Created Connect Capsule ===\n", __func__, __LINE__);
 	pr_info(DRV_NAME " cctype:  %#x      authpr: %d\n",
 		capsule->connect.hdr.cctype,
 		capsule->connect.hdr.authpr);
@@ -471,7 +471,7 @@ static int create_connect_capsule_rsp(union nvme_capsule_rsp *rsp)
  */
 static int nvme_fabric_initialize_disks(struct nvme_fabric_subsystem *conn)
 {
-	int                      ret = 0;
+	int			ret = 0;
 
 	pr_info(DRV_NAME " %s(%d)\n", __func__, __LINE__);
 
@@ -594,7 +594,7 @@ nvme_fabric_connect_login_aq(struct nvme_fabric_ctrl *new_ctrl,
 		#endif
 
 	} else
-		pr_info(DRV_NAME " \n\n%s(%d): received VALID cntlid %d from target\n",
+		pr_info(DRV_NAME " %s(%d): received VALID cntlid %d from target\n",
 			__func__, __LINE__, rsp.connect.hdr.cntlid);
 
 	/* Now that we have a valid controller id for the subsystem,
@@ -845,9 +845,9 @@ int nvme_fabric_register(char *nvme_class_name,
 	nvme_host->fops = new_fabric;
 
 	/* TODO: Remove before upstreaming?*/
-	if ((nvme_host->fops->connect_create_queue == NULL) ||
-			(nvme_host->fops->disconnect == NULL)           ||
-			(nvme_host->fops->send_admin_cmd == NULL)  ||
+	if ((nvme_host->fops->connect_create_queue == NULL)       ||
+			(nvme_host->fops->disconnect == NULL)     ||
+			(nvme_host->fops->send_admin_cmd == NULL) ||
 			(nvme_host->fops->build_admin_sglist == NULL)) {
 		pr_err(DRV_NAME " %s(%d): Error, a fabric function not implemented!\n",
 		       __func__, __LINE__);
