@@ -1,0 +1,5 @@
+
+config NVME_TARGET
+	depends on BLOCK
+	depends on CONFIGFS_FS
+	tristate
