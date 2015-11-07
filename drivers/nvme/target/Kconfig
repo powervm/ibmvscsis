@@ -14,3 +14,8 @@ config NVME_TARGET_LOOP
 	  to test NVMe host and target side features.
 
 	  If unsure, say N.
+
+config NVME_TARGET_RDMA
+	tristate "NVMe over Fabrics RDMA target support"
+	depends on INFINIBAND
+	select NVME_TARGET

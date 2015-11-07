@@ -56,9 +56,11 @@ struct nvme_rdma_cm_req {
  * struct nvme_rdma_cm_rep - rdma connect reply
  *
  * @recfmt:        format of the RDMA Private Data
+ * @rdmaqprxe:     number of entries capsule reception
  */
 struct nvme_rdma_cm_rep {
 	__le16		recfmt;
+	__le16		rdmaqprxe;
 };
 
 /**
