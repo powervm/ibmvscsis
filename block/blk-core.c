@@ -3373,6 +3373,7 @@ bool blk_poll(struct request_queue *q, blk_qc_t cookie)
 
 	return false;
 }
+EXPORT_SYMBOL(blk_poll);
 
 #ifdef CONFIG_PM
 /**
