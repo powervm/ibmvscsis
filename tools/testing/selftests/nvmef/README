@@ -1,0 +1,32 @@
+Linux NVMe over Fabrics (NVMf) Testcases
+========================================
+
+This is a suite of simple tests for the NVMf driver. Note that in some
+cases certain programs (e.g. fio) need to be installed. In some cases
+a client and server are needed (e.g. rmda).
+
+Running the Testcases
+=====================
+
+make run_tests (NB must be run as root)
+
+or
+
+make check (NB must be run as root)
+
+Result Codes
+============
+
+	* PASS - The test passed.
+	* FAIL - The test failed.
+
+Adding New Testcases
+====================
+
+Simply add your test as a bash script and append its name to the
+TEST_PROGS variable in Makefile.
+
+To Be Done
+==========
+
+Everything except simple loop test :-)
