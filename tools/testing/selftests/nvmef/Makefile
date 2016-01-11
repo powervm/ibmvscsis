@@ -1,6 +1,7 @@
 all:
 
 TEST_PROGS := nvmf_loop.sh
+TEST_PROGS += 001.sh
 
 include ../lib.mk
 
