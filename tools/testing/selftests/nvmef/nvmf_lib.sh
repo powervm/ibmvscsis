@@ -26,6 +26,12 @@ nvmf_target()
     echo -n $2 > "$CONFIGFS/nvmet/subsystems/$1/namespaces/1/device_path"
 }
 
+nvmf_rdma_target()
+{
+    modprobe nvmet-rdma
+    nvmf_target $*
+}
+
 _nvmf_host()
 {
     modprobe nvme-fabrics
@@ -41,9 +47,10 @@ nvmf_loop_host()
     _nvmf_host $1 "transport=loop"
 }
 
-nvmf_host()
+nvmf_rdma_host()
 {
-    _nvmf_host $1 "addr=$2,port=$3"
+    modprobe nvme-rdma
+    _nvmf_host $1 "transport=rdma,ipaddr=$2,port=$3"
 }
 
   # Note we always want nvme_cleanup to try all the rmmods so we wrap
@@ -62,6 +69,7 @@ nvmf_cleanup_host()
     fi
 
     modprobe -r nvme-loop
+    modprobe -r nvme-rdma
     modprobe -r nvme-fabrics
 
     eval "$SAVED_OPTIONS"
@@ -74,6 +82,7 @@ nvmf_cleanup_target()
 
     rmdir $CONFIGFS/nvmet/subsystems/$1/namespaces/1
     rmdir $CONFIGFS/nvmet/subsystems/$1
+    modprobe -r nvmet-rdma
     modprobe -r nvmet
 
     eval "$SAVED_OPTIONS"
@@ -82,7 +91,12 @@ nvmf_cleanup_target()
 nvmf_cleanup()
 {
     nvmf_cleanup_host $1
-    nvmf_cleanup_target $1
+
+    if [ "${TARGET_HOST}" != "" ]; then
+        nvmf_remote_cmd ${TARGET_HOST} nvmf_cleanup_target $1
+    else
+        nvmf_cleanup_target $1
+    fi
 }
 
 nvmf_check_configfs_mount()
@@ -150,6 +164,19 @@ nvmf_setup_dd_args()
      fi
 
      echo "$FLAGS bs=${BS} count=${COUNT} ${IFLAG}"
+}
+
+nvmf_remote_cmd()
+{
+    local HOST=$1
+    shift
+
+    ssh ${HOST} bash <<-EOF
+        $(set +o)
+        $(cat ./nvmf_lib.sh)
+        $@
+	EOF
+
 }
 
 nvmf_run_dd()
