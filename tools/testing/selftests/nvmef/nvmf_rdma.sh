@@ -17,7 +17,7 @@
 set -e
 . ./nvmf_lib.sh
 
-NAME=selftest-nvmf
+NAME=selftest-nvmf-rdma
 TARGET_DEVICE=/dev/nullb0
 TARGET_HOST=
 NQN=${NAME}
@@ -44,7 +44,7 @@ nvmf_help()
     echo "  -h             : Show this help message"
     echo "  -n NAME        : Controller name on target side"
     echo "  -t TARGET_BLK  : Block device to use on target side"
-    echo "  -T TARGET_HOST : Block device to use on target side"
+    echo "  -T TARGET_HOST : Hostname or IP of target side"
     echo "  -c COUNT       : Number of IO to test with"
     echo "  -b BS          : IO block size"
     echo "  -d             : Perform direct IO"
@@ -102,22 +102,27 @@ fi
   # over time.
 
 nvmf_check_cleanup_only $NAME
-nvmf_check_configfs_mount
 DD_FLAGS=$(nvmf_setup_dd_args $DD_COUNT $DD_BS $DD_DIRECT $DD_SYNC)
 
 CONNECTION=$(ssh ${TARGET_HOST} echo \$SSH_CONNECTION)
+REMOTE_NODE=$(ssh ${TARGET_HOST} uname -n)
+REMOTE_KERNEL=$(ssh ${TARGET_HOST} uname -r)
 CARGS=( $CONNECTION )
 REMOTE_IP=${CARGS[2]}
 LOCAL_IP=${CARGS[0]}
-echo "Remote Address: ${REMOTE_IP}"
-echo "Local Address:  ${LOCAL_IP}"
+echo "Remote Address: ${REMOTE_IP} ($REMOTE_NODE)"
+echo "Remote Device:  ${TARGET_DEVICE}"
+echo "Remote Kernel:  ${REMOTE_KERNEL}"
+echo
+echo "Local Address:  ${LOCAL_IP} ($(uname -n))"
+echo "Local Kernel:   $(uname -r)"
 echo
 
 nvmf_trap_exit
 
-
   # Setup the NVMf target and host.
 
+nvmf_remote_cmd ${TARGET_HOST} nvmf_check_configfs_mount
 nvmf_remote_cmd ${TARGET_HOST} nvmf_check_target_device ${TARGET_DEVICE}
 nvmf_remote_cmd ${TARGET_HOST} nvmf_rdma_target ${NAME} ${TARGET_DEVICE}
 

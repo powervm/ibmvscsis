@@ -16,7 +16,7 @@
 set -e
 . ./nvmf_lib.sh
 
-NAME=selftest-nvmf
+NAME=selftest-nvmf-loop
 TARGET_DEVICE=/dev/nullb0
 NQN=${NAME}
 
@@ -112,6 +112,10 @@ then
     echo nvmf: Error creating host device.
     exit -1
 fi
+
+echo "Target Device: ${TARGET_DEVICE}"
+echo "Kernel Version: $(uname -r)"
+echo
 
   # run some simple tests
 
