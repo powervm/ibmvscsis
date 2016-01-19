@@ -16,8 +16,6 @@
 set -e
 . ./nvmf_lib.sh
 
-CONFIGFS=/sys/kernel/config
-
 NAME=selftest-nvmf
 TARGET_DEVICE=/dev/nullb0
 NQN=${NAME}
@@ -29,6 +27,29 @@ DD_SYNC=FALSE
 
 CLEANUP_ONLY=FALSE
 CLEANUP_SKIP=FALSE
+
+nvmf_help()
+{
+    echo $0 ": Help and Usage"
+    echo
+    echo "A testing tool for NVMe over Fabrics (NVMf)"
+    echo
+    echo "usage: $0 [options]"
+    echo
+    echo "Options"
+    echo "-------"
+    echo
+    echo "  -h             : Show this help message"
+    echo "  -n NAME        : Controller name on target side"
+    echo "  -t TARGET      : Block device to use on target side"
+    echo "  -c COUNT       : Number of IO to test with"
+    echo "  -b BS          : IO block size"
+    echo "  -d             : Perform direct IO"
+    echo "  -s             : Perform synchronous IO"
+    echo "  -x             : Just perform a module cleanup"
+    echo "  -y             : Do not perform a cleanup"
+    echo
+}
 
 while getopts "hn:t:c:b:dsxy" opt; do
     case "$opt" in
@@ -62,7 +83,6 @@ while getopts "hn:t:c:b:dsxy" opt; do
     esac
 done
 
-
 echo "-----------------"
 echo "running nvmf_loop"
 echo "-----------------"
@@ -71,70 +91,11 @@ echo "-----------------"
   # relevant modules loaded. We will add checks for this to the script
   # over time.
 
-  # If requested just run the cleanup function. Useful if a previous
-  # run has left the system in a undefined state.
-
-if [ "${CLEANUP_ONLY}" == TRUE ]
-then
-    echo nvmf: Just performing cleanup.
-    nvmf_cleanup ${NAME} ${HOST_CTRL}
-    exit -1
-fi
-
-  # If mountpoint exists use it to ensure that configfs is already
-  # mounted.
-
-if [ $(which mountpoint) ]
-then
-    if !(mountpoint -q ${CONFIGFS})
-    then
-	echo nvmf: configfs is not mounted.
-	exit -1
-    fi
-else
-    echo nvmf: Warning: automount not \
-	 found - skipping configfs check.
-fi
-
-  # Setup the dd iflag and oflag based on user input.
-
-if [ "${DD_DIRECT}" == TRUE ]
-then
-    if [ "${DD_SYNC}" == TRUE ]
-    then
-	DD_IFLAG="iflag=direct,sync"
-	DD_OFLAG="oflag=direct,sync"
-
-    else
-	DD_IFLAG="iflag=direct"
-	DD_OFLAG="oflag=direct"
-    fi
-else
-    if [ "${DD_SYNC}" == TRUE ]
-    then
-	DD_IFLAG="iflag=sync"
-	DD_OFLAG="oflag=sync"
-    fi
-fi
-
-  # Set up the target block device. Note that in-reality any block
-  # device can be supported here. If the device is the null_blk device
-  # then we create it here if it does not already exist.
-
-if [[ "${TARGET_DEVICE}" == "/dev/nullb"* ]]
-then
-    if [ ! -b "${TARGET_DEVICE}" ]
-    then
-	modprobe null_blk
-    fi
-fi
-
-if [ ! -b "${TARGET_DEVICE}" ]
-then
-    echo nvmf: Error: Could not find \
-	 target device.
-    exit -1
-fi
+nvmf_check_cleanup_only $NAME
+nvmf_check_configfs_mount
+DD_FLAGS=$(nvmf_setup_dd_args $DD_COUNT $DD_BS $DD_DIRECT $DD_SYNC)
+nvmf_check_target_device ${TARGET_DEVICE}
+nvmf_trap_exit
 
   # Setup the NVMf target and host.
 
@@ -154,23 +115,11 @@ fi
 
   # run some simple tests
 
-echo "testing target directly (reads)..."
-dd if=${TARGET_DEVICE} of=/dev/null bs=${DD_BS} count=${DD_COUNT} ${DD_IFLAG}
-echo "testing target directly (writes)..."
-dd if=/dev/zero of=${TARGET_DEVICE} bs=${DD_BS} count=${DD_COUNT} ${DD_OFLAG}
+echo "testing target directly:"
+nvmf_run_dd ${TARGET_DEVICE} $DD_FLAGS
 echo
 echo
-echo "testing via loopback (reads)..."
-dd if=${HOST_DEVICE} of=/dev/null bs=${DD_BS} count=${DD_COUNT} ${DD_IFLAG}
-echo "testing via loopback (writes)..."
-dd if=/dev/zero of=${HOST_DEVICE} bs=${DD_BS} count=${DD_COUNT} ${DD_OFLAG}
+echo "testing via loopback:"
+nvmf_run_dd ${HOST_DEVICE} $DD_FLAGS
 echo
 echo
-sync
-
-  # Cleanup the system to its initial state
-
-if [ "${CLEANUP_SKIP}" == FALSE ]
-then
-    nvmf_cleanup ${NAME} ${HOST_CTRL}
-fi

@@ -13,29 +13,7 @@
 #
 # Author: stephen.bates@pmcs.com <stephen.bates@pmcs.com>
 
-
-nvmf_help()
-{
-    echo $0 ": Help and Usage"
-    echo
-    echo "A testing tool for NVMe over Fabrics (NVMf)"
-    echo
-    echo "usage: $0 [options]"
-    echo
-    echo "Options"
-    echo "-------"
-    echo
-    echo "  -h             : Show this help message"
-    echo "  -n NAME        : Controller name on target side"
-    echo "  -t TARGET      : Block device to use on target side"
-    echo "  -c COUNT       : Number of IO to test with"
-    echo "  -b BS          : IO block size"
-    echo "  -d             : Perform direct IO"
-    echo "  -s             : Perform synchronous IO"
-    echo "  -x             : Just perform a module cleanup"
-    echo "  -y             : Do not perform a cleanup"
-    echo
-}
+CONFIGFS=${CONFIGFS-/sys/kernel/config}
 
 nvmf_target()
 {
@@ -43,10 +21,9 @@ nvmf_target()
 
     sleep 1 # Need this to avoid race
 
-    mkdir -p "/sys/kernel/config/nvmet/subsystems/$1"
-    mkdir -p "/sys/kernel/config/nvmet/subsystems/$1/namespaces/1"
-    echo -n $2 > \
-	 "/sys/kernel/config/nvmet/subsystems/$1/namespaces/1/device_path"
+    mkdir -p "$CONFIGFS/nvmet/subsystems/$1"
+    mkdir -p "$CONFIGFS/nvmet/subsystems/$1/namespaces/1"
+    echo -n $2 > "$CONFIGFS/nvmet/subsystems/$1/namespaces/1/device_path"
 }
 
 _nvmf_host()
@@ -74,35 +51,149 @@ nvmf_host()
 
 nvmf_cleanup_host()
 {
+    SAVED_OPTIONS=$(set +o)
     set +e
-    echo > /sys/class/nvme/$1/delete_controller
+
+    local DEV_PATH=$(grep -ls $1 /sys/class/nvme-fabrics/ctl/*/subsysnqn)
+
+    if [ -e "$DEV_PATH" ]; then
+        DEV_PATH=$(dirname $DEV_PATH)
+        echo > $DEV_PATH/delete_controller
+    fi
+
     modprobe -r nvme-loop
     modprobe -r nvme-fabrics
-    set -e
+
+    eval "$SAVED_OPTIONS"
 }
 
 nvmf_cleanup_target()
 {
+    SAVED_OPTIONS=$(set +o)
     set +e
-    rmdir /sys/kernel/config/nvmet/subsystems/$1/namespaces/1
-    rmdir /sys/kernel/config/nvmet/subsystems/$1
+
+    rmdir $CONFIGFS/nvmet/subsystems/$1/namespaces/1
+    rmdir $CONFIGFS/nvmet/subsystems/$1
     modprobe -r nvmet
-    set -e
+
+    eval "$SAVED_OPTIONS"
 }
 
 nvmf_cleanup()
 {
-    nvmf_cleanup_host $2
+    nvmf_cleanup_host $1
     nvmf_cleanup_target $1
 }
 
-nvmf_cleanup_force()
+nvmf_check_configfs_mount()
 {
-    set +e
-    echo > /sys/class/nvme/$1/delete_controller
-    modprobe -r nvme-loop
-    modprobe -r nvme_fabrics
-    modprobe -r nvme
-    rmmod -f nvmet
-    set -e
+      # If mountpoint exists use it to ensure that configfs is already
+      # mounted.
+
+    if [ $(which mountpoint) ]
+    then
+        if !(mountpoint -q ${CONFIGFS})
+        then
+	    echo nvmf: configfs is not mounted.
+	    exit -1
+        fi
+    else
+        echo nvmf: Warning: automount not found - skipping configfs check.
+    fi
+}
+
+nvmf_check_target_device()
+{
+      # Set up the target block device. Note that in-reality any block
+      # device can be supported here. If the device is the null_blk device
+      # then we create it here if it does not already exist.
+
+    if [[ "$1" == "/dev/nullb"* ]]
+    then
+        if [ ! -b "$1" ]
+        then
+            modprobe null_blk
+        fi
+    fi
+
+    if [ ! -b "$1" ]
+    then
+        echo nvmf: Error: Could not find target device.
+        exit -1
+    fi
+}
+
+nvmf_setup_dd_args()
+{
+     local COUNT=$1
+     local BS=$2
+     local DIRECT=$3
+     local SYNC=$4
+
+    # Setup the dd iflag and oflag based on user input.
+
+     if [ "${DIRECT}" == TRUE ]
+     then
+         if [ "${SYNC}" == TRUE ]
+         then
+	     FLAGS="direct,sync"
+         else
+	     FLAGS="direct"
+         fi
+     else
+         if [ "${SYNC}" == TRUE ]
+         then
+	     FLAGS="sync"
+	 else
+	     FLAGS="none"
+         fi
+     fi
+
+     echo "$FLAGS bs=${BS} count=${COUNT} ${IFLAG}"
+}
+
+nvmf_run_dd()
+{
+    DEV=$1
+    FLAGS=$2
+    shift 2
+
+    if [ "${FLAGS}" != "none" ]; then
+        IFLAGS="iflag=$FLAGS"
+	OFLAGS="oflag=$FLAGS"
+    fi
+
+    echo -n "  READ:  "
+    dd if=$DEV of=/dev/null $IFLAGS $* 2>&1 | tail -n 1
+    echo -n "  WRITE: "
+    dd if=/dev/zero of=$DEV $OFLAGS $* 2>&1 | tail -n 1
+}
+
+nvmf_check_cleanup_only()
+{
+      # If requested just run the cleanup function. Useful if a previous
+      # run has left the system in a undefined state.
+
+    if [ "${CLEANUP_ONLY}" == TRUE ]
+    then
+        echo nvmf: Just performing cleanup.
+        nvmf_cleanup $1 2> /dev/null
+        exit -1
+    fi
+}
+
+nvmf_trap_exit()
+{
+    if [ "${CLEANUP_SKIP}" == FALSE ]
+    then
+        finish()
+        {
+            sync
+            echo
+	    echo "Cleaning Up"
+            nvmf_cleanup ${NAME}
+        }
+
+        trap finish EXIT
+    fi
 }
