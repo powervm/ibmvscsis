@@ -28,7 +28,6 @@ nvmf_help()
     echo "  -h             : Show this help message"
     echo "  -n NAME        : Controller name on target side"
     echo "  -t TARGET      : Block device to use on target side"
-    echo "  -o HOST        : Char device to create on host side"
     echo "  -c COUNT       : Number of IO to test with"
     echo "  -b BS          : IO block size"
     echo "  -d             : Perform direct IO"
@@ -48,13 +47,26 @@ nvmf_target()
     mkdir -p "/sys/kernel/config/nvmet/subsystems/$1/namespaces/1"
     echo -n $2 > \
 	 "/sys/kernel/config/nvmet/subsystems/$1/namespaces/1/device_path"
+}
 
+_nvmf_host()
+{
+    modprobe nvme-fabrics
+    echo "$2,nqn=$1" > /sys/class/nvme-fabrics/ctl/add_ctrl
+
+    local DEV_PATH=$(grep -ls $1 /sys/class/nvme-fabrics/ctl/*/subsysnqn)
+    echo $(basename $(dirname $DEV_PATH))
+}
+
+nvmf_loop_host()
+{
+    modprobe nvme-loop
+    _nvmf_host $1 "transport=loop"
 }
 
 nvmf_host()
 {
-    modprobe nvme
-    echo "transport=loop,nqn=$1" > /sys/class/nvme-fabrics/ctl/add_ctrl
+    _nvmf_host $1 "addr=$2,port=$3"
 }
 
   # Note we always want nvme_cleanup to try all the rmmods so we wrap
@@ -65,8 +77,7 @@ nvmf_cleanup_host()
     set +e
     echo > /sys/class/nvme/$1/delete_controller
     modprobe -r nvme-loop
-    modprobe -r nvme
-    modprobe -r nvme_fabrics
+    modprobe -r nvme-fabrics
     set -e
 }
 

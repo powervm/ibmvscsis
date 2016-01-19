@@ -22,8 +22,6 @@ NAME=selftest-nvmf
 TARGET_DEVICE=/dev/nullb0
 NQN=${NAME}
 
-HOST_CTRL=nvme0
-
 DD_COUNT=1M
 DD_BS=512
 DD_DIRECT=FALSE
@@ -32,7 +30,7 @@ DD_SYNC=FALSE
 CLEANUP_ONLY=FALSE
 CLEANUP_SKIP=FALSE
 
-while getopts "hn:t:o:c:b:dsxy" opt; do
+while getopts "hn:t:c:b:dsxy" opt; do
     case "$opt" in
 	h)  nvmf_help
 	    exit 0
@@ -40,8 +38,6 @@ while getopts "hn:t:o:c:b:dsxy" opt; do
 	n)  NAME=${OPTARG}
             ;;
 	t)  TARGET_DEVICE=${OPTARG}
-            ;;
-	o)  HOST_CTRL=${OPTARG}
             ;;
 	c)  DD_COUNT=${OPTARG}
             ;;
@@ -66,8 +62,6 @@ while getopts "hn:t:o:c:b:dsxy" opt; do
     esac
 done
 
-HOST_CHAR=/dev/${HOST_CTRL}
-HOST_DEVICE=/dev/${HOST_CTRL}n1
 
 echo "-----------------"
 echo "running nvmf_loop"
@@ -100,14 +94,6 @@ then
 else
     echo nvmf: Warning: automount not \
 	 found - skipping configfs check.
-fi
-
-  # Ensure host device does not already exist.
-
-if [ -e "${HOST_CHAR}" ]
-then
-    echo nvmf: Error: Host device already exists.
-    exit -1
 fi
 
   # Setup the dd iflag and oflag based on user input.
@@ -150,13 +136,13 @@ then
     exit -1
 fi
 
-  # Setup the NVMf target and host. Also add the loopback kernel
-  # module since this is a loopback test.
+  # Setup the NVMf target and host.
 
 nvmf_target ${NAME} ${TARGET_DEVICE}
-modprobe nvme-loop
 
-nvmf_host ${NQN}
+HOST_CTRL=$(nvmf_loop_host ${NQN})
+HOST_CHAR=/dev/${HOST_CTRL}
+HOST_DEVICE=/dev/${HOST_CTRL}n1
 
   # Ensure host mapped drive exists
 
