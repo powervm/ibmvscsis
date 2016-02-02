@@ -3,3 +3,14 @@ config NVME_TARGET
 	depends on BLOCK
 	depends on CONFIGFS_FS
 	tristate
+
+config NVME_TARGET_LOOP
+	tristate "NVMe loopback device support"
+	depends on BLK_DEV_NVME
+	select NVME_TARGET
+	select NVME_FABRICS
+	help
+	  This enabled the NVMe loopback device support, which can be useful
+	  to test NVMe host and target side features.
+
+	  If unsure, say N.
