@@ -232,6 +232,7 @@ u16 nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
 {
 	u16 status;
 
+	req->flags = 0;
 	req->cq = cq;
 	req->sq = sq;
 	req->queue_response = queue_response;
@@ -239,7 +240,9 @@ u16 nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
 	req->sg_cnt = 0;
 	req->rsp->status = 0;
 
-	if (unlikely(req->sq->qid == 0))
+	if (unlikely(req->cmd->common.opcode == nvme_fabrics_command))
+		status = nvmet_parse_fabrics_cmd(req);
+	else if (unlikely(req->sq->qid == 0))
 		status = nvmet_parse_admin_cmd(req);
 	else
 		status = nvmet_parse_io_cmd(req);
@@ -247,7 +250,7 @@ u16 nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
 	if (status)
 		return status;
 
-	if (unlikely(!req->sq->ctrl)) {
+	if (unlikely(!req->sq->ctrl && !(req->flags & NVMET_REQ_CONNECT))) {
 		pr_err("queue not connected!\n");
 		status = NVME_SC_QID_INVALID | NVME_SC_DNR;
 		goto out_put_ns;
@@ -376,7 +379,7 @@ struct nvmet_ctrl *nvmet_ctrl_find_get(struct nvmet_subsys *subsys, u16 cntlid)
 }
 
 struct nvmet_ctrl *nvmet_alloc_ctrl(struct nvmet_subsys *subsys,
-		const char *subsys_name)
+		const char *subsys_name, const char *hostnqn)
 {
 	struct nvmet_ctrl *ctrl;
 	int ret = -ENOMEM;
@@ -390,7 +393,8 @@ struct nvmet_ctrl *nvmet_alloc_ctrl(struct nvmet_subsys *subsys,
 
 	nvmet_init_cap(ctrl);
 
-	memcpy(ctrl->subsys_name, subsys_name, NVMET_SUBSYS_NAME_LEN);
+	memcpy(ctrl->subsys_name, subsys_name, NVMF_NQN_SIZE);
+	memcpy(ctrl->hostnqn, hostnqn, NVMF_NQN_SIZE);
 
 	kref_init(&ctrl->ref);
 	ctrl->subsys = subsys;
@@ -456,7 +460,7 @@ struct nvmet_subsys *nvmet_find_get_subsys(char *subsys_name)
 	mutex_lock(&nvmet_subsystem_mutex);
 	list_for_each_entry(subsys, &nvmet_subsystems, entry) {
 		if (!strncmp(subsys->subsys_name, subsys_name,
-				NVMET_SUBSYS_NAME_LEN)) {
+				NVMF_NQN_SIZE)) {
 			if (!kref_get_unless_zero(&subsys->ref))
 				break;
 			mutex_unlock(&nvmet_subsystem_mutex);
@@ -476,7 +480,7 @@ struct nvmet_subsys *nvmet_subsys_alloc(const char *subsys_name)
 		return NULL;
 
 	subsys->ver = NVME_VS(1, 2);
-	subsys->subsys_name = kstrndup(subsys_name, NVMET_SUBSYS_NAME_LEN,
+	subsys->subsys_name = kstrndup(subsys_name, NVMF_NQN_SIZE,
 			GFP_KERNEL);
 	if (IS_ERR(subsys->subsys_name)) {
 		kfree(subsys);

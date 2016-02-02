@@ -63,8 +63,9 @@ struct nvmet_ctrl {
 
 	struct list_head	subsys_entry;
 	struct kref		ref;
-#define NVMET_SUBSYS_NAME_LEN		256
-	char			subsys_name[NVMET_SUBSYS_NAME_LEN];
+
+	char			subsys_name[NVMF_NQN_SIZE];
+	char			hostnqn[NVMF_NQN_SIZE];
 };
 
 struct nvmet_subsys {
@@ -102,6 +103,14 @@ static inline struct nvmet_subsys *namespaces_to_subsys(
 			namespaces_group);
 }
 
+enum {
+	NVMET_REQ_INLINE_DATA		= 0x01,
+	NVMET_REQ_CONNECT		= 0x02,
+
+	/* RDMA transport specific */
+	NVMET_REQ_INVALIDATE_RKEY	= 0x10,
+};
+
 struct nvmet_req {
 	struct nvme_command	*cmd;
 	struct nvme_completion	*rsp;
@@ -111,6 +120,8 @@ struct nvmet_req {
 	struct scatterlist	*sg;
 	int			sg_cnt;
 	size_t			data_len;
+
+	unsigned		flags;
 
 	void (*execute)(struct nvmet_req *req);
 	void (*queue_response)(struct nvmet_req *req);
@@ -137,6 +148,7 @@ nvmet_data_dir(struct nvmet_req *req)
 
 int nvmet_parse_io_cmd(struct nvmet_req *req);
 int nvmet_parse_admin_cmd(struct nvmet_req *req);
+int nvmet_parse_fabrics_cmd(struct nvmet_req *req);
 
 u16 nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
 		struct nvmet_sq *sq,
@@ -152,7 +164,7 @@ int nvmet_sq_init(struct nvmet_sq *sq);
 
 void nvmet_update_cc(struct nvmet_ctrl *ctrl, u32 new);
 struct nvmet_ctrl *nvmet_alloc_ctrl(struct nvmet_subsys *subsys,
-		const char *subsys_name);
+		const char *subsys_name, const char *hostnqn);
 struct nvmet_ctrl *nvmet_ctrl_find_get(struct nvmet_subsys *subsys, u16 cntlid);
 void nvmet_ctrl_put(struct nvmet_ctrl *ctrl);
 
@@ -166,6 +178,7 @@ int nvmet_ns_enable(struct nvmet_ns *ns, const char *path);
 struct nvmet_ns *nvmet_ns_alloc(struct nvmet_subsys *subsys, u32 nsid);
 void nvmet_ns_free(struct nvmet_ns *ns);
 
+#define NVMET_CMD_CAPSULE_SIZE	(sizeof(struct nvme_command) + PAGE_SIZE)
 #define NVMET_QUEUE_SIZE	1024
 #define NVMET_NR_QUEUES		64
 
