@@ -1051,7 +1051,7 @@ static struct attribute *nvme_ns_attrs[] = {
 	NULL,
 };
 
-static umode_t nvme_attrs_are_visible(struct kobject *kobj,
+static umode_t nvme_ns_attrs_are_visible(struct kobject *kobj,
 		struct attribute *a, int n)
 {
 	struct device *dev = container_of(kobj, struct device, kobj);
@@ -1070,7 +1070,7 @@ static umode_t nvme_attrs_are_visible(struct kobject *kobj,
 
 static const struct attribute_group nvme_ns_attr_group = {
 	.attrs		= nvme_ns_attrs,
-	.is_visible	= nvme_attrs_are_visible,
+	.is_visible	= nvme_ns_attrs_are_visible,
 };
 
 #define nvme_show_function(field)						\
@@ -1086,16 +1086,45 @@ nvme_show_function(model);
 nvme_show_function(serial);
 nvme_show_function(firmware_rev);
 
+static ssize_t nvme_sysfs_delete(struct device *dev,
+				struct device_attribute *attr, const char *buf,
+				size_t count)
+{
+	struct nvme_ctrl *ctrl = dev_get_drvdata(dev);
+
+	if (device_remove_file_self(dev, attr))
+		ctrl->ops->delete_ctrl(ctrl);
+	return count;
+}
+static DEVICE_ATTR(delete_controller, S_IWUSR, NULL, nvme_sysfs_delete);
+
+
 static struct attribute *nvme_dev_attrs[] = {
 	&dev_attr_reset_controller.attr,
 	&dev_attr_model.attr,
 	&dev_attr_serial.attr,
 	&dev_attr_firmware_rev.attr,
+	&dev_attr_delete_controller.attr,
 	NULL
 };
 
+static umode_t nvme_dev_attrs_are_visible(struct kobject *kobj,
+		struct attribute *a, int n)
+{
+	struct device *dev = container_of(kobj, struct device, kobj);
+	struct nvme_ctrl *ctrl = dev_get_drvdata(dev);
+
+	if (a == &dev_attr_delete_controller.attr) {
+		if (!ctrl->ops->delete_ctrl)
+			return 0;
+	}
+
+	return a->mode;
+}
+
 static struct attribute_group nvme_dev_attrs_group = {
-	.attrs = nvme_dev_attrs,
+	.attrs		= nvme_dev_attrs,
+	.is_visible	= nvme_dev_attrs_are_visible,
 };
 
 static const struct attribute_group *nvme_dev_attr_groups[] = {
