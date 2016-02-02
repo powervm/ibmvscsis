@@ -175,6 +175,7 @@ MODULE_PARM_DESC(disable_inline_data,
 static int nvme_rdma_cm_handler(struct rdma_cm_id *cm_id,
 		struct rdma_cm_event *event);
 static void nvme_rdma_recv_done(struct ib_cq *cq, struct ib_wc *wc);
+static int __nvme_rdma_del_ctrl(struct nvme_rdma_ctrl *ctrl);
 
 static inline int nvme_rdma_queue_idx(struct nvme_rdma_queue *queue)
 {
@@ -676,7 +677,7 @@ static void nvme_rdma_free_queue(struct nvme_rdma_queue *queue)
 		return;
 
 	rdma_disconnect(queue->cm_id);
-	ib_drain_qp(queue->cm_id->qp);
+	ib_drain_qp(queue->qp);
 	nvme_rdma_destroy_queue_ib(queue);
 	rdma_destroy_id(queue->cm_id);
 }
@@ -1334,10 +1335,61 @@ out_destroy_queue_ib:
 	return ret;
 }
 
+/**
+ * nvme_rdma_device_unplug() - Handle RDMA device unplug
+ * @queue:      Queue that owns the cm_id that caught the event
+ *
+ * DEVICE_REMOVAL event notifies us that the RDMA device is about
+ * to unplug so we should take care of destroying our RDMA resources.
+ * This event will be generated for each allocated cm_id.
+ *
+ * In our case, the RDMA resources are managed per controller and not
+ * only per queue. So the way we handle this is we trigger an implicit
+ * controller deletion upon the first DEVICE_REMOVAL event we see, and
+ * hold the event inflight until the controller deletion is completed.
+ *
+ * One exception that we need to handle is the destruction of the cm_id
+ * that caught the event. Since we hold the callout until the controller
+ * deletion is completed, we'll deadlock if the controller deletion will
+ * call rdma_destroy_id on this queue's cm_id. Thus, we claim ownership
+ * of destroying this queue before-hand, destroy the queue resources
+ * after the controller deletion completed with the exception of destroying
+ * the cm_id implicitely by returning a non-zero rc to the callout.
+ */
+static int nvme_rdma_device_unplug(struct nvme_rdma_queue *queue)
+{
+	struct nvme_rdma_ctrl *ctrl = queue->ctrl;
+	int ret, ctrl_deleted = 0;
+
+	/* First disable the queue so ctrl delete won't free it */
+	if (!test_and_clear_bit(NVME_RDMA_Q_CONNECTED, &queue->flags))
+		goto out;
+
+	/* delete the controller */
+	ret = __nvme_rdma_del_ctrl(ctrl);
+	if (!ret) {
+		dev_warn(ctrl->ctrl.device,
+			"Got rdma device removal event, deleting ctrl\n");
+		flush_work(&ctrl->delete_work);
+
+		/* Return non-zero so the cm_id will destroy implicitly */
+		ctrl_deleted = 1;
+
+		/* Free this queue ourselves */
+		rdma_disconnect(queue->cm_id);
+		ib_drain_qp(queue->qp);
+		nvme_rdma_destroy_queue_ib(queue);
+	}
+
+out:
+	return ctrl_deleted;
+}
+
 static int nvme_rdma_cm_handler(struct rdma_cm_id *cm_id,
 		struct rdma_cm_event *ev)
 {
 	struct nvme_rdma_queue *queue = cm_id->context;
+	int ret = 0;
 
 	pr_debug("%s (%d): status %d id %p\n",
 		rdma_event_msg(ev->event), ev->event,
@@ -1373,9 +1425,11 @@ static int nvme_rdma_cm_handler(struct rdma_cm_id *cm_id,
 	case RDMA_CM_EVENT_DISCONNECTED:
 	case RDMA_CM_EVENT_ADDR_CHANGE:
 	case RDMA_CM_EVENT_TIMEWAIT_EXIT:
-	case RDMA_CM_EVENT_DEVICE_REMOVAL:
 		pr_debug("disconnect received - connection closed\n");
 		nvme_rdma_error_recovery(queue->ctrl);
+		break;
+	case RDMA_CM_EVENT_DEVICE_REMOVAL:
+		ret = nvme_rdma_device_unplug(queue);
 		break;
 	default:
 		pr_err("Unexpected RDMA CM event (%d)\n", ev->event);
@@ -1383,7 +1437,7 @@ static int nvme_rdma_cm_handler(struct rdma_cm_id *cm_id,
 		break;
 	}
 
-	return 0;
+	return ret;
 }
 
 static int nvme_rdma_queue_rq(struct blk_mq_hw_ctx *hctx,
