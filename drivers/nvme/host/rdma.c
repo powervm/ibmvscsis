@@ -172,16 +172,6 @@ module_param(disable_inline_data, bool, 0444);
 MODULE_PARM_DESC(disable_inline_data,
 	 "Do not send data inline in the NVMe command capsule");
 
-#define NVMF_ADMIN_TIMEOUT	(nvme_rdma_admin_timeout * HZ)
-static unsigned char nvme_rdma_admin_timeout = 60;
-module_param_named(admin_timeout, nvme_rdma_admin_timeout, byte, 0644);
-MODULE_PARM_DESC(admin_timeout, "timeout in seconds for admin commands");
-
-#define NVMF_IO_TIMEOUT (nvme_rdma_io_timeout * HZ)
-static unsigned char nvme_rdma_io_timeout = 30;
-module_param_named(io_timeout, nvme_rdma_io_timeout, byte, 0644);
-MODULE_PARM_DESC(io_timeout, "timeout in seconds for I/O");
-
 static int nvme_rdma_cm_handler(struct rdma_cm_id *cm_id,
 		struct rdma_cm_event *event);
 static void nvme_rdma_recv_done(struct ib_cq *cq, struct ib_wc *wc);
@@ -1533,7 +1523,7 @@ static int nvme_rdma_configure_admin_queue(struct nvme_rdma_ctrl *ctrl)
 	ctrl->admin_tag_set.cmd_size = sizeof(struct nvme_rdma_request);
 	ctrl->admin_tag_set.driver_data = ctrl;
 	ctrl->admin_tag_set.nr_hw_queues = 1;
-	ctrl->admin_tag_set.timeout = NVMF_ADMIN_TIMEOUT;
+	ctrl->admin_tag_set.timeout = ADMIN_TIMEOUT;
 
 	error = blk_mq_alloc_tag_set(&ctrl->admin_tag_set);
 	if (error)
@@ -1821,7 +1811,7 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	ctrl->tag_set.cmd_size = sizeof(struct nvme_rdma_request);
 	ctrl->tag_set.driver_data = ctrl;
 	ctrl->tag_set.nr_hw_queues = ctrl->queue_count - 1;
-	ctrl->tag_set.timeout = NVMF_IO_TIMEOUT;
+	ctrl->tag_set.timeout = NVME_IO_TIMEOUT;
 
 	ctrl->ctrl.tagset = &ctrl->tag_set;
 
