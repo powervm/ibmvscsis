@@ -609,8 +609,12 @@ struct nvme_get_log_page_command {
 	union nvme_data_ptr	dptr;
 	__u8			lid;
 	__u8			rsvd10;
-	__le16			numd;
-	__u32			rsvd11[5];
+	__le16			numdl;
+	__le16			numdu;
+	__u16			rsvd11;
+	__le32			lpol;
+	__le32			lpou;
+	__u32			rsvd14[2];
 };
 
 /*
