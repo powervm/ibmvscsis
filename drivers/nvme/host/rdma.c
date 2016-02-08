@@ -949,7 +949,7 @@ static int nvme_rdma_map_sg_inline(struct nvme_rdma_queue *queue,
 	req->sge[1].length = ib_sg_dma_len(queue->device->dev, req->sg);
 	req->sge[1].lkey = queue->device->pd->local_dma_lkey;
 
-	nvme_rdma_encode_sgl(&c->common.rsgl,
+	nvme_rdma_encode_sgl(&c->common.dptr.rsgl,
 			sizeof(struct nvme_command),
 			ib_sg_dma_len(queue->device->dev, req->sg), 0,
 			(NVME_SGL_FMT_DATA_DESC << 4) |
@@ -963,7 +963,7 @@ static int nvme_rdma_map_sg_inline(struct nvme_rdma_queue *queue,
 static int nvme_rdma_map_sg_single(struct nvme_rdma_queue *queue,
 		struct nvme_rdma_request *req, struct nvme_command *c)
 {
-	nvme_rdma_encode_sgl(&c->common.rsgl,
+	nvme_rdma_encode_sgl(&c->common.dptr.rsgl,
 			ib_sg_dma_address(queue->device->dev, req->sg),
 			ib_sg_dma_len(queue->device->dev, req->sg),
 			queue->device->mr->rkey,
@@ -1037,8 +1037,8 @@ static int nvme_rdma_map_sg_fr(struct nvme_rdma_queue *queue,
 	if (1)
 		format |= NVME_SGL_FMT_INVALIDATE;
 
-	nvme_rdma_encode_sgl(&c->common.rsgl, req->mr->iova, req->mr->length,
-			req->mr->rkey, format);
+	nvme_rdma_encode_sgl(&c->common.dptr.rsgl, req->mr->iova,
+			req->mr->length, req->mr->rkey, format);
 
 	return 0;
 }

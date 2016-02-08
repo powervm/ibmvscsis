@@ -368,6 +368,15 @@ enum {
 	NVMF_ADDR_FAMILY_FC	= 4,	/* Fibre Channel */
 };
 
+union nvme_data_ptr {
+	struct {
+		__le64	prp1;
+		__le64	prp2;
+	};
+	struct nvme_sgl_desc	sgl;
+	struct nvme_rsgl_desc	rsgl;
+};
+
 struct nvme_common_command {
 	__u8			opcode;
 	__u8			flags;
@@ -375,14 +384,7 @@ struct nvme_common_command {
 	__le32			nsid;
 	__le32			cdw2[2];
 	__le64			metadata;
-	union {
-		struct {
-			__le64	prp1;
-			__le64	prp2;
-		};
-		struct nvme_sgl_desc	sgl;
-		struct nvme_rsgl_desc	rsgl;
-	};
+	union nvme_data_ptr	dptr;
 	__le32			cdw10[6];
 };
 
@@ -512,8 +514,7 @@ struct nvme_identify {
 	__u16			command_id;
 	__le32			nsid;
 	__u64			rsvd2[2];
-	__le64			prp1;
-	__le64			prp2;
+	union nvme_data_ptr	dptr;
 	__le32			cns;
 	__u32			rsvd11[5];
 };
@@ -524,8 +525,7 @@ struct nvme_features {
 	__u16			command_id;
 	__le32			nsid;
 	__u64			rsvd2[2];
-	__le64			prp1;
-	__le64			prp2;
+	union nvme_data_ptr	dptr;
 	__le32			fid;
 	__le32			dword11;
 	__u32			rsvd12[4];
@@ -584,8 +584,7 @@ struct nvme_download_firmware {
 	__u8			flags;
 	__u16			command_id;
 	__u32			rsvd1[5];
-	__le64			prp1;
-	__le64			prp2;
+	union nvme_data_ptr	dptr;
 	__le32			numd;
 	__le32			offset;
 	__u32			rsvd12[4];
@@ -607,8 +606,7 @@ struct nvme_get_log_page_command {
 	__u16			command_id;
 	__le32			nsid;
 	__u64			rsvd2[2];
-	__le64			prp1;
-	__le64			prp2;
+	union nvme_data_ptr	dptr;
 	__u8			lid;
 	__u8			rsvd10;
 	__le16			numd;

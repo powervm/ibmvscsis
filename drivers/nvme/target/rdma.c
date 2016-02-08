@@ -443,7 +443,7 @@ static void *nvmet_rdma_dapsule_ptr(struct nvmet_rdma_cmd *cmd,
 
 static u16 nvmet_rdma_map_inline_data(struct nvmet_rdma_cmd *cmd)
 {
-	struct nvme_rsgl_desc *rsgl = &cmd->req.cmd->common.rsgl;
+	struct nvme_rsgl_desc *rsgl = &cmd->req.cmd->common.dptr.rsgl;
 	void *data = nvmet_rdma_dapsule_ptr(cmd, rsgl);
 	int count;
 
@@ -558,7 +558,7 @@ static u16 nvmet_rdma_map_sgl_seg(struct nvmet_rdma_cmd *cmd,
 
 static u16 nvmet_rdma_map_sgl(struct nvmet_rdma_cmd *cmd)
 {
-	struct nvme_rsgl_desc *rsgl = &cmd->req.cmd->common.rsgl;
+	struct nvme_rsgl_desc *rsgl = &cmd->req.cmd->common.dptr.rsgl;
 
 	if ((rsgl->format >> 4) == NVME_SGL_FMT_DATA_DESC &&
 	    (rsgl->format & 0x3) == NVME_SGL_FMT_IN_CAPSULE)
