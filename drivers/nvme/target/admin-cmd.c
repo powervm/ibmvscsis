@@ -25,9 +25,13 @@ static u16 nvmet_copy_to_sgl(struct nvmet_req *req, const void *buf,
 
 static inline u32 nvmet_get_log_page_len(struct nvme_command *cmd)
 {
-	u32 cdw10 = le32_to_cpu(cmd->common.cdw10[0]);
+	u32 len = le16_to_cpu(cmd->get_log_page.numdu);
 
-	return ((cdw10 >> 16) & 0xff) * sizeof(u32);
+	len <<= 16;
+	len += le16_to_cpu(cmd->get_log_page.numdl);
+	len *= sizeof(u32);
+
+	return len;
 }
 
 static void nvmet_execute_get_log_page(struct nvmet_req *req)
@@ -42,7 +46,7 @@ static void nvmet_execute_get_log_page(struct nvmet_req *req)
 		goto out;
 	}
 
-	switch (le32_to_cpu(req->cmd->common.cdw10[0]) & 0xf) {
+	switch (req->cmd->get_log_page.lid) {
 	case 0x01:
 		/*
 		 * We currently never set the More bit in the status field,
@@ -322,7 +326,7 @@ int nvmet_parse_admin_cmd(struct nvmet_req *req)
 	case nvme_admin_get_log_page:
 		req->data_len = nvmet_get_log_page_len(cmd);
 
-		switch (le32_to_cpu(cmd->common.cdw10[0]) & 0xf) {
+		switch (cmd->get_log_page.lid) {
 		case 0x01:
 		case 0x02:
 		case 0x03:
