@@ -738,6 +738,10 @@ struct ib_qp *ib_create_qp(struct ib_pd *pd,
 		qp->uobject    = NULL;
 		qp->qp_type    = qp_init_attr->qp_type;
 
+		spin_lock_init(&qp->mr_lock);
+		INIT_LIST_HEAD(&qp->free_mrs);
+		INIT_LIST_HEAD(&qp->used_mrs);
+
 		atomic_set(&qp->usecnt, 0);
 		if (qp_init_attr->qp_type == IB_QPT_XRC_TGT) {
 			qp->event_handler = __ib_shared_qp_event_handler;

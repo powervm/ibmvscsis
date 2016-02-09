@@ -1408,6 +1408,11 @@ struct ib_qp {
 	struct ib_srq	       *srq;
 	struct ib_xrcd	       *xrcd; /* XRC TGT QPs only */
 	struct list_head	xrcd_list;
+
+	spinlock_t		mr_lock;
+	struct list_head	free_mrs;
+	struct list_head	used_mrs;
+
 	/* count times opened, mcast attaches, flow attaches */
 	atomic_t		usecnt;
 	struct list_head	open_list;
@@ -1422,12 +1427,15 @@ struct ib_qp {
 struct ib_mr {
 	struct ib_device  *device;
 	struct ib_pd	  *pd;
-	struct ib_uobject *uobject;
 	u32		   lkey;
 	u32		   rkey;
 	u64		   iova;
 	u32		   length;
 	unsigned int	   page_size;
+	union {
+		struct ib_uobject	*uobject;	/* user */
+		struct list_head	qp_entry;	/* FR */
+	};
 };
 
 struct ib_mw {
