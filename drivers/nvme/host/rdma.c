@@ -101,8 +101,6 @@ struct nvme_rdma_queue {
 	struct rdma_cm_id	*cm_id;
 	int			cm_error;
 	struct completion	cm_done;
-
-	struct completion	drain_done;
 };
 
 enum nvme_rdma_ctrl_state {
@@ -283,7 +281,8 @@ static int nvme_rdma_create_qp(struct nvme_rdma_queue *queue, const int factor)
 		return -ENOMEM;
 
 	init_attr->event_handler = nvme_rdma_qp_event;
-	init_attr->cap.max_send_wr = factor * queue->queue_size;
+	/* +1 for drain */
+	init_attr->cap.max_send_wr = factor * queue->queue_size + 1;
 	/* +1 for drain */
 	init_attr->cap.max_recv_wr = queue->queue_size + 1;
 	init_attr->cap.max_recv_sge = 1;
@@ -638,7 +637,6 @@ static int nvme_rdma_init_queue(struct nvme_rdma_ctrl *ctrl,
 	queue = &ctrl->queues[idx];
 	queue->ctrl = ctrl;
 	init_completion(&queue->cm_done);
-	init_completion(&queue->drain_done);
 
 	if (idx > 0) {
 		queue->cmnd_capsule_len =
@@ -682,40 +680,13 @@ out_destroy_cm_id:
 	return ret;
 }
 
-static void nvme_rdma_drain_done(struct ib_cq *cq, struct ib_wc *wc)
-{
-	struct nvme_rdma_queue *queue = cq->cq_context;
-
-	complete(&queue->drain_done);
-}
-
-static struct ib_cqe nvme_rdma_drain_cqe = {
-	.done		= nvme_rdma_drain_done,
-};
-
-static void nvme_rdma_drain_qp(struct nvme_rdma_queue *queue)
-{
-	struct ib_qp *qp = queue->cm_id->qp;
-	struct ib_recv_wr wr = { }, *bad_wr;
-	int ret;
-
-	wr.wr_cqe = &nvme_rdma_drain_cqe;
-	ret = ib_post_recv(qp, &wr, &bad_wr);
-	if (ret) {
-		WARN_ONCE(ret, "ib_post_recv(returned %d\n", ret);
-		return;
-	}
-
-	wait_for_completion(&queue->drain_done);
-}
-
 static void nvme_rdma_free_queue(struct nvme_rdma_queue *queue)
 {
 	if (!test_and_clear_bit(NVME_RDMA_Q_CONNECTED, &queue->flags))
 		return;
 
 	rdma_disconnect(queue->cm_id);
-	nvme_rdma_drain_qp(queue);
+	ib_drain_qp(queue->cm_id->qp);
 	nvme_rdma_destroy_queue_ib(queue);
 	rdma_destroy_id(queue->cm_id);
 }

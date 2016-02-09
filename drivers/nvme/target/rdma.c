@@ -87,7 +87,6 @@ struct nvmet_rdma_queue {
 	int			recv_queue_size;
 	int			send_queue_size;
 
-	struct completion	drain_done;
 	struct list_head	queue_list;
 };
 
@@ -901,7 +900,8 @@ static int nvmet_rdma_create_queue_ib(struct nvmet_rdma_queue *queue)
 	if (ndev->srq) {
 		qp_attr->srq = ndev->srq;
 	} else {
-		qp_attr->cap.max_recv_wr = queue->recv_queue_size;
+		/* +1 for drain */
+		qp_attr->cap.max_recv_wr = 1 + queue->recv_queue_size;
 		qp_attr->cap.max_recv_sge = 2;
 	}
 
@@ -1165,7 +1165,6 @@ static int nvmet_rdma_queue_connect(struct rdma_cm_id *cm_id,
 		ret = -ENOMEM;
 		goto put_device;
 	}
-	init_completion(&queue->drain_done);
 	cm_id->context = queue;
 
 	ret = nvmet_rdma_cm_accept(cm_id, queue);
@@ -1214,35 +1213,6 @@ out_unlock:
 	spin_unlock_irqrestore(&queue->state_lock, flags);
 }
 
-static void nvmet_rdma_drain_done(struct ib_cq *cq, struct ib_wc *wc)
-{
-	struct nvmet_rdma_queue *queue = cq->cq_context;
-
-	complete(&queue->drain_done);
-}
-
-static struct ib_cqe nvmet_rdma_drain_cqe = {
-	.done		= nvmet_rdma_drain_done,
-};
-
-static void nvmet_rdma_queue_drain(struct nvmet_rdma_queue *queue)
-{
-	struct ib_qp *qp = queue->cm_id->qp;
-	struct ib_send_wr wr = { }, *bad_wr;
-	int ret;
-
-	wr.wr_cqe = &nvmet_rdma_drain_cqe;
-	wr.opcode = IB_WR_RDMA_WRITE;
-	wr.send_flags = IB_SEND_SIGNALED;
-	ret = ib_post_send(qp, &wr, &bad_wr);
-	if (ret) {
-		WARN_ONCE(ret, "ib_post_send(returned %d\n", ret);
-		return;
-	}
-
-	wait_for_completion(&queue->drain_done);
-}
-
 static void nvmet_rdma_queue_disconnect(struct nvmet_rdma_queue *queue)
 {
 	bool disconnect = false;
@@ -1264,7 +1234,7 @@ static void nvmet_rdma_queue_disconnect(struct nvmet_rdma_queue *queue)
 
 	if (disconnect) {
 		rdma_disconnect(queue->cm_id);
-		nvmet_rdma_queue_drain(queue);
+		ib_drain_qp(queue->cm_id->qp);
 		kref_put(&queue->ref, nvmet_rdma_queue_put);
 	}
 }
