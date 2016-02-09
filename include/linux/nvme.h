@@ -16,6 +16,21 @@
 #define _LINUX_NVME_H
 
 #include <linux/types.h>
+#include <linux/uuid.h>
+
+#define NVMF_NQN_SIZE		256
+#define NVMF_TRSVCID_SIZE	32
+#define NVMF_TRADDR_SIZE	256
+#define NVMF_TSAS_SIZE		256
+
+#define NVME_DISC_SUBSYS_NAME	"iqn.2014-08.org.nvmexpress.discovery"
+
+enum nvme_subsys_type {
+	NVME_NQN_DISC	= 1,		/* Discovery type target subsystem */
+	NVME_NQN_NVME	= 2,		/* NVME type target subsystem */
+};
+
+#define NVMF_AQ_DEPTH		128
 
 enum {
 	NVME_REG_CAP	= 0x0000,	/* Controller Capabilities */
@@ -30,6 +45,9 @@ enum {
 	NVME_REG_ACQ	= 0x0030,	/* Admin SQ Base Address */
 	NVME_REG_CMBLOC = 0x0038,	/* Controller Memory Buffer Location */
 	NVME_REG_CMBSZ	= 0x003c,	/* Controller Memory Buffer Size */
+	NVME_REG_PROPSZ	= 0x1000,
+	NVME_REG_CAPATTR= 0x1008,
+	NVME_REG_MAX	= 0x1010,
 };
 
 #define NVME_CAP_MQES(cap)	((cap) & 0xffff)
@@ -297,6 +315,59 @@ enum nvme_opcode {
 	nvme_cmd_resv_release	= 0x15,
 };
 
+/* flag in the first two bit of nvme_(r)sgl_desc.format */
+enum {
+	NVME_SGL_FMT_IN_CAPSULE		= 0x01,
+
+	/*
+	 * XXX: local extension, the actual flag for SEND WITH INVALIDATE
+	 * hasn't made it to the spec yet.
+	 */
+	NVME_SGL_FMT_INVALIDATE		= 0x02,
+};
+
+/* value for the last 4 bits of nvme_(r)sgl_desc.format */
+enum {
+	NVME_SGL_FMT_DATA_DESC		= 0x00,
+	NVME_SGL_FMT_SEG_DESC		= 0x02,
+	NVME_SGL_FMT_LAST_SEG_DESC	= 0x03,
+};
+
+struct nvme_sgl_desc {
+	__le64	addr;
+	__le32	length;
+	__u8	rsvd[3];
+	__u8	format;
+};
+
+struct nvme_rsgl_desc {
+	__le64	addr;
+	__u8	length[3];
+	__u8	key[4];
+	__u8	format;
+};
+
+static inline u32 get_unaligned_le24(const u8 *p)
+{
+	return (u32)p[0] | (u32)p[1] << 8 | (u32)p[2] << 16;
+}
+
+static inline void put_unaligned_le24(u32 val, u8 *p)
+{
+	*p++ = val;
+	*p++ = val >> 8;
+	*p++ = val >> 16;
+}
+
+/* Address Family codes for Discovery Log Page entry ADRFAM field */
+enum {
+	NVMF_ADDR_FAMILY_PCI	= 0,	/* PCIe */
+	NVMF_ADDR_FAMILY_IP4	= 1,	/* IP4 */
+	NVMF_ADDR_FAMILY_IP6	= 2,	/* IP6 */
+	NVMF_ADDR_FAMILY_IB	= 3,	/* InfiniBand */
+	NVMF_ADDR_FAMILY_FC	= 4,	/* Fibre Channel */
+};
+
 struct nvme_common_command {
 	__u8			opcode;
 	__u8			flags;
@@ -304,8 +375,14 @@ struct nvme_common_command {
 	__le32			nsid;
 	__le32			cdw2[2];
 	__le64			metadata;
-	__le64			prp1;
-	__le64			prp2;
+	union {
+		struct {
+			__le64	prp1;
+			__le64	prp2;
+		};
+		struct nvme_sgl_desc	sgl;
+		struct nvme_rsgl_desc	rsgl;
+	};
 	__le32			cdw10[6];
 };
 
@@ -422,6 +499,7 @@ enum {
 	NVME_LOG_ERROR		= 0x01,
 	NVME_LOG_SMART		= 0x02,
 	NVME_LOG_FW_SLOT	= 0x03,
+	NVME_LOG_DISC		= 0x70,
 	NVME_LOG_RESERVATION	= 0x80,
 	NVME_FWACT_REPL		= (0 << 3),
 	NVME_FWACT_REPL_ACTV	= (1 << 3),
@@ -537,6 +615,97 @@ struct nvme_get_log_page_command {
 	__u32			rsvd11[5];
 };
 
+/*
+ * Fabrics subcommands.
+ */
+enum nvmf_fabrics_opcode {
+	nvme_fabrics_command		= 0x7f,
+};
+
+enum nvmf_capsule_command {
+	NVMF_CC_PROP_SET		= 0x00,
+	NVMF_CC_CONNECT			= 0x01,
+	NVMF_CC_PROP_GET		= 0x04,
+};
+
+struct nvmf_common_command {
+	u8	opcode;
+	u8	resv1;
+	u16	command_id;
+	u8	cctype;
+	u8	resv2[35];
+	u8	ts[24];
+};
+
+/* Discovery log page header */
+struct nvmf_disc_rsp_page_hdr {
+	__le64	genctr;
+	__le32	numrec;
+	__le16	recfmt;
+	u8	resv14[242];
+};
+
+/* Discovery log page entry */
+struct nvmf_disc_rsp_page_entry {
+	u8	trtype;
+	u8	adrfam;
+	u8	nqntype;
+	u8	fscreq;
+	__le16	portid;
+	u8	resv6[26];
+	char	trsvcid[NVMF_TRSVCID_SIZE];
+	u8	resv64[192];
+	char	subnqn[NVMF_NQN_SIZE];
+	char	traddr[NVMF_TRADDR_SIZE];
+	char	tsas[NVMF_TSAS_SIZE];
+};
+
+struct nvmf_connect_command {
+	u8	opcode;
+	u8	resv1;
+	u16	command_id;
+	u8	cctype;
+	u8	resv2[35];
+	__le16	recfmt;
+	__le16	qid;
+	u8	auth_proto;
+	u8	resv3[19];
+};
+
+struct nvmf_connect_data {
+	uuid_le	hostsid;
+	__le16	cntlid;
+	char	resv4[174];
+	char	subsysnqn[NVMF_NQN_SIZE];
+	char	hostnqn[NVMF_NQN_SIZE];
+	char	resv5[256];
+};
+
+struct nvmf_prop_set_command {
+	u8	opcode;
+	u8	resv1;
+	u16	command_id;
+	u8	cctype;
+	u8	resv2[35];
+	u8	attrib;
+	u8	resv3[3];
+	__le32	offset;
+	__le64	value;
+	u8	resv4[8];
+};
+
+struct nvmf_prop_get_command {
+	u8	opcode;
+	u8	resv1;
+	u16	command_id;
+	u8	cctype;
+	u8	resv2[35];
+	u8	attrib;
+	u8	resv3[3];
+	__le32	offset;
+	u8	resv4[16];
+};
+
 struct nvme_command {
 	union {
 		struct nvme_common_command common;
@@ -551,6 +720,10 @@ struct nvme_command {
 		struct nvme_dsm_cmd dsm;
 		struct nvme_abort_cmd abort;
 		struct nvme_get_log_page_command get_log_page;
+		struct nvmf_common_command fabrics;
+		struct nvmf_connect_command connect;
+		struct nvmf_prop_set_command prop_set;
+		struct nvmf_prop_get_command prop_get;
 	};
 };
 
@@ -567,6 +740,9 @@ static inline bool nvme_is_write(struct nvme_command *cmd)
 }
 
 enum {
+	/*
+	 * Generic Command Status:
+	 */
 	NVME_SC_SUCCESS			= 0x0,
 	NVME_SC_INVALID_OPCODE		= 0x1,
 	NVME_SC_INVALID_FIELD		= 0x2,
@@ -585,10 +761,15 @@ enum {
 	NVME_SC_SGL_INVALID_DATA	= 0xf,
 	NVME_SC_SGL_INVALID_METADATA	= 0x10,
 	NVME_SC_SGL_INVALID_TYPE	= 0x11,
+
 	NVME_SC_LBA_RANGE		= 0x80,
 	NVME_SC_CAP_EXCEEDED		= 0x81,
 	NVME_SC_NS_NOT_READY		= 0x82,
 	NVME_SC_RESERVATION_CONFLICT	= 0x83,
+
+	/*
+	 * Command Specific Status:
+	 */
 	NVME_SC_CQ_INVALID		= 0x100,
 	NVME_SC_QID_INVALID		= 0x101,
 	NVME_SC_QUEUE_SIZE		= 0x102,
@@ -606,9 +787,14 @@ enum {
 	NVME_SC_FEATURE_NOT_CHANGEABLE	= 0x10e,
 	NVME_SC_FEATURE_NOT_PER_NS	= 0x10f,
 	NVME_SC_FW_NEEDS_RESET_SUBSYS	= 0x110,
+
 	NVME_SC_BAD_ATTRIBUTES		= 0x180,
 	NVME_SC_INVALID_PI		= 0x181,
 	NVME_SC_READ_ONLY		= 0x182,
+
+	/*
+	 * Media and Data Integrity Errors:
+	 */
 	NVME_SC_WRITE_FAULT		= 0x280,
 	NVME_SC_READ_ERROR		= 0x281,
 	NVME_SC_GUARD_CHECK		= 0x282,
@@ -616,12 +802,33 @@ enum {
 	NVME_SC_REFTAG_CHECK		= 0x284,
 	NVME_SC_COMPARE_FAILED		= 0x285,
 	NVME_SC_ACCESS_DENIED		= 0x286,
+
+	/*
+	 * Fabric Specific Status:
+	 */
+	NVME_SC_DISCOVERY_LAST		= 0x340,
+	NVME_SC_DISCOVERY_END		= 0x341,
+	NVME_SC_DISCOVERY_RESTART	= 0x342,
+
+	NVME_SC_CONNECT_FORMAT		= 0x350,
+	NVME_SC_CONNECT_CONN_BUSY	= 0x351,
+	NVME_SC_CONNECT_SESS_BUSY	= 0x352,
+	NVME_SC_CONNECT_RESTART		= 0x353,
+	NVME_SC_CONNECT_INVAL_CTRL	= 0x354,
+	NVME_SC_CONNECT_INVAL_QUEUE	= 0x355,
+
 	NVME_SC_DNR			= 0x4000,
 };
 
 struct nvme_completion {
-	__le32	result;		/* Used by admin commands to return data */
-	__u32	rsvd;
+	/*
+	 * Used by Admin and Fabrics commands to return data:
+	 */
+	union {
+		__le16	result16;
+		__le32	result;
+		__le64	result64;
+	};
 	__le16	sq_head;	/* how much of this queue may be reclaimed */
 	__le16	sq_id;		/* submission queue that generated this entry */
 	__u16	command_id;	/* of the command which completed */
