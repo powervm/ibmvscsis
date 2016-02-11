@@ -286,8 +286,8 @@ static int nvme_loop_configure_admin_queue(struct nvme_loop_ctrl *ctrl)
 		goto out_cleanup_queue;
 	}
 
-	ctrl->ctrl.queue_size =
-		min_t(int, NVME_CAP_MQES(ctrl->cap) + 1, ctrl->ctrl.queue_size);
+	ctrl->ctrl.cqsize = ctrl->ctrl.sqsize =
+		min_t(int, NVME_CAP_MQES(ctrl->cap) + 1, ctrl->ctrl.sqsize);
 
 	error = nvme_enable_ctrl(&ctrl->ctrl, ctrl->cap);
 	if (error)
@@ -377,7 +377,8 @@ static int nvme_loop_create_ctrl(struct device *dev,
 
 	ret = -ENOMEM;
 
-	ctrl->ctrl.queue_size = opts->queue_size;
+	ctrl->ctrl.cqsize = opts->queue_size;
+	ctrl->ctrl.sqsize = opts->queue_size;
 
 	ctrl->queues = kcalloc(opts->nr_io_queues + 1,
 			sizeof(*ctrl->queues), GFP_KERNEL);
@@ -410,7 +411,7 @@ static int nvme_loop_create_ctrl(struct device *dev,
 
 	memset(&ctrl->tag_set, 0, sizeof(ctrl->tag_set));
 	ctrl->tag_set.ops = &nvme_loop_mq_ops;
-	ctrl->tag_set.queue_depth = ctrl->ctrl.queue_size;
+	ctrl->tag_set.queue_depth = ctrl->ctrl.sqsize;
 	ctrl->tag_set.reserved_tags = 1; /* fabric connect */
 	ctrl->tag_set.numa_node = NUMA_NO_NODE;
 	ctrl->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
