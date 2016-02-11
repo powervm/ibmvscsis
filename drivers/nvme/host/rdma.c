@@ -927,8 +927,7 @@ static int nvme_rdma_map_sg_inline(struct nvme_rdma_queue *queue,
 	req->sge[1].length = ib_sg_dma_len(queue->device->dev, req->sg);
 	req->sge[1].lkey = queue->device->pd->local_dma_lkey;
 
-	nvme_rdma_encode_sgl(&c->common.dptr.rsgl,
-			sizeof(struct nvme_command),
+	nvme_rdma_encode_sgl(&c->common.dptr.rsgl, queue->ctrl->ctrl.icdoff,
 			ib_sg_dma_len(queue->device->dev, req->sg), 0,
 			(NVME_SGL_FMT_DATA_DESC << 4) |
 			NVME_SGL_FMT_OFFSET);

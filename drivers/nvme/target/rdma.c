@@ -544,15 +544,12 @@ static void nvmet_rdma_read_data_done(struct ib_cq *cq, struct ib_wc *wc)
 static void *nvmet_rdma_dapsule_ptr(struct nvmet_rdma_rsp *rsp,
 		struct nvme_rsgl_desc *rsgl)
 {
-	u64 addr = le64_to_cpu(rsgl->addr);
+	u64 offset = le64_to_cpu(rsgl->addr);
 
-	if (addr < sizeof(struct nvme_command))
-		return NULL;
-	addr -= sizeof(struct nvme_command);
+	/* XXX: we don't support icdoff */
+	WARN_ON_ONCE(offset != 0);
 
-	/* XXX: validate size */
-
-	return rsp->cmd->inline_data + addr;
+	return rsp->cmd->inline_data + offset;
 }
 
 static u16 nvmet_rdma_map_inline_data(struct nvmet_rdma_rsp *rsp)
