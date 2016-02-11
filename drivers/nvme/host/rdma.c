@@ -165,11 +165,6 @@ module_param(register_always, bool, 0444);
 MODULE_PARM_DESC(register_always,
 	 "Use memory registration even for contiguous memory regions");
 
-static bool disable_inline_data;
-module_param(disable_inline_data, bool, 0444);
-MODULE_PARM_DESC(disable_inline_data,
-	 "Do not send data inline in the NVMe command capsule");
-
 static int nvme_rdma_cm_handler(struct rdma_cm_id *cm_id,
 		struct rdma_cm_event *event);
 static void nvme_rdma_recv_done(struct ib_cq *cq, struct ib_wc *wc);
@@ -178,12 +173,6 @@ static int __nvme_rdma_del_ctrl(struct nvme_rdma_ctrl *ctrl);
 static inline int nvme_rdma_queue_idx(struct nvme_rdma_queue *queue)
 {
 	return queue - queue->ctrl->queues;
-}
-
-static inline bool nvme_rdma_sup_inline_write(struct nvme_rdma_queue *queue)
-{
-	return (queue->cmnd_capsule_len > sizeof(struct nvme_command) &&
-		!disable_inline_data);
 }
 
 static inline size_t nvme_rdma_inline_data_size(struct nvme_rdma_queue *queue)
@@ -1054,7 +1043,6 @@ static int nvme_rdma_map_data(struct nvme_rdma_queue *queue,
 
 	if (count == 1) {
 		if (rq_data_dir(rq) == WRITE &&
-		    nvme_rdma_sup_inline_write(queue) &&
 		    blk_rq_bytes(rq) <= nvme_rdma_inline_data_size(queue) &&
 		    nvme_rdma_queue_idx(queue))
 			return nvme_rdma_map_sg_inline(queue, req, c);
