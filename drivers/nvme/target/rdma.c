@@ -30,13 +30,6 @@
 #include "nvmet.h"
 #include "rw.h"
 
-/*
- * Number of scatter/gather entries we support per WR.  We only ever use two
- * for sends, so the real limit here is how many we want to support for
- * RDMA READ/WRITE operations.
- */
-#define	NVMET_RDMA_SG_PER_WQE	16
-
 struct nvmet_rdma_cmd {
 	struct ib_sge		send_sge;
 	struct ib_cqe		send_cqe;
