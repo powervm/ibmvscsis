@@ -118,7 +118,6 @@ struct nvme_rdma_ctrl {
 	/* read only in the hot path */
 	struct nvme_rdma_queue	*queues;
 	u32			queue_count;
-	u64			capattr;
 
 	/* other member variables */
 	unsigned short		tl_retry_count;
@@ -181,9 +180,10 @@ static inline int nvme_rdma_queue_idx(struct nvme_rdma_queue *queue)
 	return queue - queue->ctrl->queues;
 }
 
-static inline bool nvme_rdma_sup_inline_write(struct nvme_rdma_ctrl *ctrl)
+static inline bool nvme_rdma_sup_inline_write(struct nvme_rdma_queue *queue)
 {
-	return (ctrl->capattr & (1ULL << 32) && !disable_inline_data);
+	return (queue->cmnd_capsule_len > sizeof(struct nvme_command) &&
+		!disable_inline_data);
 }
 
 static inline size_t nvme_rdma_inline_data_size(struct nvme_rdma_queue *queue)
@@ -629,8 +629,7 @@ static int nvme_rdma_init_queue(struct nvme_rdma_ctrl *ctrl,
 	init_completion(&queue->cm_done);
 
 	if (idx > 0) {
-		queue->cmnd_capsule_len =
-			(ctrl->capattr & 0x0000ffff) * 16;
+		queue->cmnd_capsule_len = ctrl->ctrl.iocapsz;
 	} else {
 		queue->cmnd_capsule_len = sizeof(struct nvme_command);
 	}
@@ -1055,7 +1054,7 @@ static int nvme_rdma_map_data(struct nvme_rdma_queue *queue,
 
 	if (count == 1) {
 		if (rq_data_dir(rq) == WRITE &&
-		    nvme_rdma_sup_inline_write(queue->ctrl) &&
+		    nvme_rdma_sup_inline_write(queue) &&
 		    blk_rq_bytes(rq) <= nvme_rdma_inline_data_size(queue) &&
 		    nvme_rdma_queue_idx(queue))
 			return nvme_rdma_map_sg_inline(queue, req, c);
@@ -1596,13 +1595,6 @@ static int nvme_rdma_configure_admin_queue(struct nvme_rdma_ctrl *ctrl)
 		goto out_cleanup_queue;
 	}
 
-	error = nvmf_reg_read64(&ctrl->ctrl, NVME_REG_CAPATTR, &ctrl->capattr);
-	if (error) {
-		dev_err(ctrl->ctrl.dev,
-			"prop_get NVME_REG_CAPATTR failed\n");
-		goto out_cleanup_queue;
-	}
-
 	ctrl->ctrl.cqsize = ctrl->ctrl.sqsize =
 		min_t(int, NVME_CAP_MQES(ctrl->cap) + 1, ctrl->ctrl.sqsize);
 
@@ -1884,6 +1876,12 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	ret = nvme_init_identify(&ctrl->ctrl);
 	if (ret)
 		goto out_cleanup_connect_q;
+
+	/* sanity check icdoff */
+	if (ctrl->ctrl.icdoff) {
+		pr_err("icdoff is not supported!\n");
+		goto out_cleanup_connect_q;
+	}
 
 	nvme_scan_namespaces(&ctrl->ctrl);
 
