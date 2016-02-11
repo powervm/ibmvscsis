@@ -46,7 +46,6 @@ enum {
 	NVME_REG_CMBLOC = 0x0038,	/* Controller Memory Buffer Location */
 	NVME_REG_CMBSZ	= 0x003c,	/* Controller Memory Buffer Size */
 	NVME_REG_PROPSZ	= 0x1000,
-	NVME_REG_CAPATTR= 0x1008,
 	NVME_REG_MAX	= 0x1010,
 };
 

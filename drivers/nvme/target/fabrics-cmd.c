@@ -52,17 +52,6 @@ static void nvmet_execute_prop_get(struct nvmet_req *req)
 		case NVME_REG_CAP:
 			val = ctrl->cap;
 			break;
-		case NVME_REG_CAPATTR:
-			/*
-			 * Maximum Command Capsule Size,
-			 * Maximum Response Capsule Size,
-			 * In Capsule Data in Command Capsules supported,
-			 * In Capsule Data in Response Capsules not supported.
-			 */
-			val = (NVMET_CMD_CAPSULE_SIZE / 16);
-			val |= ((sizeof(struct nvme_completion) / 16) << 16);
-			val |= (1ULL << 32);
-			break;
 		default:
 			status = NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 			break;
