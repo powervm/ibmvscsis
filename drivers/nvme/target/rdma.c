@@ -31,27 +31,33 @@
 #include "rw.h"
 
 struct nvmet_rdma_cmd {
+	struct ib_sge		sge[2];
+	struct ib_cqe		cqe;
+	struct ib_recv_wr	wr;
+	struct scatterlist	inline_sg;
+	void			*inline_data;
+	struct nvme_command     *nvme_cmd;
+	struct nvmet_rdma_queue	*queue;
+};
+
+struct nvmet_rdma_rsp {
 	struct ib_sge		send_sge;
 	struct ib_cqe		send_cqe;
 	struct ib_send_wr	send_wr;
 
-	struct ib_sge		recv_sge[2];
-	struct ib_cqe		recv_cqe;
-	struct ib_recv_wr	recv_wr;
-
+	struct nvmet_rdma_cmd	*cmd;
 	struct nvmet_rdma_queue	*queue;
 
 	struct ib_cqe		read_cqe;
 	struct rdma_rw_ctx	rw;
 
-	struct scatterlist	inline_sg;
-	void			*inline_data;
 	struct nvmet_req	req;
 
 	u8			n_rdma;
 	u32			invalidate_rkey;
 
 	struct list_head	wait_list;
+	struct list_head	free_list;
 };
 
 enum nvmet_rdma_queue_state {
@@ -69,11 +75,16 @@ struct nvmet_rdma_queue {
 	enum nvmet_rdma_queue_state state;
 	struct nvmet_cq		nvme_cq;
 	struct nvmet_sq		nvme_sq;
+
+	struct nvmet_rdma_rsp	*rsps;
+	struct list_head	free_rsps;
+	spinlock_t		rsps_lock;
 	struct nvmet_rdma_cmd	*cmds;
+
 	struct work_struct	release_work;
-	struct list_head	cmd_wait_list;
-	struct list_head	cmd_wr_wait_list;
-	spinlock_t		cmd_wr_wait_lock;
+	struct list_head	rsp_wait_list;
+	struct list_head	rsp_wr_wait_list;
+	spinlock_t		rsp_wr_wait_lock;
 
 	int			idx;
 	struct kref		ref;
@@ -112,9 +123,9 @@ static DEFINE_MUTEX(nvmet_rdma_queue_mutex);
 static LIST_HEAD(device_list);
 static DEFINE_MUTEX(device_list_mutex);
 
-static bool nvmet_rdma_execute_command(struct nvmet_rdma_cmd *cmd);
+static bool nvmet_rdma_execute_command(struct nvmet_rdma_rsp *rsp);
 static void nvmet_rdma_send_done(struct ib_cq *cq, struct ib_wc *wc);
-static void nvmet_rdma_recv_done(struct ib_cq *cq, struct ib_wc *wc);
+static void nvmet_rdma_cmd_done(struct ib_cq *cq, struct ib_wc *wc);
 static void nvmet_rdma_read_data_done(struct ib_cq *cq, struct ib_wc *wc);
 static void nvmet_rdma_qp_event(struct ib_event *event, void *priv);
 
@@ -131,6 +142,31 @@ static inline bool nvmet_rdma_need_data_out(struct nvmet_req *req)
 		req->data_len &&
 		!req->rsp->status &&
 		!(req->flags & NVMET_REQ_INLINE_DATA);
+}
+
+static inline struct nvmet_rdma_rsp *
+nvmet_rdma_get_rsp(struct nvmet_rdma_queue *queue)
+{
+	struct nvmet_rdma_rsp *rsp;
+	unsigned long flags;
+
+	spin_lock_irqsave(&queue->rsps_lock, flags);
+	rsp = list_first_entry(&queue->free_rsps,
+				struct nvmet_rdma_rsp, free_list);
+	list_del(&rsp->free_list);
+	spin_unlock_irqrestore(&queue->rsps_lock, flags);
+
+	return rsp;
+}
+
+static inline void
+nvmet_rdma_put_rsp(struct nvmet_rdma_rsp *rsp)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&rsp->queue->rsps_lock, flags);
+	list_add_tail(&rsp->free_list, &rsp->queue->free_rsps);
+	spin_unlock_irqrestore(&rsp->queue->rsps_lock, flags);
 }
 
 static void nvmet_rdma_free_sgl(struct scatterlist *sgl, unsigned int nents)
@@ -187,76 +223,50 @@ out:
 }
 
 static int nvmet_rdma_alloc_cmd(struct nvmet_rdma_device *ndev,
-		struct nvmet_rdma_cmd *c, bool admin)
+			struct nvmet_rdma_cmd *c, bool admin)
 {
 	/* NVMe command / RDMA RECV */
-	c->req.cmd = kmalloc(sizeof(*c->req.cmd), GFP_KERNEL);
-	if (!c->req.cmd)
+	c->nvme_cmd = kmalloc(sizeof(*c->nvme_cmd), GFP_KERNEL);
+	if (!c->nvme_cmd)
 		goto out;
-	c->recv_sge[0].addr = ib_dma_map_single(ndev->device, c->req.cmd,
-			sizeof(*c->req.cmd), DMA_FROM_DEVICE);
-	if (ib_dma_mapping_error(ndev->device, c->recv_sge[0].addr))
+
+	c->sge[0].addr = ib_dma_map_single(ndev->device, c->nvme_cmd,
+			sizeof(*c->nvme_cmd), DMA_FROM_DEVICE);
+	if (ib_dma_mapping_error(ndev->device, c->sge[0].addr))
 		goto out_free_cmd;
 
-	c->recv_sge[0].length = sizeof(*c->req.cmd);
-	c->recv_sge[0].lkey = ndev->pd->local_dma_lkey;
+	c->sge[0].length = sizeof(*c->nvme_cmd);
+	c->sge[0].lkey = ndev->pd->local_dma_lkey;
 
 	if (!admin) {
 		c->inline_data = (void *)__get_free_page(GFP_KERNEL);
 		if (!c->inline_data)
 			goto out_unmap_cmd;
-		c->recv_sge[1].addr = ib_dma_map_single(ndev->device,
+		c->sge[1].addr = ib_dma_map_single(ndev->device,
 				c->inline_data, PAGE_SIZE, DMA_FROM_DEVICE);
-		if (ib_dma_mapping_error(ndev->device, c->recv_sge[1].addr))
+		if (ib_dma_mapping_error(ndev->device, c->sge[1].addr))
 			goto out_free_inline_data;
-		c->recv_sge[1].length = PAGE_SIZE;
-		c->recv_sge[1].lkey = ndev->pd->local_dma_lkey;
+		c->sge[1].length = PAGE_SIZE;
+		c->sge[1].lkey = ndev->pd->local_dma_lkey;
 	}
 
-	c->recv_cqe.done = nvmet_rdma_recv_done;
+	c->cqe.done = nvmet_rdma_cmd_done;
 
-	c->recv_wr.wr_cqe = &c->recv_cqe;
-	c->recv_wr.sg_list = c->recv_sge;
-	c->recv_wr.num_sge = admin ? 1 : 2;
+	c->wr.wr_cqe = &c->cqe;
+	c->wr.sg_list = c->sge;
+	c->wr.num_sge = admin ? 1 : 2;
 
-	/* NVMe CQE / RDMA SEND */
-	c->req.rsp = kmalloc(sizeof(*c->req.rsp), GFP_KERNEL);
-	if (!c->req.rsp)
-		goto out_unmap_inline_data;
-
-	c->send_sge.addr = ib_dma_map_single(ndev->device, c->req.rsp,
-			sizeof(*c->req.rsp), DMA_TO_DEVICE);
-	if (ib_dma_mapping_error(ndev->device, c->send_sge.addr))
-		goto out_free_rsp;
-
-	c->send_sge.length = sizeof(*c->req.rsp);
-	c->send_sge.lkey = ndev->pd->local_dma_lkey;
-
-	c->send_cqe.done = nvmet_rdma_send_done;
-
-	c->send_wr.wr_cqe = &c->send_cqe;
-	c->send_wr.sg_list = &c->send_sge;
-	c->send_wr.num_sge = 1;
-	c->send_wr.send_flags = IB_SEND_SIGNALED;
-
-	/* Data In / RDMA READ */
-	c->read_cqe.done = nvmet_rdma_read_data_done;
 	return 0;
 
-out_free_rsp:
-	kfree(c->req.rsp);
-out_unmap_inline_data:
-	if (!admin)
-		ib_dma_unmap_single(ndev->device, c->recv_sge[1].addr,
-				PAGE_SIZE, DMA_FROM_DEVICE);
 out_free_inline_data:
 	if (!admin)
 		free_page((unsigned long)c->inline_data);
 out_unmap_cmd:
-	ib_dma_unmap_single(ndev->device, c->recv_sge[0].addr,
-			sizeof(*c->req.cmd), DMA_FROM_DEVICE);
+	ib_dma_unmap_single(ndev->device, c->sge[0].addr,
+			sizeof(*c->nvme_cmd), DMA_FROM_DEVICE);
 out_free_cmd:
-	kfree(c->req.cmd);
+	kfree(c->nvme_cmd);
+
 out:
 	return -ENOMEM;
 }
@@ -264,21 +274,19 @@ out:
 static void nvmet_rdma_free_cmd(struct nvmet_rdma_device *ndev,
 		struct nvmet_rdma_cmd *c, bool admin)
 {
-	ib_dma_unmap_single(ndev->device, c->send_sge.addr,
-				sizeof(*c->req.rsp), DMA_TO_DEVICE);
-	kfree(c->req.rsp);
 	if (!admin) {
-		ib_dma_unmap_single(ndev->device, c->recv_sge[1].addr,
+		ib_dma_unmap_single(ndev->device, c->sge[1].addr,
 				PAGE_SIZE, DMA_FROM_DEVICE);
 		free_page((unsigned long)c->inline_data);
 	}
-	ib_dma_unmap_single(ndev->device, c->recv_sge[0].addr,
-				sizeof(*c->req.cmd), DMA_FROM_DEVICE);
-	kfree(c->req.cmd);
+	ib_dma_unmap_single(ndev->device, c->sge[0].addr,
+				sizeof(*c->nvme_cmd), DMA_FROM_DEVICE);
+	kfree(c->nvme_cmd);
 }
 
 static struct nvmet_rdma_cmd *
-nvmet_rdma_alloc_cmds(struct nvmet_rdma_device *ndev, int nr_cmds, bool admin)
+nvmet_rdma_alloc_cmds(struct nvmet_rdma_device *ndev,
+		int nr_cmds, bool admin)
 {
 	struct nvmet_rdma_cmd *cmds;
 	int ret = -EINVAL, i;
@@ -313,114 +321,208 @@ static void nvmet_rdma_free_cmds(struct nvmet_rdma_device *ndev,
 	kfree(cmds);
 }
 
+static int nvmet_rdma_alloc_rsp(struct nvmet_rdma_device *ndev,
+		struct nvmet_rdma_rsp *r)
+{
+	/* NVMe CQE / RDMA SEND */
+	r->req.rsp = kmalloc(sizeof(*r->req.rsp), GFP_KERNEL);
+	if (!r->req.rsp)
+		goto out;
+
+	r->send_sge.addr = ib_dma_map_single(ndev->device, r->req.rsp,
+			sizeof(*r->req.rsp), DMA_TO_DEVICE);
+	if (ib_dma_mapping_error(ndev->device, r->send_sge.addr))
+		goto out_free_rsp;
+
+	r->send_sge.length = sizeof(*r->req.rsp);
+	r->send_sge.lkey = ndev->pd->local_dma_lkey;
+
+	r->send_cqe.done = nvmet_rdma_send_done;
+
+	r->send_wr.wr_cqe = &r->send_cqe;
+	r->send_wr.sg_list = &r->send_sge;
+	r->send_wr.num_sge = 1;
+	r->send_wr.send_flags = IB_SEND_SIGNALED;
+
+	/* Data In / RDMA READ */
+	r->read_cqe.done = nvmet_rdma_read_data_done;
+	return 0;
+
+out_free_rsp:
+	kfree(r->req.rsp);
+out:
+	return -ENOMEM;
+}
+
+static void nvmet_rdma_free_rsp(struct nvmet_rdma_device *ndev,
+		struct nvmet_rdma_rsp *r)
+{
+	ib_dma_unmap_single(ndev->device, r->send_sge.addr,
+				sizeof(*r->req.rsp), DMA_TO_DEVICE);
+	kfree(r->req.rsp);
+}
+
+static int
+nvmet_rdma_alloc_rsps(struct nvmet_rdma_queue *queue)
+{
+	struct nvmet_rdma_device *ndev = queue->dev;
+	int nr_rsps = queue->recv_queue_size * 2;
+	int ret = -EINVAL, i;
+
+	queue->rsps = kcalloc(nr_rsps, sizeof(struct nvmet_rdma_rsp), GFP_KERNEL);
+	if (!queue->rsps)
+		goto out;
+
+	for (i = 0; i < nr_rsps; i++) {
+		struct nvmet_rdma_rsp *rsp = &queue->rsps[i];
+
+		ret = nvmet_rdma_alloc_rsp(ndev, rsp);
+		if (ret)
+			goto out_free;
+
+		list_add_tail(&rsp->free_list, &queue->free_rsps);
+	}
+
+	return 0;
+
+out_free:
+	while (--i >= 0) {
+		struct nvmet_rdma_rsp *rsp = &queue->rsps[i];
+
+		list_del(&rsp->free_list);
+		nvmet_rdma_free_rsp(ndev, rsp);
+	}
+	kfree(queue->rsps);
+out:
+	return ret;
+}
+
+static void nvmet_rdma_free_rsps(struct nvmet_rdma_queue *queue)
+{
+	struct nvmet_rdma_device *ndev = queue->dev;
+	int i, nr_rsps = queue->recv_queue_size * 2;
+
+	for (i = 0; i < nr_rsps; i++) {
+		struct nvmet_rdma_rsp *rsp = &queue->rsps[i];
+
+		list_del(&rsp->free_list);
+		nvmet_rdma_free_rsp(ndev, rsp);
+	}
+	kfree(queue->rsps);
+}
+
 static int nvmet_rdma_post_recv(struct nvmet_rdma_device *ndev,
 		struct nvmet_rdma_cmd *cmd)
 {
 	struct ib_recv_wr *bad_wr;
 
 	if (ndev->srq)
-		return ib_post_srq_recv(ndev->srq, &cmd->recv_wr, &bad_wr);
-	return ib_post_recv(cmd->queue->cm_id->qp, &cmd->recv_wr, &bad_wr);
+		return ib_post_srq_recv(ndev->srq, &cmd->wr, &bad_wr);
+	return ib_post_recv(cmd->queue->cm_id->qp, &cmd->wr, &bad_wr);
 }
 
 static void nvmet_rdma_process_wr_wait_list(struct nvmet_rdma_queue *queue)
 {
-	spin_lock(&queue->cmd_wr_wait_lock);
-	while (!list_empty(&queue->cmd_wr_wait_list)) {
-		struct nvmet_rdma_cmd *cmd;
+	spin_lock(&queue->rsp_wr_wait_lock);
+	while (!list_empty(&queue->rsp_wr_wait_list)) {
+		struct nvmet_rdma_rsp *rsp;
 		bool ret;
 
-		cmd = list_entry(queue->cmd_wr_wait_list.next,
-				struct nvmet_rdma_cmd, wait_list);
-		list_del(&cmd->wait_list);
+		rsp = list_entry(queue->rsp_wr_wait_list.next,
+				struct nvmet_rdma_rsp, wait_list);
+		list_del(&rsp->wait_list);
 
-		spin_unlock(&queue->cmd_wr_wait_lock);
-		ret = nvmet_rdma_execute_command(cmd);
-		spin_lock(&queue->cmd_wr_wait_lock);
+		spin_unlock(&queue->rsp_wr_wait_lock);
+		ret = nvmet_rdma_execute_command(rsp);
+		spin_lock(&queue->rsp_wr_wait_lock);
 
 		if (!ret) {
-			list_add(&cmd->wait_list, &queue->cmd_wr_wait_list);
+			list_add(&rsp->wait_list, &queue->rsp_wr_wait_list);
 			break;
 		}
 	}
-	spin_unlock(&queue->cmd_wr_wait_lock);
+	spin_unlock(&queue->rsp_wr_wait_lock);
 }
 
 
-static void nvmet_rdma_release_cmd(struct nvmet_rdma_cmd *cmd)
+static void nvmet_rdma_release_rsp(struct nvmet_rdma_rsp *rsp)
 {
-	struct nvmet_rdma_queue *queue = cmd->queue;
+	struct nvmet_rdma_queue *queue = rsp->queue;
 
-	atomic_add(1 + cmd->n_rdma, &queue->sq_wr_avail);
+	atomic_add(1 + rsp->n_rdma, &queue->sq_wr_avail);
 
-	if (cmd->n_rdma)
-		rdma_rw_ctx_destroy(&cmd->rw, queue->cm_id->qp);
+	if (rsp->n_rdma)
+		rdma_rw_ctx_destroy(&rsp->rw, queue->cm_id->qp);
 
-	if (cmd->req.sg != &cmd->inline_sg)
-		nvmet_rdma_free_sgl(cmd->req.sg, cmd->req.sg_cnt);
+	if (rsp->req.sg != &rsp->cmd->inline_sg)
+		nvmet_rdma_free_sgl(rsp->req.sg, rsp->req.sg_cnt);
 
-	if (unlikely(!list_empty_careful(&queue->cmd_wr_wait_list)))
+	if (unlikely(!list_empty_careful(&queue->rsp_wr_wait_list)))
 		nvmet_rdma_process_wr_wait_list(queue);
-	nvmet_rdma_post_recv(queue->dev, cmd);
+
+	nvmet_rdma_put_rsp(rsp);
 }
 
 static void nvmet_rdma_send_done(struct ib_cq *cq, struct ib_wc *wc)
 {
-	struct nvmet_rdma_cmd *cmd =
-		container_of(wc->wr_cqe, struct nvmet_rdma_cmd, send_cqe);
+	struct nvmet_rdma_rsp *rsp =
+		container_of(wc->wr_cqe, struct nvmet_rdma_rsp, send_cqe);
 
-	nvmet_rdma_release_cmd(cmd);
+	nvmet_rdma_release_rsp(rsp);
 }
 
 static void nvmet_rdma_queue_response(struct nvmet_req *req)
 {
-	struct nvmet_rdma_cmd *cmd =
-		container_of(req, struct nvmet_rdma_cmd, req);
-	struct ib_qp *qp = cmd->queue->cm_id->qp;
+	struct nvmet_rdma_rsp *rsp =
+		container_of(req, struct nvmet_rdma_rsp, req);
+	struct ib_qp *qp = rsp->queue->cm_id->qp;
 	struct ib_send_wr *bad_wr;
 	int ret;
 
-	if (cmd->req.flags & NVMET_REQ_INVALIDATE_RKEY) {
-		cmd->send_wr.opcode = IB_WR_SEND_WITH_INV;
-		cmd->send_wr.ex.invalidate_rkey = cmd->invalidate_rkey;
+	if (rsp->req.flags & NVMET_REQ_INVALIDATE_RKEY) {
+		rsp->send_wr.opcode = IB_WR_SEND_WITH_INV;
+		rsp->send_wr.ex.invalidate_rkey = rsp->invalidate_rkey;
 	} else {
-		cmd->send_wr.opcode = IB_WR_SEND;
+		rsp->send_wr.opcode = IB_WR_SEND;
 	}
 
-	if (nvmet_rdma_need_data_out(req))
-		ret = rdma_rw_post(&cmd->rw, qp, NULL, &cmd->send_wr);
-	else
-		ret = ib_post_send(qp, &cmd->send_wr, &bad_wr);
+	if (nvmet_rdma_need_data_out(req)) {
+		nvmet_rdma_post_recv(rsp->queue->dev, rsp->cmd);
+		ret = rdma_rw_post(&rsp->rw, qp, NULL, &rsp->send_wr);
+	} else {
+		nvmet_rdma_post_recv(rsp->queue->dev, rsp->cmd);
+		ret = ib_post_send(qp, &rsp->send_wr, &bad_wr);
+	}
 
 	if (ret) {
-		pr_err("sending cmd response failed: %d\n", ret);
-		nvmet_rdma_release_cmd(cmd);
+		pr_err("sending response failed: %d\n", ret);
+		nvmet_rdma_release_rsp(rsp);
 	}
 }
 
 static void nvmet_rdma_read_data_done(struct ib_cq *cq, struct ib_wc *wc)
 {
-	struct nvmet_rdma_cmd *cmd =
-		container_of(wc->wr_cqe, struct nvmet_rdma_cmd, read_cqe);
+	struct nvmet_rdma_rsp *rsp =
+		container_of(wc->wr_cqe, struct nvmet_rdma_rsp, read_cqe);
 	struct nvmet_rdma_queue *queue = cq->cq_context;
 
-	WARN_ON(cmd->n_rdma <= 0);
-	atomic_add(cmd->n_rdma, &queue->sq_wr_avail);
-	rdma_rw_ctx_destroy(&cmd->rw, queue->cm_id->qp);
-	cmd->n_rdma = 0;
+	WARN_ON(rsp->n_rdma <= 0);
+	atomic_add(rsp->n_rdma, &queue->sq_wr_avail);
+	rdma_rw_ctx_destroy(&rsp->rw, queue->cm_id->qp);
+	rsp->n_rdma = 0;
 
 	if (unlikely(wc->status != IB_WC_SUCCESS &&
 		wc->status != IB_WC_WR_FLUSH_ERR)) {
 		pr_info("RDMA READ for CQE 0x%p failed with status %s (%d).\n",
 			wc->wr_cqe, ib_wc_status_msg(wc->status), wc->status);
-		nvmet_req_complete(&cmd->req, NVME_SC_DATA_XFER_ERROR);
+		nvmet_req_complete(&rsp->req, NVME_SC_DATA_XFER_ERROR);
 		return;
 	}
 
-	cmd->req.execute(&cmd->req);
+	rsp->req.execute(&rsp->req);
 }
 
-static void *nvmet_rdma_dapsule_ptr(struct nvmet_rdma_cmd *cmd,
+static void *nvmet_rdma_dapsule_ptr(struct nvmet_rdma_rsp *rsp,
 		struct nvme_rsgl_desc *rsgl)
 {
 	u64 addr = le64_to_cpu(rsgl->addr);
@@ -431,35 +533,36 @@ static void *nvmet_rdma_dapsule_ptr(struct nvmet_rdma_cmd *cmd,
 
 	/* XXX: validate size */
 
-	return cmd->inline_data + addr;
+	return rsp->cmd->inline_data + addr;
 }
 
-static u16 nvmet_rdma_map_inline_data(struct nvmet_rdma_cmd *cmd)
+static u16 nvmet_rdma_map_inline_data(struct nvmet_rdma_rsp *rsp)
 {
-	struct nvme_rsgl_desc *rsgl = &cmd->req.cmd->common.dptr.rsgl;
-	void *data = nvmet_rdma_dapsule_ptr(cmd, rsgl);
+	struct nvme_rsgl_desc *rsgl = &rsp->req.cmd->common.dptr.rsgl;
+	void *data = nvmet_rdma_dapsule_ptr(rsp, rsgl);
 	int count;
 
-	if (!nvme_is_write(cmd->req.cmd))
+	if (!nvme_is_write(rsp->req.cmd))
 		return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 	if (!data) {
 		pr_err("invalid inline data offset!\n");
 		return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 	}
 
-	sg_init_one(&cmd->inline_sg, data, get_unaligned_le24(rsgl->length));
-	cmd->req.sg = &cmd->inline_sg;
-	cmd->req.sg_cnt = 1;
-	cmd->req.flags |= NVMET_REQ_INLINE_DATA;
+	sg_init_one(&rsp->cmd->inline_sg, data,
+		get_unaligned_le24(rsgl->length));
+	rsp->req.sg = &rsp->cmd->inline_sg;
+	rsp->req.sg_cnt = 1;
+	rsp->req.flags |= NVMET_REQ_INLINE_DATA;
 
-	count = ib_dma_map_sg(cmd->queue->dev->device, cmd->req.sg,
-			cmd->req.sg_cnt, nvmet_data_dir(&cmd->req));
+	count = ib_dma_map_sg(rsp->queue->dev->device, rsp->req.sg,
+			rsp->req.sg_cnt, nvmet_data_dir(&rsp->req));
 	if (count != 1)
 		return NVME_SC_INTERNAL;
 	return 0;
 }
 
-static u16 nvmet_rdma_map_sgl_data(struct nvmet_rdma_cmd *cmd,
+static u16 nvmet_rdma_map_sgl_data(struct nvmet_rdma_rsp *rsp,
 		struct nvme_rsgl_desc *rsgl)
 {
 	struct scatterlist *sg;
@@ -469,8 +572,8 @@ static u16 nvmet_rdma_map_sgl_data(struct nvmet_rdma_cmd *cmd,
 
 	switch (rsgl->format & 0x3) {
 	case NVME_SGL_FMT_INVALIDATE:
-		cmd->invalidate_rkey = get_unaligned_le32(rsgl->key);
-		cmd->req.flags |= NVMET_REQ_INVALIDATE_RKEY;
+		rsp->invalidate_rkey = get_unaligned_le32(rsgl->key);
+		rsp->req.flags |= NVMET_REQ_INVALIDATE_RKEY;
 		/* FALLTHRU */
 	case 0:
 		break;
@@ -487,29 +590,29 @@ static u16 nvmet_rdma_map_sgl_data(struct nvmet_rdma_cmd *cmd,
 	if (status)
 		return status;
 
-	ret = rdma_rw_ctx_init(&cmd->rw, cmd->queue->cm_id->qp,
-			cmd->queue->cm_id->port_num, sg, sg_cnt, len,
+	ret = rdma_rw_ctx_init(&rsp->rw, rsp->queue->cm_id->qp,
+			rsp->queue->cm_id->port_num, sg, sg_cnt, len,
 			le64_to_cpu(rsgl->addr), get_unaligned_le32(rsgl->key),
-			nvmet_data_dir(&cmd->req), 0);
+			nvmet_data_dir(&rsp->req), 0);
 	if (ret < 0)
 		return NVME_SC_INTERNAL;
 
-	cmd->n_rdma += ret;
+	rsp->n_rdma += ret;
 
 	/*
 	 * XXX: to support multiple S/G entries we need to start using
 	 * sg_chain() here.  We probably need a containing structure for the
 	 * fist struct ib_rdma_wr for each SGE as well.
 	 */
-	cmd->req.sg = sg;
-	cmd->req.sg_cnt = sg_cnt;
+	rsp->req.sg = sg;
+	rsp->req.sg_cnt = sg_cnt;
 	return 0;
 }
 
-static u16 nvmet_rdma_map_sgl_seg(struct nvmet_rdma_cmd *cmd,
+static u16 nvmet_rdma_map_sgl_seg(struct nvmet_rdma_rsp *rsp,
 		struct nvme_rsgl_desc *rsgl, bool last)
 {
-	struct nvme_rsgl_desc *sgl = nvmet_rdma_dapsule_ptr(cmd, rsgl);
+	struct nvme_rsgl_desc *sgl = nvmet_rdma_dapsule_ptr(rsp, rsgl);
 	u32 desc_len = get_unaligned_le24(rsgl->length);
 	int nr_sge = desc_len / sizeof(struct nvme_rsgl_desc), i;
 	u16 status;
@@ -529,7 +632,7 @@ static u16 nvmet_rdma_map_sgl_seg(struct nvmet_rdma_cmd *cmd,
 	for (i = 0; i < nr_sge; i++) {
 		switch (sgl->format >> 4) {
 		case NVME_SGL_FMT_DATA_DESC:
-			status = nvmet_rdma_map_sgl_data(cmd, sgl);
+			status = nvmet_rdma_map_sgl_data(rsp, sgl);
 			if (status)
 				return status;
 			break;
@@ -549,21 +652,21 @@ static u16 nvmet_rdma_map_sgl_seg(struct nvmet_rdma_cmd *cmd,
 	return 0;
 }
 
-static u16 nvmet_rdma_map_sgl(struct nvmet_rdma_cmd *cmd)
+static u16 nvmet_rdma_map_sgl(struct nvmet_rdma_rsp *rsp)
 {
-	struct nvme_rsgl_desc *rsgl = &cmd->req.cmd->common.dptr.rsgl;
+	struct nvme_rsgl_desc *rsgl = &rsp->req.cmd->common.dptr.rsgl;
 
 	if ((rsgl->format >> 4) == NVME_SGL_FMT_DATA_DESC &&
 	    (rsgl->format & 0x3) == NVME_SGL_FMT_IN_CAPSULE)
-		return nvmet_rdma_map_inline_data(cmd);
+		return nvmet_rdma_map_inline_data(rsp);
 
 	switch (rsgl->format >> 4) {
 	case NVME_SGL_FMT_DATA_DESC:
-		return nvmet_rdma_map_sgl_data(cmd, rsgl);
+		return nvmet_rdma_map_sgl_data(rsp, rsgl);
 	case NVME_SGL_FMT_LAST_SEG_DESC:
-		return nvmet_rdma_map_sgl_seg(cmd, rsgl, true);
+		return nvmet_rdma_map_sgl_seg(rsp, rsgl, true);
 	case NVME_SGL_FMT_SEG_DESC:
-		return nvmet_rdma_map_sgl_seg(cmd, rsgl, false);
+		return nvmet_rdma_map_sgl_seg(rsp, rsgl, false);
 	default:
 		pr_err("invalid SGL format: 0x%x\n", rsgl->format);
 		return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
@@ -572,28 +675,28 @@ static u16 nvmet_rdma_map_sgl(struct nvmet_rdma_cmd *cmd)
 	return 0;
 }
 
-static bool nvmet_rdma_execute_command(struct nvmet_rdma_cmd *cmd)
+static bool nvmet_rdma_execute_command(struct nvmet_rdma_rsp *rsp)
 {
-	if (unlikely(atomic_sub_return(1 + cmd->n_rdma,
-			&cmd->queue->sq_wr_avail) < 0)) {
-		pr_warn("IB send queue full (needed %d)\n", 1 + cmd->n_rdma);
-		atomic_add(1 + cmd->n_rdma, &cmd->queue->sq_wr_avail);
+	if (unlikely(atomic_sub_return(1 + rsp->n_rdma,
+			&rsp->queue->sq_wr_avail) < 0)) {
+		pr_warn("IB send queue full (needed %d)\n", 1 + rsp->n_rdma);
+		atomic_add(1 + rsp->n_rdma, &rsp->queue->sq_wr_avail);
 		return false;
 	}
 
-	if (nvmet_rdma_need_data_in(&cmd->req)) {
-		if (rdma_rw_post(&cmd->rw, cmd->queue->cm_id->qp,
-				 &cmd->read_cqe, NULL))
-			nvmet_req_complete(&cmd->req, NVME_SC_DATA_XFER_ERROR);
+	if (nvmet_rdma_need_data_in(&rsp->req)) {
+		if (rdma_rw_post(&rsp->rw, rsp->queue->cm_id->qp,
+				 &rsp->read_cqe, NULL))
+			nvmet_req_complete(&rsp->req, NVME_SC_DATA_XFER_ERROR);
 	} else {
-		cmd->req.execute(&cmd->req);
+		rsp->req.execute(&rsp->req);
 	}
 
 	return true;
 }
 
 static void nvmet_rdma_handle_command(struct nvmet_rdma_queue *queue,
-		struct nvmet_rdma_cmd *cmd)
+		struct nvmet_rdma_rsp *cmd)
 {
 	u16 status;
 
@@ -610,9 +713,9 @@ static void nvmet_rdma_handle_command(struct nvmet_rdma_queue *queue,
 		goto out_err;
 
 	if (unlikely(!nvmet_rdma_execute_command(cmd))) {
-		spin_lock(&queue->cmd_wr_wait_lock);
-		list_add_tail(&cmd->wait_list, &queue->cmd_wr_wait_list);
-		spin_unlock(&queue->cmd_wr_wait_lock);
+		spin_lock(&queue->rsp_wr_wait_lock);
+		list_add_tail(&cmd->wait_list, &queue->rsp_wr_wait_list);
+		spin_unlock(&queue->rsp_wr_wait_lock);
 	}
 
 	return;
@@ -621,26 +724,32 @@ out_err:
 	nvmet_req_complete(&cmd->req, status);
 }
 
-static void nvmet_rdma_recv_done(struct ib_cq *cq, struct ib_wc *wc)
+static void nvmet_rdma_cmd_done(struct ib_cq *cq, struct ib_wc *wc)
 {
 	struct nvmet_rdma_cmd *cmd =
-		container_of(wc->wr_cqe, struct nvmet_rdma_cmd, recv_cqe);
+		container_of(wc->wr_cqe, struct nvmet_rdma_cmd, cqe);
 	struct nvmet_rdma_queue *queue = cq->cq_context;
+	struct nvmet_rdma_rsp *rsp;
 
 	if (unlikely(wc->status != IB_WC_SUCCESS))
 		return;
+
+	cmd->queue = queue;
+	rsp = nvmet_rdma_get_rsp(queue);
+	rsp->cmd = cmd;
+	rsp->req.cmd = cmd->nvme_cmd;
 
 	if (unlikely(queue->state != NVMET_RDMA_Q_LIVE)) {
 		unsigned long flags;
 
 		spin_lock_irqsave(&queue->state_lock, flags);
 		if (queue->state == NVMET_RDMA_Q_CONNECTING)
-			list_add_tail(&cmd->wait_list, &queue->cmd_wait_list);
+			list_add_tail(&rsp->wait_list, &queue->rsp_wait_list);
 		spin_unlock_irqrestore(&queue->state_lock, flags);
 		return;
 	}
 
-	nvmet_rdma_handle_command(queue, cmd);
+	nvmet_rdma_handle_command(queue, rsp);
 }
 
 static void nvmet_rdma_destroy_srq(struct nvmet_rdma_device *ndev)
@@ -877,6 +986,7 @@ static void nvmet_rdma_free_queue(struct nvmet_rdma_queue *queue)
 				queue->recv_queue_size,
 				!queue->nvme_sq.qid);
 	}
+	nvmet_rdma_free_rsps(queue);
 	mutex_lock(&nvmet_rdma_queue_mutex);
 	ida_simple_remove(&nvmet_rdma_queue_ida, queue->idx);
 	mutex_unlock(&nvmet_rdma_queue_mutex);
@@ -984,9 +1094,11 @@ nvmet_rdma_alloc_queue(struct nvmet_rdma_device *ndev,
 
 	spin_lock_init(&queue->state_lock);
 	queue->state = NVMET_RDMA_Q_CONNECTING;
-	INIT_LIST_HEAD(&queue->cmd_wait_list);
-	INIT_LIST_HEAD(&queue->cmd_wr_wait_list);
-	spin_lock_init(&queue->cmd_wr_wait_lock);
+	INIT_LIST_HEAD(&queue->rsp_wait_list);
+	INIT_LIST_HEAD(&queue->rsp_wr_wait_list);
+	spin_lock_init(&queue->rsp_wr_wait_lock);
+	INIT_LIST_HEAD(&queue->free_rsps);
+	spin_lock_init(&queue->rsps_lock);
 
 	mutex_lock(&nvmet_rdma_queue_mutex);
 	queue->idx = ida_simple_get(&nvmet_rdma_queue_ida, 0, 0, GFP_KERNEL);
@@ -996,13 +1108,19 @@ nvmet_rdma_alloc_queue(struct nvmet_rdma_device *ndev,
 		goto out_free_queue;
 	}
 
+	ret = nvmet_rdma_alloc_rsps(queue);
+	if (ret) {
+		ret = NVME_RDMA_CM_NO_RSC;
+		goto out_ida_remove;
+	}
+
 	if (!ndev->srq) {
 		queue->cmds = nvmet_rdma_alloc_cmds(ndev,
 				queue->recv_queue_size,
 				!queue->host_qid);
 		if (IS_ERR(queue->cmds)) {
 			ret = NVME_RDMA_CM_NO_RSC;
-			goto out_ida_remove;
+			goto out_free_cmds;
 		}
 	}
 
@@ -1123,11 +1241,11 @@ static void nvmet_rdma_queue_established(struct nvmet_rdma_queue *queue)
 	}
 	queue->state = NVMET_RDMA_Q_LIVE;
 
-	while (!list_empty(&queue->cmd_wait_list)) {
-		struct nvmet_rdma_cmd *cmd;
+	while (!list_empty(&queue->rsp_wait_list)) {
+		struct nvmet_rdma_rsp *cmd;
 
-		cmd = list_first_entry(&queue->cmd_wait_list,
-					struct nvmet_rdma_cmd, wait_list);
+		cmd = list_first_entry(&queue->rsp_wait_list,
+					struct nvmet_rdma_rsp, wait_list);
 		list_del(&cmd->wait_list);
 
 		spin_unlock_irqrestore(&queue->state_lock, flags);
