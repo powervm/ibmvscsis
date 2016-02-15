@@ -294,7 +294,7 @@ void rdma_rw_ctx_destroy(struct rdma_rw_ctx *ctx, struct ib_qp *qp)
 		for (i = 0; i < ctx->nr_wrs; i++)
 			ib_mr_pool_put(qp, ctx->reg[i].mr);
 		kfree(ctx->reg);
-	} else if (ctx->nr_wrs > 1) {
+	} else if (ctx->dma_nents > 1) {
 		kfree(ctx->map.wrs);
 		kfree(ctx->map.sges);
 	}
