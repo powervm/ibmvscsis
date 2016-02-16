@@ -103,7 +103,7 @@ static void nvmet_execute_identify_ctrl(struct nvmet_req *req)
 	memset(id->sn, ' ', sizeof(id->sn));
 	memset(id->mn, ' ', sizeof(id->mn));
 	memset(id->fr, ' ', sizeof(id->fr));
-	strcpy((char *)id->mn, "Fake NVMe");
+	strcpy((char *)id->mn, "NVMe Fabrics");
 
 	id->rab = 6;
 
