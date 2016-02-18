@@ -91,6 +91,9 @@ struct nvme_ctrl {
 	u32 vs;
 	bool subsystem;
 	unsigned long quirks;
+
+	/* Fabrics only */
+	u16 queue_size;
 };
 
 /*

@@ -121,7 +121,6 @@ struct nvme_rdma_ctrl {
 	u64			capattr;
 
 	/* other member variables */
-	size_t			queue_size;
 	unsigned short		tl_retry_count;
 	struct blk_mq_tag_set	tag_set;
 	struct work_struct	delete_work;
@@ -726,7 +725,7 @@ static int nvme_rdma_init_io_queues(struct nvme_rdma_ctrl *ctrl)
 	int i, ret;
 
 	for (i = 1; i < ctrl->queue_count; i++) {
-		ret = nvme_rdma_init_queue(ctrl, i, ctrl->queue_size);
+		ret = nvme_rdma_init_queue(ctrl, i, ctrl->ctrl.queue_size);
 		if (ret) {
 			dev_info(ctrl->ctrl.dev,
 				"failed to initialize i/o queue: %d\n", ret);
@@ -1612,8 +1611,8 @@ static int nvme_rdma_configure_admin_queue(struct nvme_rdma_ctrl *ctrl)
 		goto out_cleanup_queue;
 	}
 
-	ctrl->queue_size =
-		min_t(int, NVME_CAP_MQES(ctrl->cap) + 1, ctrl->queue_size);
+	ctrl->ctrl.queue_size =
+		min_t(int, NVME_CAP_MQES(ctrl->cap) + 1, ctrl->ctrl.queue_size);
 
 	aqa = NVMF_AQ_DEPTH - 1;
 	aqa |= aqa << 16;
@@ -1827,7 +1826,7 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	spin_lock_init(&ctrl->lock);
 
 	ctrl->queue_count = opts->nr_io_queues + 1; /* +1 for admin queue */
-	ctrl->queue_size = opts->queue_size;
+	ctrl->ctrl.queue_size = opts->queue_size;
 	ctrl->tl_retry_count = opts->tl_retry_count;
 
 	ret = -ENOMEM;
@@ -1858,7 +1857,7 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 
 	memset(&ctrl->tag_set, 0, sizeof(ctrl->tag_set));
 	ctrl->tag_set.ops = &nvme_rdma_mq_ops;
-	ctrl->tag_set.queue_depth = ctrl->queue_size;
+	ctrl->tag_set.queue_depth = ctrl->ctrl.queue_size;
 	ctrl->tag_set.reserved_tags = 1; /* fabric connect */
 	ctrl->tag_set.numa_node = NUMA_NO_NODE;
 	ctrl->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
