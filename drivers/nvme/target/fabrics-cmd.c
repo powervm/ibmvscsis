@@ -174,10 +174,8 @@ static void nvmet_execute_connect(struct nvmet_req *req)
 			ctrl->cntlid, ctrl->hostnqn);
 	}
 
-	nvmet_cq_setup(ctrl, req->cq, qid,
-			qid ? NVMET_QUEUE_SIZE : NVMF_AQ_DEPTH);
-	nvmet_sq_setup(ctrl, req->sq, qid,
-			qid ? NVMET_QUEUE_SIZE : NVMF_AQ_DEPTH);
+	nvmet_cq_setup(ctrl, req->cq, qid, le16_to_cpu(c->cqsize));
+	nvmet_sq_setup(ctrl, req->sq, qid, le16_to_cpu(c->sqsize));
 
 	mutex_unlock(&subsys->lock);
 
