@@ -667,11 +667,16 @@ struct nvmf_connect_command {
 	u8	resv1;
 	u16	command_id;
 	u8	cctype;
-	u8	resv2[35];
+	u8	resv2[19];
+	u8	sgl1[16];
 	__le16	recfmt;
 	__le16	qid;
-	u8	auth_proto;
-	u8	resv3[19];
+	__le16	cqsize;
+	__le16	sqsize;
+	u8	qattr;
+	u8	resv3[3];
+	__le32	kato;
+	u8	resv4[8];
 };
 
 struct nvmf_connect_data {
