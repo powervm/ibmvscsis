@@ -67,6 +67,12 @@ struct nvme_loop_iod {
 static LIST_HEAD(nvme_loop_ctrl_list);
 static DEFINE_MUTEX(nvme_loop_ctrl_mutex);
 
+static void nvme_loop_queue_response(struct nvmet_req *nvme_req);
+
+struct nvmet_fabrics_ops nvme_loop_ops = {
+	.queue_response = nvme_loop_queue_response,
+};
+
 static inline int nvme_loop_queue_idx(struct nvme_loop_queue *queue)
 {
 	return queue - queue->ctrl->queues;
@@ -134,8 +140,8 @@ static int nvme_loop_queue_rq(struct blk_mq_hw_ctx *hctx,
 		return BLK_MQ_RQ_QUEUE_ERROR;
 	}
 
-	ret = nvmet_req_init(&iod->req, &queue->nvme_cq, &queue->nvme_sq,
-			nvme_loop_queue_response);
+	ret = nvmet_req_init(&iod->req, &queue->nvme_cq,
+			&queue->nvme_sq, &nvme_loop_ops);
 	if (ret)
 		goto out_err;
 

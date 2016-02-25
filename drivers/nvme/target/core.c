@@ -169,7 +169,7 @@ void nvmet_req_complete(struct nvmet_req *req, u16 status)
 
 	if (req->ns)
 		nvmet_put_namespace(req->ns);
-	req->queue_response(req);
+	req->ops->queue_response(req);
 	percpu_ref_put(&req->sq->ref);
 }
 EXPORT_SYMBOL_GPL(nvmet_req_complete);
@@ -227,15 +227,14 @@ int nvmet_sq_init(struct nvmet_sq *sq)
 EXPORT_SYMBOL_GPL(nvmet_sq_init);
 
 u16 nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
-		struct nvmet_sq *sq,
-		void (*queue_response)(struct nvmet_req *req))
+		struct nvmet_sq *sq, struct nvmet_fabrics_ops *ops)
 {
 	u16 status;
 
 	req->flags = 0;
 	req->cq = cq;
 	req->sq = sq;
-	req->queue_response = queue_response;
+	req->ops = ops;
 	req->sg = NULL;
 	req->sg_cnt = 0;
 	req->rsp->status = 0;

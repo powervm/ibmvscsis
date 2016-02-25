@@ -111,6 +111,11 @@ enum {
 	NVMET_REQ_INVALIDATE_RKEY	= 0x10,
 };
 
+struct nvmet_req;
+struct nvmet_fabrics_ops {
+	void (*queue_response)(struct nvmet_req *req);
+};
+
 struct nvmet_req {
 	struct nvme_command	*cmd;
 	struct nvme_completion	*rsp;
@@ -124,7 +129,7 @@ struct nvmet_req {
 	unsigned		flags;
 
 	void (*execute)(struct nvmet_req *req);
-	void (*queue_response)(struct nvmet_req *req);
+	struct nvmet_fabrics_ops *ops;
 };
 
 static inline void nvmet_set_status(struct nvmet_req *req, u16 status)
@@ -151,8 +156,7 @@ int nvmet_parse_admin_cmd(struct nvmet_req *req);
 int nvmet_parse_fabrics_cmd(struct nvmet_req *req);
 
 u16 nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
-		struct nvmet_sq *sq,
-		void (*queue_response)(struct nvmet_req *req));
+		struct nvmet_sq *sq, struct nvmet_fabrics_ops *ops);
 void nvmet_req_complete(struct nvmet_req *req, u16 status);
 
 void nvmet_cq_setup(struct nvmet_ctrl *ctrl, struct nvmet_cq *cq, u16 qid,

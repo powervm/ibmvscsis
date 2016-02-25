@@ -128,6 +128,11 @@ static void nvmet_rdma_send_done(struct ib_cq *cq, struct ib_wc *wc);
 static void nvmet_rdma_cmd_done(struct ib_cq *cq, struct ib_wc *wc);
 static void nvmet_rdma_read_data_done(struct ib_cq *cq, struct ib_wc *wc);
 static void nvmet_rdma_qp_event(struct ib_event *event, void *priv);
+static void nvmet_rdma_queue_response(struct nvmet_req *req);
+
+struct nvmet_fabrics_ops nvmet_rdma_ops = {
+	.queue_response = nvmet_rdma_queue_response,
+};
 
 static inline bool nvmet_rdma_need_data_in(struct nvmet_req *req)
 {
@@ -707,8 +712,8 @@ static void nvmet_rdma_handle_command(struct nvmet_rdma_queue *queue,
 	cmd->queue = queue;
 	cmd->n_rdma = 0;
 
-	status = nvmet_req_init(&cmd->req, &queue->nvme_cq, &queue->nvme_sq,
-			nvmet_rdma_queue_response);
+	status = nvmet_req_init(&cmd->req, &queue->nvme_cq,
+			&queue->nvme_sq, &nvmet_rdma_ops);
 	if (status)
 		goto out_err;
 
