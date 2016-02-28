@@ -570,12 +570,12 @@ static u16 nvmet_rdma_map_sgl_data(struct nvmet_rdma_rsp *rsp,
 	u32 len;
 	u16 status;
 
-	switch (rsgl->format & 0x3) {
+	switch (rsgl->format & 0xf) {
 	case NVME_SGL_FMT_INVALIDATE:
 		rsp->invalidate_rkey = get_unaligned_le32(rsgl->key);
 		rsp->req.flags |= NVMET_REQ_INVALIDATE_RKEY;
 		/* FALLTHRU */
-	case 0:
+	case NVME_SGL_FMT_ADDRESS:
 		break;
 	default:
 		pr_err("invalid SGL format: 0x%x\n", rsgl->format);
@@ -624,20 +624,20 @@ static u16 nvmet_rdma_map_sgl_seg(struct nvmet_rdma_rsp *rsp,
 
 	printk_ratelimited("WARNING: out of command SGLs not tested!\n");
 
-	if ((rsgl->format & 0x3) != 0) {
+	if ((rsgl->format & 0xf) == NVME_SGL_FMT_OFFSET) {
 		pr_err("invalid SGL format: 0x%x\n", rsgl->format);
 		return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 	}
 
 	for (i = 0; i < nr_sge; i++) {
 		switch (sgl->format >> 4) {
-		case NVME_SGL_FMT_DATA_DESC:
+		case NVME_KEY_SGL_FMT_DATA_DESC:
 			status = nvmet_rdma_map_sgl_data(rsp, sgl);
 			if (status)
 				return status;
 			break;
-		case NVME_SGL_FMT_SEG_DESC:
-		case NVME_SGL_FMT_LAST_SEG_DESC:
+		case NVME_KEY_SGL_FMT_SEG_DESC:
+		case NVME_KEY_SGL_FMT_LAST_SEG_DESC:
 			pr_err("indirect SGLs not supported!\n");
 			return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 		default:
@@ -657,15 +657,19 @@ static u16 nvmet_rdma_map_sgl(struct nvmet_rdma_rsp *rsp)
 	struct nvme_rsgl_desc *rsgl = &rsp->req.cmd->common.dptr.rsgl;
 
 	if ((rsgl->format >> 4) == NVME_SGL_FMT_DATA_DESC &&
-	    (rsgl->format & 0x3) == NVME_SGL_FMT_IN_CAPSULE)
+	    (rsgl->format & 0xf) == NVME_SGL_FMT_OFFSET)
 		return nvmet_rdma_map_inline_data(rsp);
 
+	if (unlikely(get_unaligned_le24(rsgl->length) == 0))
+		/* no data command */
+		return 0;
+
 	switch (rsgl->format >> 4) {
-	case NVME_SGL_FMT_DATA_DESC:
+	case NVME_KEY_SGL_FMT_DATA_DESC:
 		return nvmet_rdma_map_sgl_data(rsp, rsgl);
-	case NVME_SGL_FMT_LAST_SEG_DESC:
+	case NVME_KEY_SGL_FMT_LAST_SEG_DESC:
 		return nvmet_rdma_map_sgl_seg(rsp, rsgl, true);
-	case NVME_SGL_FMT_SEG_DESC:
+	case NVME_KEY_SGL_FMT_SEG_DESC:
 		return nvmet_rdma_map_sgl_seg(rsp, rsgl, false);
 	default:
 		pr_err("invalid SGL format: 0x%x\n", rsgl->format);
