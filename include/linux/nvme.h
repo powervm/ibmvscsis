@@ -315,22 +315,37 @@ enum nvme_opcode {
 	nvme_cmd_resv_release	= 0x15,
 };
 
-/* flag in the first two bit of nvme_(r)sgl_desc.format */
+/*
+ * Descriptor subtype - lower 4 bits of nvme_(r)sgl_desc identifier
+ *
+ * @NVME_SGL_FMT_ADDRESS:     absolute address of the data block
+ * @NVME_SGL_FMT_OFFSET:      relative offset of the in-capsule data block
+ * @NVME_SGL_FMT_INVALIDATE:  RDMA transport specific remote invalidation
+ *                            request subtype
+ */
 enum {
-	NVME_SGL_FMT_IN_CAPSULE		= 0x01,
-
-	/*
-	 * XXX: local extension, the actual flag for SEND WITH INVALIDATE
-	 * hasn't made it to the spec yet.
-	 */
-	NVME_SGL_FMT_INVALIDATE		= 0x02,
+	NVME_SGL_FMT_ADDRESS		= 0x00,
+	NVME_SGL_FMT_OFFSET		= 0x01,
+	NVME_SGL_FMT_INVALIDATE		= 0x0f,
 };
 
-/* value for the last 4 bits of nvme_(r)sgl_desc.format */
+/*
+ * Descriptor type - upper 4 bits of nvme_(r)sgl_desc identifier
+ *
+ * @NVME_SGL_FMT_DATA_DESC:             data block descriptor
+ * @NVME_SGL_FMT_SEG_DESC:              sgl segment descriptor
+ * @NVME_SGL_FMT_LAST_SEG_DESC:         last sgl segment descriptor
+ * @NVME_KEY_SGL_FMT_DATA_DESC:         keyed data block descriptor
+ * @NVME_KEY_SGL_FMT_SEG_DESC:          keyed sgl segment descriptor
+ * @NVME_KEY_SGL_FMT_LAST_SEG_DESC:     keyed last sgl segment descriptor
+ */
 enum {
 	NVME_SGL_FMT_DATA_DESC		= 0x00,
 	NVME_SGL_FMT_SEG_DESC		= 0x02,
 	NVME_SGL_FMT_LAST_SEG_DESC	= 0x03,
+	NVME_KEY_SGL_FMT_DATA_DESC	= 0x04,
+	NVME_KEY_SGL_FMT_SEG_DESC	= 0x05,
+	NVME_KEY_SGL_FMT_LAST_SEG_DESC	= 0x06,
 };
 
 struct nvme_sgl_desc {
