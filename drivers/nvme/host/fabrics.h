@@ -118,5 +118,6 @@ int nvmf_connect_io_queue(struct nvme_ctrl *ctrl, const char *subsysnqn,
 		uuid_le *hostsid, u16 cntlid, u16 qid);
 void nvmf_register_transport(struct nvmf_transport_ops *ops);
 void nvmf_unregister_transport(struct nvmf_transport_ops *ops);
+void nvmf_identify_attrs(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id);
 
 #endif /* _NVME_FABRICS_H */

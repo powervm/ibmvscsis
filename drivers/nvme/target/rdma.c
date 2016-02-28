@@ -129,10 +129,24 @@ static void nvmet_rdma_cmd_done(struct ib_cq *cq, struct ib_wc *wc);
 static void nvmet_rdma_read_data_done(struct ib_cq *cq, struct ib_wc *wc);
 static void nvmet_rdma_qp_event(struct ib_event *event, void *priv);
 static void nvmet_rdma_queue_response(struct nvmet_req *req);
+static void nvmet_rdma_identify_attrs(struct nvmet_ctrl *ctrl,
+				struct nvme_id_ctrl *id);
 
 struct nvmet_fabrics_ops nvmet_rdma_ops = {
 	.queue_response = nvmet_rdma_queue_response,
+	.identify_attrs = nvmet_rdma_identify_attrs,
 };
+
+static void nvmet_rdma_identify_attrs(struct nvmet_ctrl *ctrl,
+				struct nvme_id_ctrl *id)
+{
+	/* Maximum capsule size is sqe + single page of in-capsule data */
+	id->iocapsz = cpu_to_le32(NVMET_CMD_CAPSULE_SIZE / 16);
+	/* Currently we don't support in-capsule data offset */
+	id->icdoff = 0;
+	/* Currently we don't support SGLs in host memory */
+	id->sglprop = 0;
+}
 
 static inline bool nvmet_rdma_need_data_in(struct nvmet_req *req)
 {

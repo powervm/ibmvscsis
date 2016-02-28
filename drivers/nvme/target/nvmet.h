@@ -114,6 +114,8 @@ enum {
 struct nvmet_req;
 struct nvmet_fabrics_ops {
 	void (*queue_response)(struct nvmet_req *req);
+	void (*identify_attrs)(struct nvmet_ctrl *ctrl,
+			struct nvme_id_ctrl *id);
 };
 
 struct nvmet_req {

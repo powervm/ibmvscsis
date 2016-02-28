@@ -31,6 +31,20 @@ static LIST_HEAD(nvmf_transports);
 static DEFINE_MUTEX(nvmf_transports_mutex);
 
 /**
+ * nvmf_identify_attrs() -  Set fabrics identify controller attributes
+ * @ctrl:	Host NVMe controller instance which we got the identify
+ *              indormation.
+ * @id:         Identify controller layout we got from the controller
+ */
+void nvmf_identify_attrs(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id)
+{
+	ctrl->icdoff = le16_to_cpu(id->icdoff);
+	ctrl->iocapsz = le32_to_cpu(id->iocapsz);
+	ctrl->sglprop = le16_to_cpu(id->sglprop);
+}
+EXPORT_SYMBOL_GPL(nvmf_identify_attrs);
+
+/**
  * nvmf_reg_read32() -  NVMe Fabrics "Property Get" API function.
  * @ctrl:	Host NVMe controller instance maintaining the admin
  *		queue used to submit the property read command to

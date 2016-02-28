@@ -1781,6 +1781,7 @@ static const struct nvme_ctrl_ops nvme_rdma_ctrl_ops = {
 	.free_ctrl		= nvme_rdma_free_ctrl,
 	.delete_ctrl		= nvme_rdma_del_ctrl,
 	.get_subsysnqn		= nvme_rdma_get_subsysnqn,
+	.identify_attrs		= nvmf_identify_attrs,
 };
 
 static int nvme_rdma_create_ctrl(struct device *dev,

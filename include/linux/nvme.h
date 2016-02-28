@@ -160,7 +160,11 @@ struct nvme_id_ctrl {
 	__le16			acwu;
 	__u8			rsvd534[2];
 	__le32			sgls;
-	__u8			rsvd540[1508];
+	__u8			rsvd540[1252];
+	__le32			iocapsz;
+	__le16			icdoff;
+	__le16			sglprop;
+	__u8			rsvd1800[248];
 	struct nvme_id_power_state	psd[32];
 	__u8			vs[1024];
 };

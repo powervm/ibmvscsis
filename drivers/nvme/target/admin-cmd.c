@@ -160,6 +160,8 @@ static void nvmet_execute_identify_ctrl(struct nvmet_req *req)
 	id->psd[0].entry_lat = cpu_to_le32(0x10);
 	id->psd[0].exit_lat = cpu_to_le32(0x4);
 
+	req->ops->identify_attrs(ctrl, id);
+
 	status = nvmet_copy_to_sgl(req, id, sizeof(*id));
 
 	kfree(id);

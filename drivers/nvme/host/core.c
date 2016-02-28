@@ -927,6 +927,9 @@ int nvme_init_identify(struct nvme_ctrl *ctrl)
 		}
 	}
 
+	if (ctrl->ops->identify_attrs)
+		ctrl->ops->identify_attrs(ctrl, id);
+
 	kfree(id);
 	return 0;
 }

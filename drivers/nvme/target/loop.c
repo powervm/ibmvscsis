@@ -68,10 +68,24 @@ static LIST_HEAD(nvme_loop_ctrl_list);
 static DEFINE_MUTEX(nvme_loop_ctrl_mutex);
 
 static void nvme_loop_queue_response(struct nvmet_req *nvme_req);
+static void nvme_loop_identify_attrs(struct nvmet_ctrl *ctrl,
+				struct nvme_id_ctrl *id);
 
 struct nvmet_fabrics_ops nvme_loop_ops = {
 	.queue_response = nvme_loop_queue_response,
+	.identify_attrs = nvme_loop_identify_attrs,
 };
+
+static void nvme_loop_identify_attrs(struct nvmet_ctrl *ctrl,
+				struct nvme_id_ctrl *id)
+{
+	/* Maximum capsule size is only the sqe */
+	id->iocapsz = sizeof(struct nvme_command) / 16;
+	/* in-capsule data offset is irrelevant */
+	id->icdoff = 0;
+	/* SGLs in host memory are irrelevant at the moment */
+	id->sglprop = 0;
+}
 
 static inline int nvme_loop_queue_idx(struct nvme_loop_queue *queue)
 {

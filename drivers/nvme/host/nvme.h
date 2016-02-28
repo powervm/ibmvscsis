@@ -95,6 +95,9 @@ struct nvme_ctrl {
 	/* Fabrics only */
 	u16 cqsize;
 	u16 sqsize;
+	u32 iocapsz;
+	u16 icdoff;
+	u16 sglprop;
 };
 
 /*
@@ -131,6 +134,7 @@ struct nvme_ctrl_ops {
 	void (*free_ctrl)(struct nvme_ctrl *ctrl);
 	int (*delete_ctrl)(struct nvme_ctrl *ctrl);
 	const char *(*get_subsysnqn)(struct nvme_ctrl *ctrl);
+	void (*identify_attrs)(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id);
 };
 
 static inline bool nvme_ctrl_ready(struct nvme_ctrl *ctrl)
