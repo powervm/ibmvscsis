@@ -943,7 +943,7 @@ static int nvme_rdma_map_sg_inline(struct nvme_rdma_queue *queue,
 			sizeof(struct nvme_command),
 			ib_sg_dma_len(queue->device->dev, req->sg), 0,
 			(NVME_SGL_FMT_DATA_DESC << 4) |
-			NVME_SGL_FMT_IN_CAPSULE);
+			NVME_SGL_FMT_OFFSET);
 
 	req->inline_data = true;
 	req->num_sge++;
@@ -957,7 +957,7 @@ static int nvme_rdma_map_sg_single(struct nvme_rdma_queue *queue,
 			ib_sg_dma_address(queue->device->dev, req->sg),
 			ib_sg_dma_len(queue->device->dev, req->sg),
 			queue->device->mr->rkey,
-			NVME_SGL_FMT_DATA_DESC << 4);
+			NVME_KEY_SGL_FMT_DATA_DESC << 4);
 	return 0;
 }
 
@@ -994,7 +994,7 @@ static int nvme_rdma_map_sg_fr(struct nvme_rdma_queue *queue,
 		struct nvme_rdma_request *req, struct nvme_command *c,
 		int count)
 {
-	u8 format = NVME_SGL_FMT_DATA_DESC << 4;
+	u8 format = (NVME_KEY_SGL_FMT_DATA_DESC << 4) | NVME_SGL_FMT_INVALIDATE;
 	int nr;
 
 	nr = ib_map_mr_sg(req->mr, req->sg, count, PAGE_SIZE);
@@ -1018,14 +1018,6 @@ static int nvme_rdma_map_sg_fr(struct nvme_rdma_queue *queue,
 			     IB_ACCESS_REMOTE_WRITE;
 
 	req->need_inval = true;
-
-	/*
-	 * XXX: once SEND WITH INVALIDATE is in the standard we'll need
-	 * to check some CAPATTR or similar flag to see if the controller
-	 * actually supports it.  For now just use it unconditionally.
-	 */
-	if (1)
-		format |= NVME_SGL_FMT_INVALIDATE;
 
 	nvme_rdma_encode_sgl(&c->common.dptr.rsgl, req->mr->iova,
 			req->mr->length, req->mr->rkey, format);
