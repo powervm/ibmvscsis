@@ -546,7 +546,7 @@ static u16 nvmet_rdma_map_inline_data(struct nvmet_rdma_rsp *rsp)
 		return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 	if (!data) {
 		pr_err("invalid inline data offset!\n");
-		return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
+		return NVME_SC_SGL_INVALID_OFFSET | NVME_SC_DNR;
 	}
 
 	sg_init_one(&rsp->cmd->inline_sg, data,
@@ -578,8 +578,8 @@ static u16 nvmet_rdma_map_sgl_data(struct nvmet_rdma_rsp *rsp,
 	case NVME_SGL_FMT_ADDRESS:
 		break;
 	default:
-		pr_err("invalid SGL format: 0x%x\n", rsgl->format);
-		return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
+		pr_err("invalid keyed SGL subtype: %#x\n", rsgl->format & 0xf);
+		return NVME_SC_SGL_INVALID_SUBTYPE | NVME_SC_DNR;
 	}
 
 	len = get_unaligned_le24(rsgl->length);
@@ -625,8 +625,8 @@ static u16 nvmet_rdma_map_sgl_seg(struct nvmet_rdma_rsp *rsp,
 	printk_ratelimited("WARNING: out of command SGLs not tested!\n");
 
 	if ((rsgl->format & 0xf) == NVME_SGL_FMT_OFFSET) {
-		pr_err("invalid SGL format: 0x%x\n", rsgl->format);
-		return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
+		pr_err("invalid SGL subtype: 0x%x\n", rsgl->format & 0xf);
+		return NVME_SC_SGL_INVALID_SUBTYPE | NVME_SC_DNR;
 	}
 
 	for (i = 0; i < nr_sge; i++) {
