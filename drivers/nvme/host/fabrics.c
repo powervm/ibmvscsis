@@ -207,7 +207,6 @@ int nvmf_connect_admin_queue(struct nvme_ctrl *ctrl, const char *subsysnqn,
 	cmd.connect.opcode = nvme_fabrics_command;
 	cmd.connect.cctype = NVMF_CC_CONNECT;
 	cmd.connect.qid = 0;
-	cmd.connect.cqsize = cpu_to_le16(ctrl->cqsize);
 	cmd.connect.sqsize = cpu_to_le16(ctrl->sqsize);
 
 	data = kzalloc(sizeof(*data), GFP_KERNEL);
@@ -278,7 +277,6 @@ int nvmf_connect_io_queue(struct nvme_ctrl *ctrl, const char *subsysnqn,
 	cmd.connect.opcode = nvme_fabrics_command;
 	cmd.connect.cctype = NVMF_CC_CONNECT;
 	cmd.connect.qid = cpu_to_le16(qid);
-	cmd.connect.cqsize = cpu_to_le16(ctrl->cqsize);
 	cmd.connect.sqsize = cpu_to_le16(ctrl->sqsize);
 
 	data = kzalloc(sizeof(*data), GFP_KERNEL);

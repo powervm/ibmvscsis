@@ -689,12 +689,11 @@ struct nvmf_connect_command {
 	u8	sgl1[16];
 	__le16	recfmt;
 	__le16	qid;
-	__le16	cqsize;
 	__le16	sqsize;
 	u8	qattr;
-	u8	resv3[3];
+	u8	resv3;
 	__le32	kato;
-	u8	resv4[8];
+	u8	resv4[12];
 };
 
 struct nvmf_connect_data {

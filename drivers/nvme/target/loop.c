@@ -306,7 +306,7 @@ static int nvme_loop_configure_admin_queue(struct nvme_loop_ctrl *ctrl)
 		goto out_cleanup_queue;
 	}
 
-	ctrl->ctrl.cqsize = ctrl->ctrl.sqsize =
+	ctrl->ctrl.sqsize =
 		min_t(int, NVME_CAP_MQES(ctrl->cap) + 1, ctrl->ctrl.sqsize);
 
 	error = nvme_enable_ctrl(&ctrl->ctrl, ctrl->cap);
@@ -397,7 +397,6 @@ static int nvme_loop_create_ctrl(struct device *dev,
 
 	ret = -ENOMEM;
 
-	ctrl->ctrl.cqsize = opts->queue_size;
 	ctrl->ctrl.sqsize = opts->queue_size;
 
 	ctrl->queues = kcalloc(opts->nr_io_queues + 1,

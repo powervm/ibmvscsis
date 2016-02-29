@@ -163,7 +163,7 @@ static void nvmet_execute_connect(struct nvmet_req *req)
 			ctrl->cntlid, ctrl->hostnqn);
 	}
 
-	nvmet_cq_setup(ctrl, req->cq, qid, le16_to_cpu(c->cqsize));
+	nvmet_cq_setup(ctrl, req->cq, qid, le16_to_cpu(c->sqsize));
 	nvmet_sq_setup(ctrl, req->sq, qid, le16_to_cpu(c->sqsize));
 
 	mutex_unlock(&subsys->lock);

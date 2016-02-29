@@ -93,7 +93,6 @@ struct nvme_ctrl {
 	unsigned long quirks;
 
 	/* Fabrics only */
-	u16 cqsize;
 	u16 sqsize;
 	u32 iocapsz;
 	u16 icdoff;

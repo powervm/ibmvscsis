@@ -1582,7 +1582,7 @@ static int nvme_rdma_configure_admin_queue(struct nvme_rdma_ctrl *ctrl)
 		goto out_cleanup_queue;
 	}
 
-	ctrl->ctrl.cqsize = ctrl->ctrl.sqsize =
+	ctrl->ctrl.sqsize =
 		min_t(int, NVME_CAP_MQES(ctrl->cap) + 1, ctrl->ctrl.sqsize);
 
 	aqa = NVMF_AQ_DEPTH - 1;
@@ -1798,7 +1798,6 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	spin_lock_init(&ctrl->lock);
 
 	ctrl->queue_count = opts->nr_io_queues + 1; /* +1 for admin queue */
-	ctrl->ctrl.cqsize = opts->queue_size;
 	ctrl->ctrl.sqsize = opts->queue_size;
 	ctrl->tl_retry_count = opts->tl_retry_count;
 
