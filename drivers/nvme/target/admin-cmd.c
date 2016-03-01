@@ -19,7 +19,7 @@ static u16 nvmet_copy_to_sgl(struct nvmet_req *req, const void *buf,
 		size_t len)
 {
 	if (sg_copy_from_buffer(req->sg, req->sg_cnt, buf, len) != len)
-		return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
+		return NVME_SC_SGL_INVALID_DATA | NVME_SC_DNR;
 	return 0;
 }
 
