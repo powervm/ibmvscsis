@@ -146,6 +146,8 @@ static void nvmet_rdma_identify_attrs(struct nvmet_ctrl *ctrl,
 	id->icdoff = 0;
 	/* Currently we don't support SGLs in host memory */
 	id->sglprop = 0;
+	/* We support keyed sgls and in-capsule offset sgl */
+	id->sgls = cpu_to_le32(1 << 20 | 1 << 2);
 }
 
 static inline bool nvmet_rdma_need_data_in(struct nvmet_req *req)

@@ -85,6 +85,8 @@ static void nvme_loop_identify_attrs(struct nvmet_ctrl *ctrl,
 	id->icdoff = 0;
 	/* SGLs in host memory are irrelevant at the moment */
 	id->sglprop = 0;
+	/* We support SGLs, but nothing fancy */
+	id->sgls = cpu_to_le32((1 << 0));
 }
 
 static inline int nvme_loop_queue_idx(struct nvme_loop_queue *queue)

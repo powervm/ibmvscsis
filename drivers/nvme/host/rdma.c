@@ -1870,6 +1870,12 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 		goto out_cleanup_connect_q;
 	}
 
+	/* sanity check keyed sgls */
+	if (!(ctrl->ctrl.sgls & (1 << 20))) {
+		pr_err("Mandatory keyed sgls are not support\n");
+		goto out_cleanup_connect_q;
+	}
+
 	nvme_scan_namespaces(&ctrl->ctrl);
 
 	changed = nvme_rdma_change_ctrl_state(ctrl,

@@ -89,6 +89,7 @@ struct nvme_ctrl {
 	u8 event_limit;
 	u8 vwc;
 	u32 vs;
+	u32 sgls;
 	bool subsystem;
 	unsigned long quirks;
 

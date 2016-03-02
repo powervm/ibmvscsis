@@ -927,6 +927,8 @@ int nvme_init_identify(struct nvme_ctrl *ctrl)
 		}
 	}
 
+	ctrl->sgls = le32_to_cpu(id->sgls);
+
 	if (ctrl->ops->identify_attrs)
 		ctrl->ops->identify_attrs(ctrl, id);
 

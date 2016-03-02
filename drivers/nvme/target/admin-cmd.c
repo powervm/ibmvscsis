@@ -148,11 +148,6 @@ static void nvmet_execute_identify_ctrl(struct nvmet_req *req)
 	id->awupf = 0;
 
 	/*
-	 * We support SGLs, but nothing fancy.
-	 */
-	id->sgls = cpu_to_le32((1 << 0));
-
-	/*
 	 * Meh, we don't really support any power state.  Fake up the same
 	 * values that qemu does.
 	 */
