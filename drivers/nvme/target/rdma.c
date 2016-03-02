@@ -1059,16 +1059,14 @@ nvmet_rdma_parse_cm_connect_req(struct rdma_conn_param *conn,
 	if (le16_to_cpu(req->recfmt) != NVME_RDMA_CM_FMT_1_0)
 		return NVME_RDMA_CM_INVALID_RECFMT;
 
-	/* XXX: Looks like we don't care about the cntlid, hostsid */
-
 	queue->host_qid = le16_to_cpu(req->qid);
 
 	/*
-	 * req->sqsize corresponds to our recv queue size
-	 * req->cqsize corresponds to our send queue size
+	 * req->hsqsize corresponds to our recv queue size
+	 * req->hrqsize corresponds to our send queue size
 	 */
-	queue->recv_queue_size = le16_to_cpu(req->sqsize);
-	queue->send_queue_size = sq_factor * le16_to_cpu(req->cqsize);
+	queue->recv_queue_size = le16_to_cpu(req->hsqsize);
+	queue->send_queue_size = sq_factor * le16_to_cpu(req->hrqsize);
 
 	if (!queue->host_qid && queue->recv_queue_size > NVMF_AQ_DEPTH)
 		return NVME_RDMA_CM_INVALID_SQSIZE;
@@ -1205,7 +1203,7 @@ static int nvmet_rdma_cm_accept(struct rdma_cm_id *cm_id,
 	param.private_data = &priv;
 	param.private_data_len = sizeof(priv);
 	priv.recfmt = cpu_to_le16(NVME_RDMA_CM_FMT_1_0);
-	priv.rdmaqprxe = cpu_to_le16(queue->recv_queue_size);
+	priv.crqsize = cpu_to_le16(queue->recv_queue_size);
 
 	ret = rdma_accept(cm_id, &param);
 	if (ret)

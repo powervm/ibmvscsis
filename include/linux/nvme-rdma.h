@@ -36,31 +36,26 @@ enum nvme_rdma_cm_status {
  *
  * @recfmt:        format of the RDMA Private Data
  * @qid:           queue Identifier for the Admin or I/O Queue
- * @cqsize:        size of the Completion Queue to be created
- * @sqsize:        size of the Submission Queue to be created
- * @cntlid:        controller ID requested
- * @hostsid:       host session identifier that is used to identify
- *                 a host to NVM subsystem session uniquely to a host
+ * @hrqsize:       host receive queue size to be created
+ * @hsqsize:       host send queue size to be created
  */
 struct nvme_rdma_cm_req {
 	__le16		recfmt;
 	__le16		qid;
-	__le16		cqsize;
-	__le16		sqsize;
-	__le16		cntlid;
-	u8		rsvd[6];
-	uuid_le		hostsid;
+	__le16		hrqsize;
+	__le16		hsqsize;
+	u8		rsvd[24];
 };
 
 /**
  * struct nvme_rdma_cm_rep - rdma connect reply
  *
  * @recfmt:        format of the RDMA Private Data
- * @rdmaqprxe:     number of entries capsule reception
+ * @crqsize:       controller receive queue size
  */
 struct nvme_rdma_cm_rep {
 	__le16		recfmt;
-	__le16		rdmaqprxe;
+	__le16		crqsize;
 };
 
 /**

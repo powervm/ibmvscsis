@@ -1292,11 +1292,8 @@ static int nvme_rdma_route_resolved(struct nvme_rdma_queue *queue)
 
 	priv.recfmt = cpu_to_le16(NVME_RDMA_CM_FMT_1_0);
 	priv.qid = cpu_to_le16(nvme_rdma_queue_idx(queue));
-	priv.cqsize = cpu_to_le16(queue->queue_size);
-	priv.sqsize = cpu_to_le16(queue->queue_size);
-	memcpy(&priv.hostsid, &ctrl->hostsid, sizeof(uuid_le));
-	priv.cntlid = priv.qid ? cpu_to_le16(ctrl->cntlid) :
-				 cpu_to_le16(0xffff);
+	priv.hrqsize = cpu_to_le16(queue->queue_size);
+	priv.hsqsize = cpu_to_le16(queue->queue_size);
 
 	ret = rdma_connect(queue->cm_id, &param);
 	if (ret) {
