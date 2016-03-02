@@ -39,8 +39,8 @@ static DEFINE_MUTEX(nvmf_transports_mutex);
 void nvmf_identify_attrs(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id)
 {
 	ctrl->icdoff = le16_to_cpu(id->icdoff);
-	ctrl->iocapsz = le32_to_cpu(id->iocapsz);
-	ctrl->sglprop = le16_to_cpu(id->sglprop);
+	ctrl->ioccsz = le32_to_cpu(id->ioccsz);
+	ctrl->iorcsz = le32_to_cpu(id->iorcsz);
 }
 EXPORT_SYMBOL_GPL(nvmf_identify_attrs);
 

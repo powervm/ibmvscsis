@@ -80,11 +80,11 @@ static void nvme_loop_identify_attrs(struct nvmet_ctrl *ctrl,
 				struct nvme_id_ctrl *id)
 {
 	/* Maximum capsule size is only the sqe */
-	id->iocapsz = sizeof(struct nvme_command) / 16;
+	id->ioccsz = cpu_to_le32(sizeof(struct nvme_command) / 16);
+	/* Max response capsule size is cqe */
+	id->iorcsz = cpu_to_le32(sizeof(struct nvme_completion) / 16);
 	/* in-capsule data offset is irrelevant */
 	id->icdoff = 0;
-	/* SGLs in host memory are irrelevant at the moment */
-	id->sglprop = 0;
 	/* We support SGLs, but nothing fancy */
 	id->sgls = cpu_to_le32((1 << 0));
 }

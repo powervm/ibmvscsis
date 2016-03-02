@@ -95,9 +95,9 @@ struct nvme_ctrl {
 
 	/* Fabrics only */
 	u16 sqsize;
-	u32 iocapsz;
+	u32 ioccsz;
+	u32 iorcsz;
 	u16 icdoff;
-	u16 sglprop;
 };
 
 /*

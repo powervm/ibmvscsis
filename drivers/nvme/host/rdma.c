@@ -618,7 +618,7 @@ static int nvme_rdma_init_queue(struct nvme_rdma_ctrl *ctrl,
 	init_completion(&queue->cm_done);
 
 	if (idx > 0) {
-		queue->cmnd_capsule_len = ctrl->ctrl.iocapsz * 16;
+		queue->cmnd_capsule_len = ctrl->ctrl.ioccsz * 16;
 	} else {
 		queue->cmnd_capsule_len = sizeof(struct nvme_command);
 	}

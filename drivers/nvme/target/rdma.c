@@ -140,12 +140,12 @@ struct nvmet_fabrics_ops nvmet_rdma_ops = {
 static void nvmet_rdma_identify_attrs(struct nvmet_ctrl *ctrl,
 				struct nvme_id_ctrl *id)
 {
-	/* Maximum capsule size is sqe + single page of in-capsule data */
-	id->iocapsz = cpu_to_le32(NVMET_CMD_CAPSULE_SIZE / 16);
+	/* Max command capsule size is sqe + single page of in-capsule data */
+	id->ioccsz = cpu_to_le32(NVMET_CMD_CAPSULE_SIZE / 16);
+	/* Max response capsule size is cqe */
+	id->iorcsz = cpu_to_le32(sizeof(struct nvme_completion) / 16);
 	/* Currently we don't support in-capsule data offset */
 	id->icdoff = 0;
-	/* Currently we don't support SGLs in host memory */
-	id->sglprop = 0;
 	/* We support keyed sgls and in-capsule offset sgl */
 	id->sgls = cpu_to_le32(1 << 20 | 1 << 2);
 }
