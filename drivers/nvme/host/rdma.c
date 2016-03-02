@@ -1598,6 +1598,13 @@ static int nvme_rdma_configure_admin_queue(struct nvme_rdma_ctrl *ctrl)
 	if (error)
 		goto out_cleanup_queue;
 
+	ctrl->ctrl.max_hw_sectors =
+		(NVME_RDMA_MAX_SEGMENTS - 1) << (PAGE_SHIFT - 9);
+
+	error = nvme_init_identify(&ctrl->ctrl);
+	if (error)
+		goto out_cleanup_queue;
+
 	return 0;
 
 out_cleanup_queue:
@@ -1854,12 +1861,6 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	}
 
 	ret = nvme_rdma_connect_io_queues(ctrl);
-	if (ret)
-		goto out_cleanup_connect_q;
-
-	ctrl->ctrl.max_hw_sectors =
-		(NVME_RDMA_MAX_SEGMENTS - 1) << (PAGE_SHIFT - 9);
-	ret = nvme_init_identify(&ctrl->ctrl);
 	if (ret)
 		goto out_cleanup_connect_q;
 
