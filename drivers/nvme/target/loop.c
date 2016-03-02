@@ -87,6 +87,8 @@ static void nvme_loop_identify_attrs(struct nvmet_ctrl *ctrl,
 	id->icdoff = 0;
 	/* We support SGLs, but nothing fancy */
 	id->sgls = cpu_to_le32((1 << 0));
+	/* no enforcement soft-limit for maxcmd - pick arbitrary high value */
+	id->maxcmd = cpu_to_le16(NVMET_MAX_CMD);
 }
 
 static inline int nvme_loop_queue_idx(struct nvme_loop_queue *queue)
@@ -425,6 +427,14 @@ static int nvme_loop_create_ctrl(struct device *dev,
 	ret = nvme_loop_configure_admin_queue(ctrl);
 	if (ret)
 		goto out_free_queues;
+
+	if (opts->queue_size > ctrl->ctrl.maxcmd) {
+		/* warn if maxcmd is lower than queue_size */
+		dev_warn(ctrl->ctrl.dev,
+			"queue_size %zu > ctrl maxcmd %u, clamping down\n",
+			opts->queue_size, ctrl->ctrl.maxcmd);
+		opts->queue_size = ctrl->ctrl.maxcmd;
+	}
 
 	nr_io_queues = ctrl->queue_count - 1;
 	ret = nvme_set_queue_count(&ctrl->ctrl, &nr_io_queues);

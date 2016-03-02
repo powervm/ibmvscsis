@@ -98,6 +98,7 @@ struct nvme_ctrl {
 	u32 ioccsz;
 	u32 iorcsz;
 	u16 icdoff;
+	u16 maxcmd;
 };
 
 /*

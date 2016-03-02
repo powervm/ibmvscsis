@@ -187,6 +187,7 @@ void nvmet_ns_free(struct nvmet_ns *ns);
 #define NVMET_CMD_CAPSULE_SIZE	(sizeof(struct nvme_command) + PAGE_SIZE)
 #define NVMET_QUEUE_SIZE	1024
 #define NVMET_NR_QUEUES		64
+#define NVMET_MAX_CMD		NVMET_QUEUE_SIZE
 
 int __init nvmet_init_configfs(void);
 void __exit nvmet_exit_configfs(void);

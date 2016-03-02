@@ -1876,6 +1876,14 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 		goto out_cleanup_connect_q;
 	}
 
+	if (opts->queue_size > ctrl->ctrl.maxcmd) {
+		/* warn if maxcmd is lower than queue_size */
+		dev_warn(ctrl->ctrl.dev,
+			"queue_size %zu > ctrl maxcmd %u, clamping down\n",
+			opts->queue_size, ctrl->ctrl.maxcmd);
+		opts->queue_size = ctrl->ctrl.maxcmd;
+	}
+
 	nvme_scan_namespaces(&ctrl->ctrl);
 
 	changed = nvme_rdma_change_ctrl_state(ctrl,

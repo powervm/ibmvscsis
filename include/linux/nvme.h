@@ -146,7 +146,7 @@ struct nvme_id_ctrl {
 	__u8			rsvd270[242];
 	__u8			sqes;
 	__u8			cqes;
-	__u8			rsvd514[2];
+	__le16			maxcmd;
 	__le32			nn;
 	__le16			oncs;
 	__le16			fuses;
