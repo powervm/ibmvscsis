@@ -313,6 +313,13 @@ static int nvme_loop_configure_admin_queue(struct nvme_loop_ctrl *ctrl)
 	if (error)
 		goto out_cleanup_queue;
 
+	ctrl->ctrl.max_hw_sectors =
+		(NVME_LOOP_MAX_SEGMENTS - 1) << (PAGE_SHIFT - 9);
+
+	error = nvme_init_identify(&ctrl->ctrl);
+	if (error)
+		goto out_cleanup_queue;
+
 	return 0;
 
 out_cleanup_queue:
@@ -368,6 +375,7 @@ static const struct nvme_ctrl_ops nvme_loop_ctrl_ops = {
 	.free_ctrl		= nvme_loop_free_ctrl,
 	.delete_ctrl		= nvme_loop_del_ctrl,
 	.get_subsysnqn		= nvme_loop_get_subsysnqn,
+	.identify_attrs		= nvmf_identify_attrs,
 };
 
 static int nvme_loop_create_ctrl(struct device *dev,
@@ -456,13 +464,6 @@ static int nvme_loop_create_ctrl(struct device *dev,
 		if (ret)
 			goto out_cleanup_connect_q;
 	}
-
-	ctrl->ctrl.max_hw_sectors =
-		(NVME_LOOP_MAX_SEGMENTS - 1) << (PAGE_SHIFT - 9);
-
-	ret = nvme_init_identify(&ctrl->ctrl);
-	if (ret)
-		goto out_cleanup_connect_q;
 
 	nvme_scan_namespaces(&ctrl->ctrl);
 
