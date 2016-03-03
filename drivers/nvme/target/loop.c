@@ -362,6 +362,7 @@ static int nvme_loop_del_ctrl(struct nvme_ctrl *nctrl)
 }
 
 static const struct nvme_ctrl_ops nvme_loop_ctrl_ops = {
+	.name			= "loop",
 	.module			= THIS_MODULE,
 	.reg_read32		= nvmf_reg_read32,
 	.reg_read64		= nvmf_reg_read64,

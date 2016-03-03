@@ -1134,6 +1134,16 @@ static ssize_t nvme_sysfs_delete(struct device *dev,
 }
 static DEVICE_ATTR(delete_controller, S_IWUSR, NULL, nvme_sysfs_delete);
 
+static ssize_t nvme_sysfs_show_transport(struct device *dev,
+					 struct device_attribute *attr,
+					 char *buf)
+{
+	struct nvme_ctrl *ctrl = dev_get_drvdata(dev);
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", ctrl->ops->name);
+}
+static DEVICE_ATTR(transport, S_IRUGO, nvme_sysfs_show_transport, NULL);
+
 static ssize_t nvme_sysfs_show_subsysnqn(struct device *dev,
 					 struct device_attribute *attr,
 					 char *buf)
@@ -1151,6 +1161,7 @@ static struct attribute *nvme_dev_attrs[] = {
 	&dev_attr_serial.attr,
 	&dev_attr_firmware_rev.attr,
 	&dev_attr_delete_controller.attr,
+	&dev_attr_transport.attr,
 	&dev_attr_subsysnqn.attr,
 	&dev_attr_cntlid.attr,
 	NULL
