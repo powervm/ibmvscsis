@@ -74,7 +74,10 @@ struct nvmf_ctrl_options {
 	unsigned		mask;
 	char			*transport;
 	char			*subsysnqn;
-	struct sockaddr_in	ipaddr;
+	union {
+		struct sockaddr addr;
+		struct sockaddr_in ipaddr;
+	};
 	size_t			queue_size;
 	unsigned int		nr_io_queues;
 	unsigned short		tl_retry_count;
@@ -121,5 +124,6 @@ void nvmf_unregister_transport(struct nvmf_transport_ops *ops);
 void nvmf_identify_attrs(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id);
 void nvmf_free_options(struct nvmf_ctrl_options *opts);
 const char *nvmf_get_subsysnqn(struct nvme_ctrl *ctrl);
+int nvmf_get_address(struct nvme_ctrl *ctrl, char *buf, int size);
 
 #endif /* _NVME_FABRICS_H */

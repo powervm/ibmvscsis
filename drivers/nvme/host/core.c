@@ -1155,6 +1155,16 @@ static ssize_t nvme_sysfs_show_subsysnqn(struct device *dev,
 }
 static DEVICE_ATTR(subsysnqn, S_IRUGO, nvme_sysfs_show_subsysnqn, NULL);
 
+static ssize_t nvme_sysfs_show_address(struct device *dev,
+					 struct device_attribute *attr,
+					 char *buf)
+{
+	struct nvme_ctrl *ctrl = dev_get_drvdata(dev);
+
+	return ctrl->ops->get_address(ctrl, buf, PAGE_SIZE);
+}
+static DEVICE_ATTR(address, S_IRUGO, nvme_sysfs_show_address, NULL);
+
 static struct attribute *nvme_dev_attrs[] = {
 	&dev_attr_reset_controller.attr,
 	&dev_attr_model.attr,
@@ -1163,6 +1173,7 @@ static struct attribute *nvme_dev_attrs[] = {
 	&dev_attr_delete_controller.attr,
 	&dev_attr_transport.attr,
 	&dev_attr_subsysnqn.attr,
+	&dev_attr_address.attr,
 	&dev_attr_cntlid.attr,
 	NULL
 };
@@ -1180,6 +1191,11 @@ static umode_t nvme_dev_attrs_are_visible(struct kobject *kobj,
 
 	if (a == &dev_attr_subsysnqn.attr) {
 		if (!ctrl->ops->get_subsysnqn)
+			return 0;
+	}
+
+	if (a == &dev_attr_address.attr) {
+		if (!ctrl->ops->get_address)
 			return 0;
 	}
 

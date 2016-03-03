@@ -138,6 +138,7 @@ struct nvme_ctrl_ops {
 	void (*free_ctrl)(struct nvme_ctrl *ctrl);
 	int (*delete_ctrl)(struct nvme_ctrl *ctrl);
 	const char *(*get_subsysnqn)(struct nvme_ctrl *ctrl);
+	int (*get_address)(struct nvme_ctrl *ctrl, char *buf, int size);
 	void (*identify_attrs)(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id);
 };
 

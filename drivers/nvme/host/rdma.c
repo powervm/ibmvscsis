@@ -127,10 +127,6 @@ struct nvme_rdma_ctrl {
 
 	int			reconnect_delay;
 	struct delayed_work	reconnect_work;
-	union {
-		struct sockaddr		addr;
-		struct sockaddr_in	in_addr;
-	};
 	enum nvme_rdma_ctrl_state state;
 
 	struct list_head	list;
@@ -632,7 +628,7 @@ static int nvme_rdma_init_queue(struct nvme_rdma_ctrl *ctrl,
 	}
 
 	queue->cm_error = -ETIMEDOUT;
-	ret = rdma_resolve_addr(queue->cm_id, NULL, &ctrl->addr,
+	ret = rdma_resolve_addr(queue->cm_id, NULL, &ctrl->ctrl.opts->addr,
 			NVME_RDMA_CONNECT_TIMEOUT_MS);
 	if (ret) {
 		dev_info(ctrl->ctrl.dev,
@@ -1759,6 +1755,7 @@ static const struct nvme_ctrl_ops nvme_rdma_ctrl_ops = {
 	.free_ctrl		= nvme_rdma_free_ctrl,
 	.delete_ctrl		= nvme_rdma_del_ctrl,
 	.get_subsysnqn		= nvmf_get_subsysnqn,
+	.get_address		= nvmf_get_address,
 	.identify_attrs		= nvmf_identify_attrs,
 };
 
@@ -1776,7 +1773,6 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	ctrl->state = NVME_RDMA_CTRL_CONNECTING;
 	INIT_LIST_HEAD(&ctrl->list);
 	uuid_le_gen(&ctrl->hostsid);
-	memcpy(&ctrl->in_addr, &opts->ipaddr, sizeof(ctrl->in_addr));
 
 	ret = nvme_init_ctrl(&ctrl->ctrl, dev, &nvme_rdma_ctrl_ops,
 				0 /* no quirks, we're perfect! */);
@@ -1878,7 +1874,7 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	WARN_ON_ONCE(!changed);
 
 	pr_info("new ctrl: \"%s\" (%pISp)\n",
-		ctrl->ctrl.opts->subsysnqn, &ctrl->addr);
+		ctrl->ctrl.opts->subsysnqn, &ctrl->ctrl.opts->addr);
 
 	mutex_lock(&nvme_rdma_ctrl_mutex);
 	list_add_tail(&ctrl->list, &nvme_rdma_ctrl_list);

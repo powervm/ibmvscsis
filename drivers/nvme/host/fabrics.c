@@ -31,6 +31,38 @@ static LIST_HEAD(nvmf_transports);
 static DEFINE_MUTEX(nvmf_transports_mutex);
 
 /**
+ * nvmf_get_address() -  Get address/port
+ * @ctrl:	Host NVMe controller instance which we got the address
+ * @buf:	OUTPUT parameter that will contain the address/port
+ * @size:	buffer size
+ */
+int nvmf_get_address(struct nvme_ctrl *ctrl, char *buf, int size)
+{
+	struct sockaddr *addr = &ctrl->opts->addr;
+	int count = 0;
+
+	switch (addr->sa_family) {
+	case AF_INET:
+	{
+		struct sockaddr_in *in_addr = (struct sockaddr_in *)addr;
+		int port = ntohs(in_addr->sin_port);
+
+		count = snprintf(buf, size, "ipadd=%pIS,port=%d\n", addr, port);
+		break;
+	}
+	case AF_INET6:
+	case AF_IB:
+		/* FALLTHRU */
+	default:
+		/* XXX: not supported yet */
+		break;
+	}
+
+	return count;
+}
+EXPORT_SYMBOL_GPL(nvmf_get_address);
+
+/**
  * nvmf_get_subsysnqn() - Get subsystem NQN
  * @ctrl:	Host NVMe controller instance which we got the NQN
  */
