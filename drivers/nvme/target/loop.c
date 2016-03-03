@@ -34,7 +34,6 @@ struct nvme_loop_ctrl {
 	struct blk_mq_tag_set	admin_tag_set;
 
 	uuid_le			hostsid;
-	u16			cntlid;
 	char			*subsysnqn;
 
 	struct list_head	list;
@@ -299,7 +298,7 @@ static int nvme_loop_configure_admin_queue(struct nvme_loop_ctrl *ctrl)
 	}
 
 	error = nvmf_connect_admin_queue(&ctrl->ctrl, ctrl->subsysnqn,
-			&ctrl->hostsid, &ctrl->cntlid);
+			&ctrl->hostsid, &ctrl->ctrl.cntlid);
 	if (error)
 		goto out_cleanup_queue;
 
@@ -472,7 +471,7 @@ static int nvme_loop_create_ctrl(struct device *dev,
 
 	for (i = 1; i < ctrl->queue_count; i++) {
 		ret = nvmf_connect_io_queue(&ctrl->ctrl, ctrl->subsysnqn,
-				&ctrl->hostsid, ctrl->cntlid, i);
+				&ctrl->hostsid, ctrl->ctrl.cntlid, i);
 		if (ret)
 			goto out_cleanup_connect_q;
 	}

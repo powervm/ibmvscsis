@@ -139,7 +139,6 @@ struct nvme_rdma_ctrl {
 	struct nvme_rdma_device	*device;
 
 	uuid_le			hostsid;
-	u16			cntlid;
 	char			*subsysnqn;
 
 	u64			cap;
@@ -700,7 +699,7 @@ static int nvme_rdma_connect_io_queues(struct nvme_rdma_ctrl *ctrl)
 
 	for (i = 1; i < ctrl->queue_count; i++) {
 		ret = nvmf_connect_io_queue(&ctrl->ctrl, ctrl->subsysnqn,
-				&ctrl->hostsid, ctrl->cntlid, i);
+				&ctrl->hostsid, ctrl->ctrl.cntlid, i);
 		if (ret)
 			break;
 	}
@@ -784,7 +783,7 @@ static void nvme_rdma_reconnect_ctrl_work(struct work_struct *work)
 
 	/* XXX: new connect - we should do a reconnect */
 	ret = nvmf_connect_admin_queue(&ctrl->ctrl, ctrl->subsysnqn,
-				&ctrl->hostsid, &ctrl->cntlid);
+				&ctrl->hostsid, &ctrl->ctrl.cntlid);
 	if (ret)
 		goto stop_admin_q;
 
@@ -1568,7 +1567,7 @@ static int nvme_rdma_configure_admin_queue(struct nvme_rdma_ctrl *ctrl)
 	}
 
 	error = nvmf_connect_admin_queue(&ctrl->ctrl, ctrl->subsysnqn,
-				&ctrl->hostsid, &ctrl->cntlid);
+				&ctrl->hostsid, &ctrl->ctrl.cntlid);
 	if (error)
 		goto out_cleanup_queue;
 
