@@ -737,9 +737,9 @@ static void nvme_rdma_destroy_admin_queue(struct nvme_rdma_ctrl *ctrl)
 	nvme_rdma_free_queue(&ctrl->queues[0]);
 }
 
-static void nvme_rdma_free_ctrl(struct nvme_ctrl *arg)
+static void nvme_rdma_free_ctrl(struct nvme_ctrl *nctrl)
 {
-	struct nvme_rdma_ctrl *ctrl = to_rdma_ctrl(arg);
+	struct nvme_rdma_ctrl *ctrl = to_rdma_ctrl(nctrl);
 
 	if (list_empty(&ctrl->list))
 		goto free_ctrl;
@@ -753,6 +753,7 @@ static void nvme_rdma_free_ctrl(struct nvme_ctrl *arg)
 	nvme_rdma_dev_put(ctrl->device);
 	kfree(ctrl->queues);
 	kfree(ctrl->subsysnqn);
+	nvmf_free_options(nctrl->opts);
 free_ctrl:
 	kfree(ctrl);
 }
@@ -1776,6 +1777,7 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	ctrl = kzalloc(sizeof(*ctrl), GFP_KERNEL);
 	if (!ctrl)
 		return -ENOMEM;
+	ctrl->ctrl.opts = opts;
 	ctrl->state = NVME_RDMA_CTRL_CONNECTING;
 	INIT_LIST_HEAD(&ctrl->list);
 	uuid_le_gen(&ctrl->hostsid);

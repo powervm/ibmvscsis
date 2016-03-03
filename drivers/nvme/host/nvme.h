@@ -100,6 +100,7 @@ struct nvme_ctrl {
 	u32 iorcsz;
 	u16 icdoff;
 	u16 maxcmd;
+	struct nvmf_ctrl_options *opts;
 };
 
 /*

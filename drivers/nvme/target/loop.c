@@ -269,6 +269,7 @@ static void nvme_loop_free_ctrl(struct nvme_ctrl *nctrl)
 	nvme_loop_destroy_admin_queue(ctrl);
 	kfree(ctrl->queues);
 	kfree(ctrl->subsysnqn);
+	nvmf_free_options(nctrl->opts);
 free_ctrl:
 	kfree(ctrl);
 }
@@ -390,6 +391,7 @@ static int nvme_loop_create_ctrl(struct device *dev,
 	ctrl = kzalloc(sizeof(*ctrl), GFP_KERNEL);
 	if (!ctrl)
 		return -ENOMEM;
+	ctrl->ctrl.opts = opts;
 	INIT_LIST_HEAD(&ctrl->list);
 	uuid_le_gen(&ctrl->hostsid);
 

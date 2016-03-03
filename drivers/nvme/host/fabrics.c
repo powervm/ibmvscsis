@@ -522,6 +522,14 @@ static int nvmf_check_allowed_opts(struct nvmf_ctrl_options *opts,
 	return 0;
 }
 
+void nvmf_free_options(struct nvmf_ctrl_options *opts)
+{
+	kfree(opts->transport);
+	kfree(opts->subsysnqn);
+	kfree(opts);
+}
+EXPORT_SYMBOL_GPL(nvmf_free_options);
+
 #define NVMF_REQUIRED_OPTS	(NVMF_OPT_TRANSPORT | NVMF_OPT_NQN)
 
 static ssize_t
@@ -567,8 +575,10 @@ nvmf_create_ctrl(struct device *dev, struct device_attribute *attr,
 		goto out_unlock;
 
 	ret = ops->create_ctrl(dev, opts);
-	if (!ret)
-		ret = count;
+	if (ret)
+		goto out_unlock;
+	mutex_unlock(&nvmf_transports_mutex);
+	return count;
 
 out_unlock:
 	mutex_unlock(&nvmf_transports_mutex);
