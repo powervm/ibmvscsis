@@ -1178,6 +1178,11 @@ static struct attribute *nvme_dev_attrs[] = {
 	NULL
 };
 
+#define CHECK_ATTR(ctrl, a, name)		\
+	if ((a) == &dev_attr_##name.attr &&	\
+	    !(ctrl)->ops->get_##name)		\
+		return 0
+
 static umode_t nvme_dev_attrs_are_visible(struct kobject *kobj,
 		struct attribute *a, int n)
 {
@@ -1189,15 +1194,8 @@ static umode_t nvme_dev_attrs_are_visible(struct kobject *kobj,
 			return 0;
 	}
 
-	if (a == &dev_attr_subsysnqn.attr) {
-		if (!ctrl->ops->get_subsysnqn)
-			return 0;
-	}
-
-	if (a == &dev_attr_address.attr) {
-		if (!ctrl->ops->get_address)
-			return 0;
-	}
+	CHECK_ATTR(ctrl, a, subsysnqn);
+	CHECK_ATTR(ctrl, a, address);
 
 	return a->mode;
 }
