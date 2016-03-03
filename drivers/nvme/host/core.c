@@ -903,6 +903,7 @@ int nvme_init_identify(struct nvme_ctrl *ctrl)
 	}
 
 	ctrl->oncs = le16_to_cpup(&id->oncs);
+	ctrl->cntlid = le16_to_cpup(&id->cntlid);
 	atomic_set(&ctrl->abort_limit, id->acl + 1);
 	ctrl->vwc = id->vwc;
 	memcpy(ctrl->serial, id->sn, sizeof(id->sn));
@@ -1098,7 +1099,7 @@ static const struct attribute_group nvme_ns_attr_group = {
 	.is_visible	= nvme_ns_attrs_are_visible,
 };
 
-#define nvme_show_function(field)						\
+#define nvme_show_str_function(field)						\
 static ssize_t  field##_show(struct device *dev,				\
 			    struct device_attribute *attr, char *buf)		\
 {										\
@@ -1107,9 +1108,19 @@ static ssize_t  field##_show(struct device *dev,				\
 }										\
 static DEVICE_ATTR(field, S_IRUGO, field##_show, NULL);
 
-nvme_show_function(model);
-nvme_show_function(serial);
-nvme_show_function(firmware_rev);
+#define nvme_show_int_function(field)						\
+static ssize_t  field##_show(struct device *dev,				\
+			    struct device_attribute *attr, char *buf)		\
+{										\
+        struct nvme_ctrl *ctrl = dev_get_drvdata(dev);				\
+        return sprintf(buf, "%d\n", ctrl->field);				\
+}										\
+static DEVICE_ATTR(field, S_IRUGO, field##_show, NULL);
+
+nvme_show_str_function(model);
+nvme_show_str_function(serial);
+nvme_show_str_function(firmware_rev);
+nvme_show_int_function(cntlid);
 
 static ssize_t nvme_sysfs_delete(struct device *dev,
 				struct device_attribute *attr, const char *buf,
@@ -1146,6 +1157,7 @@ static struct attribute *nvme_dev_attrs[] = {
 	&dev_attr_firmware_rev.attr,
 	&dev_attr_delete_controller.attr,
 	&dev_attr_subsysnqn.attr,
+	&dev_attr_cntlid.attr,
 	NULL
 };
 
