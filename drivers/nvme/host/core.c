@@ -1139,14 +1139,9 @@ static ssize_t nvme_sysfs_show_subsysnqn(struct device *dev,
 					 char *buf)
 {
 	struct nvme_ctrl *ctrl = dev_get_drvdata(dev);
-	ssize_t count = 0;
 
-	if (ctrl->ops->get_subsysnqn) {
-		count = snprintf(buf, PAGE_SIZE, "%s\n",
-				 ctrl->ops->get_subsysnqn(ctrl));
-	}
-
-	return count;
+	return snprintf(buf, PAGE_SIZE, "%s\n",
+			ctrl->ops->get_subsysnqn(ctrl));
 }
 static DEVICE_ATTR(subsysnqn, S_IRUGO, nvme_sysfs_show_subsysnqn, NULL);
 

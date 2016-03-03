@@ -120,5 +120,6 @@ void nvmf_register_transport(struct nvmf_transport_ops *ops);
 void nvmf_unregister_transport(struct nvmf_transport_ops *ops);
 void nvmf_identify_attrs(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id);
 void nvmf_free_options(struct nvmf_ctrl_options *opts);
+const char *nvmf_get_subsysnqn(struct nvme_ctrl *ctrl);
 
 #endif /* _NVME_FABRICS_H */

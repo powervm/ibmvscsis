@@ -34,7 +34,6 @@ struct nvme_loop_ctrl {
 	struct blk_mq_tag_set	admin_tag_set;
 
 	uuid_le			hostsid;
-	char			*subsysnqn;
 
 	struct list_head	list;
 	u64			cap;
@@ -268,7 +267,6 @@ static void nvme_loop_free_ctrl(struct nvme_ctrl *nctrl)
 	blk_mq_free_tag_set(&ctrl->tag_set);
 	nvme_loop_destroy_admin_queue(ctrl);
 	kfree(ctrl->queues);
-	kfree(ctrl->subsysnqn);
 	nvmf_free_options(nctrl->opts);
 free_ctrl:
 	kfree(ctrl);
@@ -298,7 +296,8 @@ static int nvme_loop_configure_admin_queue(struct nvme_loop_ctrl *ctrl)
 		goto out_free_tagset;
 	}
 
-	error = nvmf_connect_admin_queue(&ctrl->ctrl, ctrl->subsysnqn,
+	error = nvmf_connect_admin_queue(&ctrl->ctrl,
+			ctrl->ctrl.opts->subsysnqn,
 			&ctrl->hostsid, &ctrl->ctrl.cntlid);
 	if (error)
 		goto out_cleanup_queue;
@@ -362,13 +361,6 @@ static int nvme_loop_del_ctrl(struct nvme_ctrl *nctrl)
 	return 0;
 }
 
-static const char *nvme_loop_get_subsysnqn(struct nvme_ctrl *nctrl)
-{
-	struct nvme_loop_ctrl *ctrl = to_loop_ctrl(nctrl);
-
-	return ctrl->subsysnqn;
-}
-
 static const struct nvme_ctrl_ops nvme_loop_ctrl_ops = {
 	.module			= THIS_MODULE,
 	.reg_read32		= nvmf_reg_read32,
@@ -378,7 +370,7 @@ static const struct nvme_ctrl_ops nvme_loop_ctrl_ops = {
 	.reset_ctrl		= nvme_loop_reset_ctrl,
 	.free_ctrl		= nvme_loop_free_ctrl,
 	.delete_ctrl		= nvme_loop_del_ctrl,
-	.get_subsysnqn		= nvme_loop_get_subsysnqn,
+	.get_subsysnqn		= nvmf_get_subsysnqn,
 	.identify_attrs		= nvmf_identify_attrs,
 };
 
@@ -399,12 +391,6 @@ static int nvme_loop_create_ctrl(struct device *dev,
 				0 /* no quirks, we're perfect! */);
 	if (ret)
 		goto out_put_ctrl;
-
-	ctrl->subsysnqn = kstrdup(opts->subsysnqn, GFP_KERNEL);
-	if (!ctrl->subsysnqn) {
-		ret = -ENOMEM;
-		goto out_uninit_ctrl;
-	}
 
 	spin_lock_init(&ctrl->lock);
 
@@ -472,7 +458,8 @@ static int nvme_loop_create_ctrl(struct device *dev,
 	}
 
 	for (i = 1; i < ctrl->queue_count; i++) {
-		ret = nvmf_connect_io_queue(&ctrl->ctrl, ctrl->subsysnqn,
+		ret = nvmf_connect_io_queue(&ctrl->ctrl,
+				ctrl->ctrl.opts->subsysnqn,
 				&ctrl->hostsid, ctrl->ctrl.cntlid, i);
 		if (ret)
 			goto out_cleanup_connect_q;
@@ -480,7 +467,7 @@ static int nvme_loop_create_ctrl(struct device *dev,
 
 	nvme_scan_namespaces(&ctrl->ctrl);
 
-	pr_info("new ctrl: \"%s\"\n", ctrl->subsysnqn);
+	pr_info("new ctrl: \"%s\"\n", ctrl->ctrl.opts->subsysnqn);
 
 	mutex_lock(&nvme_loop_ctrl_mutex);
 	list_add_tail(&ctrl->list, &nvme_loop_ctrl_list);

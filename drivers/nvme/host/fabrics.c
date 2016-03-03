@@ -31,6 +31,16 @@ static LIST_HEAD(nvmf_transports);
 static DEFINE_MUTEX(nvmf_transports_mutex);
 
 /**
+ * nvmf_get_subsysnqn() - Get subsystem NQN
+ * @ctrl:	Host NVMe controller instance which we got the NQN
+ */
+const char *nvmf_get_subsysnqn(struct nvme_ctrl *ctrl)
+{
+	return ctrl->opts->subsysnqn;
+}
+EXPORT_SYMBOL_GPL(nvmf_get_subsysnqn);
+
+/**
  * nvmf_identify_attrs() -  Set fabrics identify controller attributes
  * @ctrl:	Host NVMe controller instance which we got the identify
  *              indormation.

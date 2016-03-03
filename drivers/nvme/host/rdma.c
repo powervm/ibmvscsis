@@ -139,7 +139,6 @@ struct nvme_rdma_ctrl {
 	struct nvme_rdma_device	*device;
 
 	uuid_le			hostsid;
-	char			*subsysnqn;
 
 	u64			cap;
 
@@ -698,7 +697,8 @@ static int nvme_rdma_connect_io_queues(struct nvme_rdma_ctrl *ctrl)
 	int i, ret = 0;
 
 	for (i = 1; i < ctrl->queue_count; i++) {
-		ret = nvmf_connect_io_queue(&ctrl->ctrl, ctrl->subsysnqn,
+		ret = nvmf_connect_io_queue(&ctrl->ctrl,
+				ctrl->ctrl.opts->subsysnqn,
 				&ctrl->hostsid, ctrl->ctrl.cntlid, i);
 		if (ret)
 			break;
@@ -752,7 +752,6 @@ static void nvme_rdma_free_ctrl(struct nvme_ctrl *nctrl)
 	blk_mq_free_tag_set(&ctrl->tag_set);
 	nvme_rdma_dev_put(ctrl->device);
 	kfree(ctrl->queues);
-	kfree(ctrl->subsysnqn);
 	nvmf_free_options(nctrl->opts);
 free_ctrl:
 	kfree(ctrl);
@@ -783,7 +782,8 @@ static void nvme_rdma_reconnect_ctrl_work(struct work_struct *work)
 	blk_mq_start_stopped_hw_queues(ctrl->ctrl.admin_q, true);
 
 	/* XXX: new connect - we should do a reconnect */
-	ret = nvmf_connect_admin_queue(&ctrl->ctrl, ctrl->subsysnqn,
+	ret = nvmf_connect_admin_queue(&ctrl->ctrl,
+				ctrl->ctrl.opts->subsysnqn,
 				&ctrl->hostsid, &ctrl->ctrl.cntlid);
 	if (ret)
 		goto stop_admin_q;
@@ -1567,7 +1567,8 @@ static int nvme_rdma_configure_admin_queue(struct nvme_rdma_ctrl *ctrl)
 		goto out_put_dev;
 	}
 
-	error = nvmf_connect_admin_queue(&ctrl->ctrl, ctrl->subsysnqn,
+	error = nvmf_connect_admin_queue(&ctrl->ctrl,
+				ctrl->ctrl.opts->subsysnqn,
 				&ctrl->hostsid, &ctrl->ctrl.cntlid);
 	if (error)
 		goto out_cleanup_queue;
@@ -1747,13 +1748,6 @@ static int nvme_rdma_reset_ctrl(struct nvme_ctrl *nctrl)
 	return 0;
 }
 
-static const char *nvme_rdma_get_subsysnqn(struct nvme_ctrl *nctrl)
-{
-	struct nvme_rdma_ctrl *ctrl = to_rdma_ctrl(nctrl);
-
-	return ctrl->subsysnqn;
-}
-
 static const struct nvme_ctrl_ops nvme_rdma_ctrl_ops = {
 	.module			= THIS_MODULE,
 	.reg_read32		= nvmf_reg_read32,
@@ -1763,7 +1757,7 @@ static const struct nvme_ctrl_ops nvme_rdma_ctrl_ops = {
 	.reset_ctrl		= nvme_rdma_reset_ctrl,
 	.free_ctrl		= nvme_rdma_free_ctrl,
 	.delete_ctrl		= nvme_rdma_del_ctrl,
-	.get_subsysnqn		= nvme_rdma_get_subsysnqn,
+	.get_subsysnqn		= nvmf_get_subsysnqn,
 	.identify_attrs		= nvmf_identify_attrs,
 };
 
@@ -1788,12 +1782,6 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	if (ret)
 		goto out_put_ctrl;
 
-	ctrl->subsysnqn = kstrdup(opts->subsysnqn, GFP_KERNEL);
-	if (!ctrl->subsysnqn) {
-		ret = -ENOMEM;
-		goto out_uninit_ctrl;
-	}
-
 	/* XXX: Should be configurable */
 	ctrl->reconnect_delay = NVME_RDMA_DEF_RECONNECT_DELAY;
 	INIT_DELAYED_WORK(&ctrl->reconnect_work,
@@ -1810,7 +1798,7 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	ctrl->queues = kcalloc(ctrl->queue_count, sizeof(*ctrl->queues),
 				GFP_KERNEL);
 	if (!ctrl->queues)
-		goto out_free_subsysnqn;
+		goto out_uninit_ctrl;
 
 	ret = nvme_rdma_configure_admin_queue(ctrl);
 	if (ret)
@@ -1889,7 +1877,7 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	WARN_ON_ONCE(!changed);
 
 	pr_info("new ctrl: \"%s\" (%pISp)\n",
-		ctrl->subsysnqn, &ctrl->addr);
+		ctrl->ctrl.opts->subsysnqn, &ctrl->addr);
 
 	mutex_lock(&nvme_rdma_ctrl_mutex);
 	list_add_tail(&ctrl->list, &nvme_rdma_ctrl_list);
@@ -1909,8 +1897,6 @@ out_remove_admin_queue:
 	nvme_rdma_destroy_admin_queue(ctrl);
 out_kfree_queues:
 	kfree(ctrl->queues);
-out_free_subsysnqn:
-	kfree(ctrl->subsysnqn);
 out_uninit_ctrl:
 	nvme_uninit_ctrl(&ctrl->ctrl);
 out_put_ctrl:
