@@ -1264,9 +1264,11 @@ static void nvme_alloc_ns(struct nvme_ctrl *ctrl, unsigned nsid)
 
 	blk_queue_logical_block_size(ns->queue, 1 << ns->lba_shift);
 	if (ctrl->max_hw_sectors) {
+		u32 max_segments =
+			(ctrl->max_hw_sectors / (ctrl->page_size >> 9)) + 1;
 		blk_queue_max_hw_sectors(ns->queue, ctrl->max_hw_sectors);
 		blk_queue_max_segments(ns->queue,
-			(ctrl->max_hw_sectors / (ctrl->page_size >> 9)) + 1);
+			min_t(u32, max_segments, USHRT_MAX));
 	}
 	if (ctrl->stripe_size)
 		blk_queue_chunk_sectors(ns->queue, ctrl->stripe_size >> 9);
