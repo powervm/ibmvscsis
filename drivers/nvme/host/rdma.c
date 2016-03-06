@@ -124,6 +124,7 @@ struct nvme_rdma_ctrl {
 	struct blk_mq_tag_set	tag_set;
 	struct work_struct	delete_work;
 	struct work_struct	reset_work;
+	struct work_struct	err_work;
 
 	int			reconnect_delay;
 	struct delayed_work	reconnect_work;
@@ -813,10 +814,10 @@ requeue:
 	}
 }
 
-static void nvme_rdma_error_recovery(struct nvme_rdma_ctrl *ctrl)
+static void nvme_rdma_error_recovery_work(struct work_struct *work)
 {
-	if (!nvme_rdma_change_ctrl_state(ctrl, NVME_RDMA_CTRL_RECONNECTING))
-		return;
+	struct nvme_rdma_ctrl *ctrl = container_of(work,
+			struct nvme_rdma_ctrl, err_work);
 
 	nvme_stop_queues(&ctrl->ctrl);
 	blk_mq_stop_hw_queues(ctrl->ctrl.admin_q);
@@ -832,6 +833,14 @@ static void nvme_rdma_error_recovery(struct nvme_rdma_ctrl *ctrl)
 
 	queue_delayed_work(nvme_rdma_wq, &ctrl->reconnect_work,
 				ctrl->reconnect_delay * HZ);
+}
+
+static void nvme_rdma_error_recovery(struct nvme_rdma_ctrl *ctrl)
+{
+	if (!nvme_rdma_change_ctrl_state(ctrl, NVME_RDMA_CTRL_RECONNECTING))
+		return;
+
+	queue_work(nvme_rdma_wq, &ctrl->err_work);
 }
 
 static void nvme_rdma_wr_error(struct ib_cq *cq, struct ib_wc *wc,
@@ -1615,6 +1624,7 @@ static bool nvme_rdma_io_incapable(struct nvme_ctrl *ctrl)
 
 static void nvme_rdma_shutdown_ctrl(struct nvme_rdma_ctrl *ctrl)
 {
+	cancel_work_sync(&ctrl->err_work);
 	cancel_delayed_work_sync(&ctrl->reconnect_work);
 
 	nvme_stop_queues(&ctrl->ctrl);
@@ -1779,6 +1789,7 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 	ctrl->reconnect_delay = NVME_RDMA_DEF_RECONNECT_DELAY;
 	INIT_DELAYED_WORK(&ctrl->reconnect_work,
 			nvme_rdma_reconnect_ctrl_work);
+	INIT_WORK(&ctrl->err_work, nvme_rdma_error_recovery_work);
 	INIT_WORK(&ctrl->delete_work, nvme_rdma_del_ctrl_work);
 	INIT_WORK(&ctrl->reset_work, nvme_rdma_reset_ctrl_work);
 	spin_lock_init(&ctrl->lock);
