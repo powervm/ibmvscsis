@@ -1190,16 +1190,17 @@ static void nvmet_rdma_qp_event(struct ib_event *event, void *priv)
 }
 
 static int nvmet_rdma_cm_accept(struct rdma_cm_id *cm_id,
-		struct nvmet_rdma_queue *queue)
+		struct nvmet_rdma_queue *queue,
+		struct rdma_conn_param *p)
 {
-	struct rdma_conn_param  param;
-	struct nvme_rdma_cm_rep priv;
+	struct rdma_conn_param  param = { };
+	struct nvme_rdma_cm_rep priv = { };
 	int ret = -ENOMEM;
 
 	param.rnr_retry_count = 7;
 	param.flow_control = 1;
-	param.responder_resources = 4;
-	param.initiator_depth = 4;
+	param.initiator_depth = min_t(u8, p->initiator_depth,
+		queue->dev->device->attrs.max_qp_init_rd_atom);
 	param.private_data = &priv;
 	param.private_data_len = sizeof(priv);
 	priv.recfmt = cpu_to_le16(NVME_RDMA_CM_FMT_1_0);
@@ -1233,7 +1234,7 @@ static int nvmet_rdma_queue_connect(struct rdma_cm_id *cm_id,
 	}
 	cm_id->context = queue;
 
-	ret = nvmet_rdma_cm_accept(cm_id, queue);
+	ret = nvmet_rdma_cm_accept(cm_id, queue, &event->param.conn);
 	if (ret)
 		goto release_queue;
 

@@ -1275,11 +1275,7 @@ static int nvme_rdma_route_resolved(struct nvme_rdma_queue *queue)
 	param.qp_num = queue->qp->qp_num;
 	param.flow_control = 1;
 
-	/*
-	 * Pick some arbitrary defaults here; we could make these
-	 * module parameters if anyone cared about setting them.
-	 */
-	param.responder_resources = 4;
+	param.responder_resources = queue->device->dev->attrs.max_qp_rd_atom;
 	/* rdma_cm will clamp down to max QP retry count (7) */
 	param.retry_count = ctrl->tl_retry_count;
 	param.rnr_retry_count = 7;
