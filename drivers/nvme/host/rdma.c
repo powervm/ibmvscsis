@@ -1782,8 +1782,10 @@ static int nvme_rdma_create_ctrl(struct device *dev,
 
 	ret = nvme_init_ctrl(&ctrl->ctrl, dev, &nvme_rdma_ctrl_ops,
 				0 /* no quirks, we're perfect! */);
-	if (ret)
-		goto out_put_ctrl;
+	if (ret) {
+		kfree(ctrl);
+		return ret;
+	}
 
 	/* XXX: Should be configurable */
 	ctrl->reconnect_delay = NVME_RDMA_DEF_RECONNECT_DELAY;
@@ -1903,7 +1905,6 @@ out_kfree_queues:
 	kfree(ctrl->queues);
 out_uninit_ctrl:
 	nvme_uninit_ctrl(&ctrl->ctrl);
-out_put_ctrl:
 	nvme_put_ctrl(&ctrl->ctrl);
 	return ret;
 }
