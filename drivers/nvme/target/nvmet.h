@@ -157,7 +157,7 @@ int nvmet_parse_io_cmd(struct nvmet_req *req);
 int nvmet_parse_admin_cmd(struct nvmet_req *req);
 int nvmet_parse_fabrics_cmd(struct nvmet_req *req);
 
-u16 nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
+bool nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
 		struct nvmet_sq *sq, struct nvmet_fabrics_ops *ops);
 void nvmet_req_complete(struct nvmet_req *req, u16 status);
 

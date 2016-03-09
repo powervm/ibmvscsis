@@ -140,7 +140,6 @@ static int nvme_loop_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct nvme_loop_queue *queue = hctx->driver_data;
 	struct request *req = bd->rq;
 	struct nvme_loop_iod *iod = blk_mq_rq_to_pdu(req);
-	int ret;
 
 	switch (req->cmd_type) {
 	case REQ_TYPE_FS:
@@ -156,10 +155,9 @@ static int nvme_loop_queue_rq(struct blk_mq_hw_ctx *hctx,
 		return BLK_MQ_RQ_QUEUE_ERROR;
 	}
 
-	ret = nvmet_req_init(&iod->req, &queue->nvme_cq,
-			&queue->nvme_sq, &nvme_loop_ops);
-	if (ret)
-		goto out_err;
+	if (!nvmet_req_init(&iod->req, &queue->nvme_cq,
+			&queue->nvme_sq, &nvme_loop_ops))
+		return 0;
 
 	if (blk_rq_bytes(req)) {
 		sg_init_table(iod->sg, req->nr_phys_segments);
@@ -174,8 +172,6 @@ static int nvme_loop_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	schedule_work(&iod->work);
 	return 0;
-out_err:
-	return BLK_MQ_RQ_QUEUE_ERROR;
 }
 
 static int __nvme_loop_init_request(struct nvme_loop_ctrl *ctrl,

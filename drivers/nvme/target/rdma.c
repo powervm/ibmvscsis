@@ -727,10 +727,9 @@ static void nvmet_rdma_handle_command(struct nvmet_rdma_queue *queue,
 	cmd->queue = queue;
 	cmd->n_rdma = 0;
 
-	status = nvmet_req_init(&cmd->req, &queue->nvme_cq,
-			&queue->nvme_sq, &nvmet_rdma_ops);
-	if (status)
-		goto out_err;
+	if (!nvmet_req_init(&cmd->req, &queue->nvme_cq,
+			&queue->nvme_sq, &nvmet_rdma_ops))
+		return;
 
 	status = nvmet_rdma_map_sgl(cmd);
 	if (status)

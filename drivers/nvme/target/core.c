@@ -157,7 +157,7 @@ free_ns:
 	return NULL;
 }
 
-void nvmet_req_complete(struct nvmet_req *req, u16 status)
+void __nvmet_req_complete(struct nvmet_req *req, u16 status)
 {
 	if (status)
 		nvmet_set_status(req, status);
@@ -170,6 +170,11 @@ void nvmet_req_complete(struct nvmet_req *req, u16 status)
 	if (req->ns)
 		nvmet_put_namespace(req->ns);
 	req->ops->queue_response(req);
+}
+
+void nvmet_req_complete(struct nvmet_req *req, u16 status)
+{
+	__nvmet_req_complete(req, status);
 	percpu_ref_put(&req->sq->ref);
 }
 EXPORT_SYMBOL_GPL(nvmet_req_complete);
@@ -226,7 +231,7 @@ int nvmet_sq_init(struct nvmet_sq *sq)
 }
 EXPORT_SYMBOL_GPL(nvmet_sq_init);
 
-u16 nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
+bool nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
 		struct nvmet_sq *sq, struct nvmet_fabrics_ops *ops)
 {
 	u16 status;
@@ -247,25 +252,24 @@ u16 nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
 		status = nvmet_parse_io_cmd(req);
 
 	if (status)
-		return status;
+		goto fail;
 
 	if (unlikely(!req->sq->ctrl && !(req->flags & NVMET_REQ_CONNECT))) {
 		pr_err("queue not connected!\n");
 		status = NVME_SC_QID_INVALID | NVME_SC_DNR;
-		goto out_put_ns;
+		goto fail;
 	}
 
 	if (unlikely(!percpu_ref_tryget_live(&sq->ref))) {
 		status = NVME_SC_QID_INVALID | NVME_SC_DNR;
-		goto out_put_ns;
+		goto fail;
 	}
 
-	return 0;
+	return true;
 
-out_put_ns:
-	if (req->ns)
-		nvmet_put_namespace(req->ns);
-	return status;
+fail:
+	__nvmet_req_complete(req, status);
+	return false;
 }
 EXPORT_SYMBOL_GPL(nvmet_req_init);
 
