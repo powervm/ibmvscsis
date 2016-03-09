@@ -478,8 +478,10 @@ void blk_mq_tagset_busy_iter(struct blk_mq_tag_set *tagset,
 {
 	int i;
 
-	for (i = 0; i < tagset->nr_hw_queues; i++)
-		blk_mq_all_tag_busy_iter(tagset->tags[i], fn, priv);
+	for (i = 0; i < tagset->nr_hw_queues; i++) {
+		if (tagset->tags && tagset->tags[i])
+			blk_mq_all_tag_busy_iter(tagset->tags[i], fn, priv);
+	}
 }
 EXPORT_SYMBOL(blk_mq_tagset_busy_iter);
 
