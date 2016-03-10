@@ -163,7 +163,9 @@ struct nvme_id_ctrl {
 	__le32			ioccsz;
 	__le32			iorcsz;
 	__le16			icdoff;
-	__u8			rsvd1802[246];
+	__u8			ctrattr;
+	__u8			msdbd;
+	__u8			rsvd1804[244];
 	struct nvme_id_power_state	psd[32];
 	__u8			vs[1024];
 };
@@ -339,16 +341,12 @@ enum {
  * @NVME_SGL_FMT_SEG_DESC:              sgl segment descriptor
  * @NVME_SGL_FMT_LAST_SEG_DESC:         last sgl segment descriptor
  * @NVME_KEY_SGL_FMT_DATA_DESC:         keyed data block descriptor
- * @NVME_KEY_SGL_FMT_SEG_DESC:          keyed sgl segment descriptor
- * @NVME_KEY_SGL_FMT_LAST_SEG_DESC:     keyed last sgl segment descriptor
  */
 enum {
 	NVME_SGL_FMT_DATA_DESC		= 0x00,
 	NVME_SGL_FMT_SEG_DESC		= 0x02,
 	NVME_SGL_FMT_LAST_SEG_DESC	= 0x03,
 	NVME_KEY_SGL_FMT_DATA_DESC	= 0x04,
-	NVME_KEY_SGL_FMT_SEG_DESC	= 0x05,
-	NVME_KEY_SGL_FMT_LAST_SEG_DESC	= 0x06,
 };
 
 struct nvme_sgl_desc {
@@ -652,7 +650,7 @@ struct nvmf_common_command {
 	u8	opcode;
 	u8	resv1;
 	u16	command_id;
-	u8	cctype;
+	u8	fctype;
 	u8	resv2[35];
 	u8	ts[24];
 };
@@ -684,13 +682,13 @@ struct nvmf_connect_command {
 	u8	opcode;
 	u8	resv1;
 	u16	command_id;
-	u8	cctype;
+	u8	fctype;
 	u8	resv2[19];
 	u8	sgl1[16];
 	__le16	recfmt;
 	__le16	qid;
 	__le16	sqsize;
-	u8	qattr;
+	u8	cattr;
 	u8	resv3;
 	__le32	kato;
 	u8	resv4[12];
@@ -709,7 +707,7 @@ struct nvmf_prop_set_command {
 	u8	opcode;
 	u8	resv1;
 	u16	command_id;
-	u8	cctype;
+	u8	fctype;
 	u8	resv2[35];
 	u8	attrib;
 	u8	resv3[3];
@@ -722,7 +720,7 @@ struct nvmf_prop_get_command {
 	u8	opcode;
 	u8	resv1;
 	u16	command_id;
-	u8	cctype;
+	u8	fctype;
 	u8	resv2[35];
 	u8	attrib;
 	u8	resv3[3];
@@ -815,9 +813,24 @@ enum {
 	NVME_SC_FEATURE_NOT_PER_NS	= 0x10f,
 	NVME_SC_FW_NEEDS_RESET_SUBSYS	= 0x110,
 
+	/*
+	 * I/O Command Set Specific - NVM commands:
+	 */
 	NVME_SC_BAD_ATTRIBUTES		= 0x180,
 	NVME_SC_INVALID_PI		= 0x181,
 	NVME_SC_READ_ONLY		= 0x182,
+
+	/*
+	 * I/O Command Set Specific - Fabrics commands:
+	 */
+	NVME_SC_CONNECT_FORMAT		= 0x180,
+	NVME_SC_CONNECT_CTRL_BUSY	= 0x181,
+	NVME_SC_CONNECT_INVALID_PARAM	= 0x182,
+	NVME_SC_CONNECT_RESTART_DISC	= 0x183,
+	NVME_SC_CONNECT_INVALID_HOST	= 0x184,
+
+	NVME_SC_DISCOVERY_RESTART	= 0x190,
+	NVME_SC_AUTH_REQUIRED		= 0x191,
 
 	/*
 	 * Media and Data Integrity Errors:
@@ -829,20 +842,6 @@ enum {
 	NVME_SC_REFTAG_CHECK		= 0x284,
 	NVME_SC_COMPARE_FAILED		= 0x285,
 	NVME_SC_ACCESS_DENIED		= 0x286,
-
-	/*
-	 * Fabric Specific Status:
-	 */
-	NVME_SC_DISCOVERY_LAST		= 0x340,
-	NVME_SC_DISCOVERY_END		= 0x341,
-	NVME_SC_DISCOVERY_RESTART	= 0x342,
-
-	NVME_SC_CONNECT_FORMAT		= 0x350,
-	NVME_SC_CONNECT_CONN_BUSY	= 0x351,
-	NVME_SC_CONNECT_SESS_BUSY	= 0x352,
-	NVME_SC_CONNECT_RESTART		= 0x353,
-	NVME_SC_CONNECT_INVAL_CTRL	= 0x354,
-	NVME_SC_CONNECT_INVAL_QUEUE	= 0x355,
 
 	NVME_SC_DNR			= 0x4000,
 };
