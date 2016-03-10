@@ -1231,7 +1231,7 @@ static int nvme_rdma_conn_rejected(struct nvme_rdma_queue *queue,
 		struct nvme_rdma_cm_rej *rej =
 			(struct nvme_rdma_cm_rej *)ev->param.conn.private_data;
 
-		pr_err("Connect rejected, status %d.", le16_to_cpu(rej->fsts));
+		pr_err("Connect rejected, status %d.", le16_to_cpu(rej->sts));
 		/* XXX: Think of something clever to do here... */
 	} else {
 		pr_err("Connect rejected, no private data.\n");

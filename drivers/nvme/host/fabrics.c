@@ -116,7 +116,7 @@ int nvmf_reg_read32(struct nvme_ctrl *ctrl, u32 off, u32 *val)
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.prop_get.opcode = nvme_fabrics_command;
-	cmd.prop_get.cctype = NVMF_CC_PROP_GET;
+	cmd.prop_get.fctype = NVMF_CC_PROP_GET;
 	cmd.prop_get.offset = cpu_to_le32(off);
 
 	ret = __nvme_submit_sync_cmd(ctrl->admin_q, &cmd, &cqe, NULL, 0, 0,
@@ -156,7 +156,7 @@ int nvmf_reg_read64(struct nvme_ctrl *ctrl, u32 off, u64 *val)
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.prop_get.opcode = nvme_fabrics_command;
-	cmd.prop_get.cctype = NVMF_CC_PROP_GET;
+	cmd.prop_get.fctype = NVMF_CC_PROP_GET;
 	cmd.prop_get.attrib = 1;
 	cmd.prop_get.offset = cpu_to_le32(off);
 
@@ -195,7 +195,7 @@ int nvmf_reg_write32(struct nvme_ctrl *ctrl, u32 off, u32 val)
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.prop_set.opcode = nvme_fabrics_command;
-	cmd.prop_set.cctype = NVMF_CC_PROP_SET;
+	cmd.prop_set.fctype = NVMF_CC_PROP_SET;
 	cmd.prop_get.attrib = 0;
 	cmd.prop_set.offset = cpu_to_le32(off);
 	cmd.prop_set.value = cpu_to_le64(val);
@@ -248,7 +248,7 @@ int nvmf_connect_admin_queue(struct nvme_ctrl *ctrl, const char *subsysnqn,
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.connect.opcode = nvme_fabrics_command;
-	cmd.connect.cctype = NVMF_CC_CONNECT;
+	cmd.connect.fctype = NVMF_CC_CONNECT;
 	cmd.connect.qid = 0;
 	cmd.connect.sqsize = cpu_to_le16(ctrl->sqsize);
 
@@ -318,7 +318,7 @@ int nvmf_connect_io_queue(struct nvme_ctrl *ctrl, const char *subsysnqn,
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.connect.opcode = nvme_fabrics_command;
-	cmd.connect.cctype = NVMF_CC_CONNECT;
+	cmd.connect.fctype = NVMF_CC_CONNECT;
 	cmd.connect.qid = cpu_to_le16(qid);
 	cmd.connect.sqsize = cpu_to_le16(ctrl->sqsize);
 
