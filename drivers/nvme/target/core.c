@@ -256,12 +256,12 @@ bool nvmet_req_init(struct nvmet_req *req, struct nvmet_cq *cq,
 
 	if (unlikely(!req->sq->ctrl && !(req->flags & NVMET_REQ_CONNECT))) {
 		pr_err("queue not connected!\n");
-		status = NVME_SC_QID_INVALID | NVME_SC_DNR;
+		status = NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 		goto fail;
 	}
 
 	if (unlikely(!percpu_ref_tryget_live(&sq->ref))) {
-		status = NVME_SC_QID_INVALID | NVME_SC_DNR;
+		status = NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 		goto fail;
 	}
 
@@ -414,7 +414,7 @@ struct nvmet_ctrl *nvmet_alloc_ctrl(struct nvmet_subsys *subsys,
 	if (!ctrl->sqs)
 		goto out_free_cqs;
 
-	ctrl->cntlid = ida_simple_get(&subsys->cntlid_ida, 0, USHRT_MAX - 1,
+	ctrl->cntlid = ida_simple_get(&subsys->cntlid_ida, 0, 0xffef,
 			GFP_KERNEL);
 	if (ctrl->cntlid < 0) {
 		ret = ctrl->cntlid;
@@ -482,7 +482,7 @@ struct nvmet_subsys *nvmet_subsys_alloc(const char *subsys_name)
 	if (!subsys)
 		return NULL;
 
-	subsys->ver = NVME_VS(1, 2);
+	subsys->ver = (1 << 16) | (2 << 8) | 1; /* NVMe 1.2.1 */
 	subsys->subsys_name = kstrndup(subsys_name, NVMF_NQN_SIZE,
 			GFP_KERNEL);
 	if (IS_ERR(subsys->subsys_name)) {

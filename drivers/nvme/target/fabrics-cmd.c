@@ -115,7 +115,7 @@ static void nvmet_execute_connect(struct nvmet_req *req)
 	mutex_lock(&subsys->lock);
 	if (req->sq->ctrl) {
 		pr_warn("queue already connected!\n");
-		status = NVME_SC_CONNECT_SESS_BUSY;
+		status = NVME_SC_CONNECT_CTRL_BUSY | NVME_SC_DNR;
 		goto out_unlock;
 	}
 
@@ -123,7 +123,7 @@ static void nvmet_execute_connect(struct nvmet_req *req)
 	if (ctrl) {
 		if (qid == 0) {
 			pr_warn("connect for admin queue on active ctrl.\n");
-			status = NVME_SC_CONNECT_SESS_BUSY;
+			status = NVME_SC_CONNECT_CTRL_BUSY | NVME_SC_DNR;
 			goto out_ctrl_put;
 		}
 
@@ -149,13 +149,13 @@ static void nvmet_execute_connect(struct nvmet_req *req)
 
 		if (cntlid != 0xffff) {
 			pr_warn("reconnect not yet supported!\n");
-			status = NVME_SC_CONNECT_CONN_BUSY;
+			status = NVME_SC_CONNECT_CTRL_BUSY | NVME_SC_DNR;
 			goto out_unlock;
 		}
 
 		ctrl = nvmet_alloc_ctrl(subsys, d->subsysnqn, d->hostnqn);
 		if (IS_ERR(ctrl)) {
-			status = NVME_SC_CONNECT_CONN_BUSY; /* XXX: ewww? */
+			status = NVME_SC_CONNECT_CTRL_BUSY | NVME_SC_DNR;
 			goto out_unlock;
 		}
 
@@ -171,6 +171,13 @@ static void nvmet_execute_connect(struct nvmet_req *req)
 out:
 	req->rsp->result16 = ctrl ? cpu_to_le16(ctrl->cntlid) : 0;
 	kunmap(sg_page(req->sg));
+
+	/*
+	 * Just to make life complicated, NVME_SC_INVALID_FIELD has a different
+	 * name for Connect only..
+	 */
+	if (status == NVME_SC_INVALID_FIELD)
+		status = NVME_SC_CONNECT_INVALID_PARAM;
 	nvmet_req_complete(req, status);
 	return;
 
@@ -188,7 +195,7 @@ int nvmet_parse_fabrics_cmd(struct nvmet_req *req)
 
 	req->ns = NULL;
 
-	switch (cmd->fabrics.cctype) {
+	switch (cmd->fabrics.fctype) {
 	case NVMF_CC_PROP_SET:
 		req->data_len = 0;
 		req->execute = nvmet_execute_prop_set;
@@ -204,7 +211,7 @@ int nvmet_parse_fabrics_cmd(struct nvmet_req *req)
 		break;
 	default:
 		pr_err("received unknown capsule type 0x%x\n",
-			cmd->fabrics.cctype);
+			cmd->fabrics.fctype);
 		return NVME_SC_INVALID_OPCODE | NVME_SC_DNR;
 	}
 
