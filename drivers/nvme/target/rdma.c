@@ -150,6 +150,8 @@ static void nvmet_rdma_identify_attrs(struct nvmet_ctrl *ctrl,
 	id->sgls = cpu_to_le32(1 << 20 | 1 << 2);
 	/* no enforcement soft-limit for maxcmd - pick arbitrary high value */
 	id->maxcmd = cpu_to_le16(NVMET_MAX_CMD);
+	/* we only support a single SGL entry for now */
+	id->msdbd = 1;
 }
 
 static inline bool nvmet_rdma_need_data_in(struct nvmet_req *req)
@@ -630,7 +632,7 @@ static u16 nvmet_rdma_map_sgl_data(struct nvmet_rdma_rsp *rsp,
 }
 
 static u16 nvmet_rdma_map_sgl_seg(struct nvmet_rdma_rsp *rsp,
-		struct nvme_rsgl_desc *rsgl, bool last)
+		struct nvme_rsgl_desc *rsgl)
 {
 	struct nvme_rsgl_desc *sgl = nvmet_rdma_dapsule_ptr(rsp, rsgl);
 	u32 desc_len = get_unaligned_le24(rsgl->length);
@@ -656,8 +658,7 @@ static u16 nvmet_rdma_map_sgl_seg(struct nvmet_rdma_rsp *rsp,
 			if (status)
 				return status;
 			break;
-		case NVME_KEY_SGL_FMT_SEG_DESC:
-		case NVME_KEY_SGL_FMT_LAST_SEG_DESC:
+		case NVME_SGL_FMT_LAST_SEG_DESC:
 			pr_err("indirect SGLs not supported!\n");
 			return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 		default:
@@ -687,10 +688,8 @@ static u16 nvmet_rdma_map_sgl(struct nvmet_rdma_rsp *rsp)
 	switch (rsgl->format >> 4) {
 	case NVME_KEY_SGL_FMT_DATA_DESC:
 		return nvmet_rdma_map_sgl_data(rsp, rsgl);
-	case NVME_KEY_SGL_FMT_LAST_SEG_DESC:
-		return nvmet_rdma_map_sgl_seg(rsp, rsgl, true);
-	case NVME_KEY_SGL_FMT_SEG_DESC:
-		return nvmet_rdma_map_sgl_seg(rsp, rsgl, false);
+	case NVME_SGL_FMT_LAST_SEG_DESC:
+		return nvmet_rdma_map_sgl_seg(rsp, rsgl);
 	default:
 		pr_err("invalid SGL format: 0x%x\n", rsgl->format);
 		return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
@@ -1053,7 +1052,7 @@ nvmet_rdma_parse_cm_connect_req(struct rdma_conn_param *conn,
 
 	req = (struct nvme_rdma_cm_req *)conn->private_data;
 	if (!req || conn->private_data_len == 0)
-		return NVME_RDMA_CM_INVALID_REQ;
+		return NVME_RDMA_CM_INVALID_LEN;
 
 	if (le16_to_cpu(req->recfmt) != NVME_RDMA_CM_FMT_1_0)
 		return NVME_RDMA_CM_INVALID_RECFMT;
@@ -1068,7 +1067,7 @@ nvmet_rdma_parse_cm_connect_req(struct rdma_conn_param *conn,
 	queue->send_queue_size = sq_factor * le16_to_cpu(req->hrqsize);
 
 	if (!queue->host_qid && queue->recv_queue_size > NVMF_AQ_DEPTH)
-		return NVME_RDMA_CM_INVALID_SQSIZE;
+		return NVME_RDMA_CM_INVALID_HSQSIZE;
 
 	/* XXX: Should we enforce some kind of max for IO queues? */
 
@@ -1081,7 +1080,7 @@ static int nvmet_rdma_cm_reject(struct rdma_cm_id *cm_id,
 	struct nvme_rdma_cm_rej rej;
 
 	rej.recfmt = cpu_to_le16(NVME_RDMA_CM_FMT_1_0);
-	rej.fsts = cpu_to_le16(status);
+	rej.sts = cpu_to_le16(status);
 
 	return rdma_reject(cm_id, (void *)&rej, sizeof(rej));
 }
