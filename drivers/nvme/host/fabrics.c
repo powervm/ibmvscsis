@@ -196,7 +196,7 @@ int nvmf_reg_write32(struct nvme_ctrl *ctrl, u32 off, u32 val)
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.prop_set.opcode = nvme_fabrics_command;
 	cmd.prop_set.fctype = NVMF_CC_PROP_SET;
-	cmd.prop_get.attrib = 0;
+	cmd.prop_set.attrib = 0;
 	cmd.prop_set.offset = cpu_to_le32(off);
 	cmd.prop_set.value = cpu_to_le64(val);
 
