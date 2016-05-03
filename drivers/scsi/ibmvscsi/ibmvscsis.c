@@ -61,7 +61,7 @@
 #define IBMVSCSIS_VERSION	"v0.1"
 #define IBMVSCSIS_NAMELEN	32
 
-#define	INITIAL_SRP_LIMIT	800
+#define	INITIAL_SRP_LIMIT	15
 #define	DEFAULT_MAX_SECTORS	256
 
 #define MAX_H_COPY_RDMA		(128*1024)
@@ -359,12 +359,12 @@ static ssize_t ibmvscsis_tpg_enable_store(struct config_item *item,
 
         ret = kstrtoul(page, 0, &tmp);
         if (ret < 0) {
-                pr_err("Unable to extract srpt_tpg_store_enable\n");
+                pr_err("Unable to extract ibmvscsis_tpg_store_enable\n");
                 return -EINVAL;
         }
 
         if ((tmp != 0) && (tmp != 1)) {
-                pr_err("Illegal value for srpt_tpg_store_enable: %lu\n",
+                pr_err("Illegal value for ibmvscsis_tpg_store_enable: %lu\n",
 			tmp);
                 return -EINVAL;
         }
@@ -521,6 +521,7 @@ static int ibmvscsis_probe(struct vio_dev *vdev, const struct vio_device_id *id)
 	int ret = -ENOMEM;
 	struct ibmvscsis_adapter *adapter;
 	struct srp_target *target;
+	struct ibmvscsis_tport *tport;
 	unsigned long flags;
 
 	pr_debug("ibmvscsis: Probe for UA 0x%x\n", vdev->unit_address);
@@ -534,6 +535,9 @@ static int ibmvscsis_probe(struct vio_dev *vdev, const struct vio_device_id *id)
 
 	adapter->dma_dev = vdev;
 	adapter->target = target;
+	tport = &adapter->tport;
+
+	tport->enabled = false;
 	snprintf(&adapter->tport.tport_name[0], 256, "%s", dev_name(&vdev->dev));
 
 	ret = read_dma_window(adapter->dma_dev, adapter);
@@ -589,14 +593,18 @@ static int ibmvscsis_remove(struct vio_dev *dev)
 {
 	unsigned long flags;
 	struct ibmvscsis_adapter *adapter = dev_get_drvdata(&dev->dev);
+	struct srp_target *target;
+
+	target = adapter->target;
 
 	spin_lock_irqsave(&ibmvscsis_dev_lock, flags);
 	list_del(&adapter->list);
 	spin_unlock_irqrestore(&ibmvscsis_dev_lock, flags);
 
 	crq_queue_destroy(adapter);
-	srp_target_free(adapter->target);
+	srp_target_free(target);
 
+	kfree(target);
 	kfree(adapter);
 
 	return 0;
@@ -724,7 +732,7 @@ static u32 ibmvscsis_sess_get_index(struct se_session *se_sess)
 
 static int ibmvscsis_write_pending(struct se_cmd *se_cmd)
 {
-	struct ibmvscsis_cmnd *cmd = container_of(se_cmd,
+/*	struct ibmvscsis_cmnd *cmd = container_of(se_cmd,
 			struct ibmvscsis_cmnd, se_cmd);
 	struct scsi_cmnd *sc = &cmd->sc;
 	struct iu_entry *iue = (struct iu_entry *) sc->SCp.ptr;
@@ -738,9 +746,9 @@ static int ibmvscsis_write_pending(struct se_cmd *se_cmd)
 				ibmvscsis_rdma, 1, 1);
 	if (ret) {
 		pr_err("ibmvscsis: srp_transfer_data() failed: %d\n", ret);
-		return -EAGAIN; /* Signal QUEUE_FULL */
+		return -EAGAIN;
 	}
-	/*
+*/	/*
 	 * We now tell TCM to add this WRITE CDB directly into the TCM storage
 	 * object execution queue.
 	 */
@@ -982,6 +990,7 @@ static struct se_wwn *ibmvscsis_make_tport(struct target_fabric_configfs *tf,
 	tport->tport_proto_id = SCSI_PROTOCOL_SRP;
 	pr_debug("ibmvscsis: make_tport(%s), pointer:%p tport_id:%x\n", name,
 					tport, tport->tport_proto_id);
+
 	return &tport->tport_wwn;
 err:
 	return ERR_PTR(ret);
@@ -1115,11 +1124,14 @@ static int process_srp_iu(struct iu_entry *iue)
 	int err = 1;
 
 	spin_lock_irqsave(&target->lock, flags);
-	if (adapter->tport.releasing) {
-		spin_unlock_irqrestore(&target->lock, flags);
-		pr_err("ibmvscsis: process_srp_iu, no tpg, releasing:%x\n",
+	if (adapter->tport.releasing == true) {
+		pr_err("ibmvscsis: process_srp_iu error, tport is released:%x\n",
 			adapter->tport.releasing);
-		srp_iu_put(iue);
+		goto done;
+	}
+	if(adapter->tport.enabled == false) {
+		pr_err("ibmvscsis: process_srp_iu, tport not enabled:%x\n",
+			adapter->tport.enabled);
 		goto done;
 	}
 	spin_unlock_irqrestore(&target->lock, flags);
@@ -1156,7 +1168,11 @@ static int process_srp_iu(struct iu_entry *iue)
 	default:
 		pr_err("ibmvscsis: Unknown type %u\n", opcode);
 	}
+	return err;
+
 done:
+	spin_unlock_irqrestore(&target->lock, flags);
+	srp_iu_put(iue);
 	return err;
 }
 
@@ -1561,7 +1577,7 @@ static void process_login(struct iu_entry *iue)
 
 	snprintf(name, sizeof(name), "%x", vdev->unit_address);
 
-	if(!&adapter->tport.enabled) {
+	if(&adapter->tport.enabled == false) {
 		rej->reason = cpu_to_be32(SRP_LOGIN_REJ_INSUFFICIENT_RESOURCES);
 		pr_err("ibmvscsis: Rejected SRP_LOGIN_REQ because target %s"
 			" has not yet been enabled", name);
