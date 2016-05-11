@@ -73,7 +73,6 @@ extern void srp_iu_put(struct iu_entry *);
 extern int srp_transfer_data(struct scsi_cmnd *, struct srp_cmd *,
 			     srp_rdma_t, int, int);
 
-
 static inline struct srp_target *host_to_srp_target(struct Scsi_Host *host)
 {
 	return (struct srp_target *) host->hostdata;

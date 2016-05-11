@@ -56,7 +56,6 @@ static int srp_iu_pool_alloc(struct srp_queue *q, size_t max,
 	}
 	return 0;
 
-	kfree(q->items);
 free_pool:
 	kfree(q->pool);
 	return -ENOMEM;
@@ -102,8 +101,8 @@ out:
 	return NULL;
 }
 
-static void srp_ring_free(struct device *dev, struct srp_buf **ring, size_t max,
-			  size_t size)
+static void srp_ring_free(struct device *dev, struct srp_buf **ring,
+			  size_t max, size_t size)
 {
 	int i;
 
@@ -171,7 +170,6 @@ EXPORT_SYMBOL_GPL(srp_iu_get);
 
 void srp_iu_put(struct iu_entry *iue)
 {
-	pr_info("libsrp: srp_iu_put\n");
 	kfifo_in_locked(&iue->target->iu_queue.queue, (void *) &iue,
 			sizeof(void *), &iue->target->iu_queue.lock);
 }
