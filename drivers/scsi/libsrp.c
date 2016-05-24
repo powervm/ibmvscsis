@@ -16,8 +16,6 @@
  *
  ***********************************************************************/
 
-#define pr_fmt(fmt)     KBUILD_MODNAME ": " fmt
-
 #include <linux/printk.h>
 #include <linux/err.h>
 #include <linux/slab.h>
@@ -30,8 +28,7 @@
 #include <scsi/scsi_tcq.h>
 #include <scsi/srp.h>
 #include <target/target_core_base.h>
-
-#include "libsrp.h"
+#include <scsi/libsrp.h>
 
 static int srp_iu_pool_alloc(struct srp_queue *q, size_t max,
 			     struct srp_buf **ring)
@@ -47,10 +44,10 @@ static int srp_iu_pool_alloc(struct srp_queue *q, size_t max,
 		goto free_pool;
 
 	spin_lock_init(&q->lock);
-	kfifo_init(&q->queue, (void *)q->pool, max * sizeof(void *));
+	kfifo_init(&q->queue, (void *) q->pool, max * sizeof(void *));
 
 	for (i = 0, iue = q->items; i < max; i++) {
-		kfifo_in(&q->queue, (void *)&iue, sizeof(void *));
+		kfifo_in(&q->queue, (void *) &iue, sizeof(void *));
 		iue->sbuf = ring[i];
 		iue++;
 	}
@@ -70,15 +67,15 @@ static void srp_iu_pool_free(struct srp_queue *q)
 static struct srp_buf **srp_ring_alloc(struct device *dev,
 				       size_t max, size_t size)
 {
-	struct srp_buf **ring;
 	int i;
+	struct srp_buf **ring;
 
 	ring = kcalloc(max, sizeof(struct srp_buf *), GFP_KERNEL);
 	if (!ring)
 		return NULL;
 
 	for (i = 0; i < max; i++) {
-		ring[i] = kzalloc(sizeof(*ring[i]), GFP_KERNEL);
+		ring[i] = kzalloc(sizeof(struct srp_buf), GFP_KERNEL);
 		if (!ring[i])
 			goto out;
 		ring[i]->buf = dma_alloc_coherent(dev, size, &ring[i]->dma,
@@ -92,7 +89,7 @@ out:
 	for (i = 0; i < max && ring[i]; i++) {
 		if (ring[i]->buf) {
 			dma_free_coherent(dev, size, ring[i]->buf,
-					  ring[i]->dma);
+						ring[i]->dma);
 		}
 		kfree(ring[i]);
 	}
@@ -153,9 +150,9 @@ struct iu_entry *srp_iu_get(struct srp_target *target)
 {
 	struct iu_entry *iue = NULL;
 
-	if (kfifo_out_locked(&target->iu_queue.queue, (void *)&iue,
-			     sizeof(void *),
-			     &target->iu_queue.lock) != sizeof(void *)) {
+	if (kfifo_out_locked(&target->iu_queue.queue, (void *) &iue,
+				sizeof(void *),
+				&target->iu_queue.lock) != sizeof(void *)) {
 		WARN_ONCE(1, "unexpected fifo state");
 		return NULL;
 	}
@@ -169,7 +166,7 @@ EXPORT_SYMBOL_GPL(srp_iu_get);
 
 void srp_iu_put(struct iu_entry *iue)
 {
-	kfifo_in_locked(&iue->target->iu_queue.queue, (void *)&iue,
+	kfifo_in_locked(&iue->target->iu_queue.queue, (void *) &iue,
 			sizeof(void *), &iue->target->iu_queue.lock);
 }
 EXPORT_SYMBOL_GPL(srp_iu_put);
@@ -183,18 +180,18 @@ static int srp_direct_data(struct scsi_cmnd *sc, struct srp_direct_buf *md,
 	int err, nsg = 0, len;
 
 	if (dma_map) {
-		iue = (struct iu_entry *)sc->SCp.ptr;
+		iue = (struct iu_entry *) sc->SCp.ptr;
 		sg = scsi_sglist(sc);
 		nsg = dma_map_sg(iue->target->dev, sg, scsi_sg_count(sc),
 				 DMA_BIDIRECTIONAL);
 		if (!nsg) {
-			pr_err("fail to map %p %d\n", iue, scsi_sg_count(sc));
+			pr_err("libsrp: fail to map %p %d\n",
+				iue, scsi_sg_count(sc));
 			return 0;
 		}
 		len = min(scsi_bufflen(sc), be32_to_cpu(md->len));
-	} else {
+	} else
 		len = be32_to_cpu(md->len);
-	}
 
 	err = rdma_io(sc, sg, nsg, md, 1, dir, len);
 
@@ -217,7 +214,7 @@ static int srp_indirect_data(struct scsi_cmnd *sc, struct srp_cmd *cmd,
 	int nmd, nsg = 0, len;
 
 	if (dma_map || ext_desc) {
-		iue = (struct iu_entry *)sc->SCp.ptr;
+		iue = (struct iu_entry *) sc->SCp.ptr;
 		sg = scsi_sglist(sc);
 	}
 
@@ -234,8 +231,8 @@ static int srp_indirect_data(struct scsi_cmnd *sc, struct srp_cmd *cmd,
 					be32_to_cpu(id->table_desc.len),
 					&token, GFP_KERNEL);
 		if (!md) {
-			pr_err("Can't get dma memory %u\n",
-			       be32_to_cpu(id->table_desc.len));
+			pr_err("libsrp: Can't get dma memory %u\n",
+				be32_to_cpu(id->table_desc.len));
 			return -ENOMEM;
 		}
 
@@ -245,11 +242,12 @@ static int srp_indirect_data(struct scsi_cmnd *sc, struct srp_cmd *cmd,
 		err = rdma_io(sc, &dummy, 1, &id->table_desc, 1, DMA_TO_DEVICE,
 			      be32_to_cpu(id->table_desc.len));
 		if (err) {
-			pr_err("Error copying indirect table %d\n", err);
+			pr_err("libsrp: Error copying indirect table %d\n",
+				err);
 			goto free_mem;
 		}
 	} else {
-		pr_err("This command uses external indirect buffer\n");
+		pr_err("libsrp: This command uses external indirect buffer\n");
 		return -EINVAL;
 	}
 
@@ -258,14 +256,14 @@ rdma:
 		nsg = dma_map_sg(iue->target->dev, sg, scsi_sg_count(sc),
 				 DMA_BIDIRECTIONAL);
 		if (!nsg) {
-			pr_err("fail to map %p %d\n", iue, scsi_sg_count(sc));
+			pr_err("libsrp: fail to map %p %d\n",
+				iue, scsi_sg_count(sc));
 			err = -EIO;
 			goto free_mem;
 		}
 		len = min(scsi_bufflen(sc), be32_to_cpu(id->len));
-	} else {
+	} else
 		len = be32_to_cpu(id->len);
-	}
 
 	err = rdma_io(sc, sg, nsg, md, nmd, dir, len);
 
@@ -296,7 +294,8 @@ static int data_out_desc_size(struct srp_cmd *cmd)
 			sizeof(struct srp_direct_buf) * cmd->data_out_desc_cnt;
 		break;
 	default:
-		pr_err("client error. Invalid data_out_format %x\n", fmt);
+		pr_err("libsrp: client error. Invalid data_out_format %x\n",
+			fmt);
 		break;
 	}
 	return size;
@@ -330,16 +329,18 @@ int srp_transfer_data(struct scsi_cmnd *sc, struct srp_cmd *cmd,
 	case SRP_NO_DATA_DESC:
 		break;
 	case SRP_DATA_DESC_DIRECT:
-		md = (struct srp_direct_buf *)(cmd->add_data + offset);
+		md = (struct srp_direct_buf *)
+			(cmd->add_data + offset);
 		err = srp_direct_data(sc, md, dir, rdma_io, dma_map, ext_desc);
 		break;
 	case SRP_DATA_DESC_INDIRECT:
-		id = (struct srp_indirect_buf *)(cmd->add_data + offset);
+		id = (struct srp_indirect_buf *)
+			(cmd->add_data + offset);
 		err = srp_indirect_data(sc, cmd, id, dir, rdma_io, dma_map,
 					ext_desc);
 		break;
 	default:
-		pr_err("Unknown format %d %x\n", dir, format);
+		pr_err("libsrp: Unknown format %d %x\n", dir, format);
 		err = -EINVAL;
 	}
 
@@ -355,9 +356,9 @@ u64 srp_data_length(struct srp_cmd *cmd, enum dma_data_direction dir)
 	unsigned offset = cmd->add_cdb_len & ~3;
 	u8 fmt;
 
-	if (dir == DMA_TO_DEVICE) {
+	if (dir == DMA_TO_DEVICE)
 		fmt = cmd->buf_fmt >> 4;
-	} else {
+	else {
 		fmt = cmd->buf_fmt & ((1U << 4) - 1);
 		offset += data_out_desc_size(cmd);
 	}
@@ -366,11 +367,11 @@ u64 srp_data_length(struct srp_cmd *cmd, enum dma_data_direction dir)
 	case SRP_NO_DATA_DESC:
 		break;
 	case SRP_DATA_DESC_DIRECT:
-		md = (struct srp_direct_buf *)(cmd->add_data + offset);
+		md = (struct srp_direct_buf *) (cmd->add_data + offset);
 		len = be32_to_cpu(md->len);
 		break;
 	case SRP_DATA_DESC_INDIRECT:
-		id = (struct srp_indirect_buf *)(cmd->add_data + offset);
+		id = (struct srp_indirect_buf *) (cmd->add_data + offset);
 		len = be32_to_cpu(id->len);
 		break;
 	default:
