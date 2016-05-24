@@ -25,27 +25,36 @@
 #ifndef __H_IBMVSCSIS
 #define __H_IBMVSCSIS
 
+#define SYS_ID_NAME_LEN		64
+#define PARTITION_NAMELEN	97
 #define IBMVSCSIS_NAMELEN       32
 
 #define SCSOLNT_RESP_SHIFT      1
 #define UCSOLNT_RESP_SHIFT      2
 
-#define SCSOLNT         (1 << SCSOLNT_RESP_SHIFT)
-#define UCSOLNT         (1 << UCSOLNT_RESP_SHIFT)
+#define SCSOLNT		BIT(SCSOLNT_RESP_SHIFT)
+#define UCSOLNT		BIT(UCSOLNT_RESP_SHIFT)
 
 #define INQ_DATA_OFFSET 8
 #define NO_SUCH_LUN ((u64)-1LL)
+
+struct crq_queue {
+	struct viosrp_crq *msgs;
+	int size, cur;
+	dma_addr_t msg_token;
+	spinlock_t lock;
+};
 
 struct client_info {
 #define SRP_VERSION "16.a"
 	char srp_version[8];
 	/* root node property ibm,partition-name */
-	char partition_name[96];
+	char partition_name[PARTITION_NAMELEN];
 	/* root node property ibm,partition-no */
-	uint32_t partition_number;
+	u32 partition_number;
 	/* initially 1 */
-	uint32_t mad_version;
-	uint32_t os_type;
+	u32 mad_version;
+	u32 os_type;
 };
 
 struct ibmvscsis_cmnd {
@@ -110,25 +119,6 @@ struct ibmvscsis_adapter {
 struct ibmvscsis_nacl {
 	/* Returned by ibmvscsis_make_nexus */
 	struct se_node_acl se_node_acl;
-};
-
-struct inquiry_data {
-	u8 qual_type;
-	u8 rmb_reserve;
-	u8 version;
-	u8 aerc_naca_hisup_format;
-	u8 addl_len;
-	u8 sccs_reserved;
-	u8 bque_encserv_vs_multip_mchngr_reserved;
-	u8 reladr_reserved_linked_cmdqueue_vs;
-	char vendor[8];
-	char product[16];
-	char revision[4];
-	char vendor_specific[20];
-	char reserved1[2];
-	char version_descriptor[16];
-	char reserved2[22];
-	char unique[158];
 };
 
 enum srp_trans_event {
