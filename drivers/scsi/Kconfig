@@ -848,6 +848,23 @@ config SCSI_IBMVSCSI
 	  To compile this driver as a module, choose M here: the
 	  module will be called ibmvscsi.
 
+config SCSI_IBMVSCSIS
+	tristate "IBM Virtual SCSI Server support"
+	depends on PPC_PSERIES && TARGET_CORE && SCSI && PCI
+	help
+	  This is the IBM POWER Virtual SCSI Target Server
+	  This driver uses the SRP protocol for communication betwen servers
+	  guest and/or the host that run on the same server.
+	  More information on VSCSI protocol can be found at www.power.org
+
+	  The userspace configuration needed to initialize the driver can be
+	  be found here:
+
+	  https://github.com/powervm/ibmvscsis/wiki/Configuration
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ibmvstgt.
+
 config SCSI_IBMVFC
 	tristate "IBM Virtual FC support"
 	depends on PPC_PSERIES && SCSI
@@ -1728,16 +1745,6 @@ config SCSI_PM8001
 	help
 	  This driver supports PMC-Sierra PCIE SAS/SATA 8x6G SPC 8001 chip
 	  based host adapters.
-
-config SCSI_SRP
-	tristate "SCSI RDMA Protocol helper library"
-	depends on SCSI && PCI
-	select SCSI_TGT
-	help
-	  If you wish to use SRP target drivers, say Y.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called libsrp.
 
 config SCSI_BFA_FC
 	tristate "Brocade BFA Fibre Channel Support"
