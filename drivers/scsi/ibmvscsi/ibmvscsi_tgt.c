@@ -474,6 +474,42 @@ static void ibmvscsis_reset_queue(struct scsi_info *vscsi, uint new_state)
 	}
 }
 
+static void ibmvscsis_free_cmd_resources(struct scsi_info *vscsi,
+					 struct ibmvscsis_cmd *cmd)
+{
+	struct iu_entry *iue = cmd->iue;
+
+	switch (cmd->type) {
+	case TASK_MANAGEMENT:
+	case SCSI_CDB:
+		/*
+		 * When the queue goes down this value is cleared, so it
+		 * cannot be cleared in this general purpose function.
+		 */
+		if (vscsi->debit)
+			vscsi->debit -= 1;
+		break;
+	case ADAPTER_MAD:
+		vscsi->flags &= (~PROCESSING_MAD);
+		break;
+	case UNSET_TYPE:
+		break;
+	default:
+		pr_err("free_cmd_resources unknown type %d\n", cmd->type);
+		break;
+	}
+
+	cmd->iue = NULL;
+	list_add_tail(&cmd->list, &vscsi->free_cmd);
+	srp_iu_put(iue);
+
+	if (list_empty(&vscsi->active_q) && list_empty(&vscsi->schedule_q) &&
+	    list_empty(&vscsi->waiting_rsp) && (vscsi->flags & WAIT_FOR_IDLE)) {
+		vscsi->flags &= ~WAIT_FOR_IDLE;
+		complete(&vscsi->wait_idle);
+	}
+}
+
 static void ibmvscsis_adapter_idle(struct scsi_info *vscsi);
 
 /*
@@ -493,6 +529,7 @@ static void ibmvscsis_disconnect(struct work_struct *work)
 	u16 new_state;
 	bool wait_idle = false;
 	long rc = ADAPT_SUCCESS;
+//	struct ibmvscsis_cmd *cmd, *nxt;
 
 	spin_lock_bh(&vscsi->intr_lock);
 	new_state = vscsi->new_state;
@@ -614,7 +651,15 @@ static void ibmvscsis_disconnect(struct work_struct *work)
 			 (int)list_empty(&vscsi->schedule_q));
 		if (!list_empty(&vscsi->active_q) ||
 		    !list_empty(&vscsi->schedule_q)) {
-			vscsi->flags |= WAIT_FOR_IDLE;
+/*			list_for_each_entry_safe(cmd, nxt, &vscsi->active_q, list) {
+				pr_debug("disconnect active_q: %x\n",
+					 cmd->se_cmd.t_state);
+				transport_generic_request_failure(&cmd->se_cmd,
+					TCM_CHECK_CONDITION_ABORT_CMD);
+				list_del(&cmd->list);
+				ibmvscsis_free_cmd_resources(vscsi, cmd);
+			}
+*/			vscsi->flags |= WAIT_FOR_IDLE;
 			/*
 			 * This routine is can not be called with the interrupt
 			 * lock held.
@@ -893,42 +938,6 @@ poll_work:
 	}
 
 	pr_debug("Leaving poll_cmd_q: rc %ld\n", rc);
-}
-
-static void ibmvscsis_free_cmd_resources(struct scsi_info *vscsi,
-					 struct ibmvscsis_cmd *cmd)
-{
-	struct iu_entry *iue = cmd->iue;
-
-	switch (cmd->type) {
-	case TASK_MANAGEMENT:
-	case SCSI_CDB:
-		/*
-		 * When the queue goes down this value is cleared, so it
-		 * cannot be cleared in this general purpose function.
-		 */
-		if (vscsi->debit)
-			vscsi->debit -= 1;
-		break;
-	case ADAPTER_MAD:
-		vscsi->flags &= (~PROCESSING_MAD);
-		break;
-	case UNSET_TYPE:
-		break;
-	default:
-		pr_err("free_cmd_resources unknown type %d\n", cmd->type);
-		break;
-	}
-
-	cmd->iue = NULL;
-	list_add_tail(&cmd->list, &vscsi->free_cmd);
-	srp_iu_put(iue);
-
-	if (list_empty(&vscsi->active_q) && list_empty(&vscsi->schedule_q) &&
-	    list_empty(&vscsi->waiting_rsp) && (vscsi->flags & WAIT_FOR_IDLE)) {
-		vscsi->flags &= ~WAIT_FOR_IDLE;
-		complete(&vscsi->wait_idle);
-	}
 }
 
 /*
@@ -1770,78 +1779,84 @@ static long ibmvscsis_srp_login_rej(struct scsi_info *vscsi,
 }
 
 /*TODO: Change calls in this function to target_alloc_session() */
-static struct se_portal_group *ibmvscsis_make_nexus(struct ibmvscsis_tport
+static int ibmvscsis_make_nexus(struct ibmvscsis_tport
 						    *tport)
 {
 	char *name = tport->tport_name;
-	struct se_node_acl *acl;
+	struct ibmvscsis_nexus *nexus;
+	int rc = -ENOMEM;
 
 	pr_debug("make nexus\n");
 	if (tport->se_sess) {
 		pr_debug("tport->se_sess already exists\n");
-		return ERR_PTR(-EEXIST);
+		return 0;
+	}
+
+	nexus = kzalloc(sizeof(struct ibmvscsis_nexus), GFP_KERNEL);
+	if (!nexus) {
+		pr_err("Unable to allocate struct ibmvscsis_nexus\n");
+		return -ENOMEM;
 	}
 
 	/*
 	 * Initialize the struct se_session pointer and setup tagpool
 	 * for struct ibmvscsis_cmd descriptors
 	 */
-	tport->se_sess = transport_init_session(TARGET_PROT_NORMAL);
-	if (IS_ERR(tport->se_sess))
+	nexus->se_sess = transport_init_session(TARGET_PROT_DIN_PASS |
+						TARGET_PROT_DOUT_PASS);
+	if (IS_ERR(nexus->se_sess))
 		goto transport_init_fail;
-
-	pr_debug("ibmvscsis: make_nexus: se_sess:%p, tport(%p)\n",
-		 tport->se_sess, tport);
-	pr_debug("ibmvscsis: initiator name: %s, se_tpg: %p\n",
-		 tport->se_sess->se_node_acl->initiatorname,
-		 tport->se_sess->se_tpg);
 
 	/* Since we are running in 'demo mode' this call will generate a
 	 * struct se_node_acl for the ibmvscsis struct se_portal_group with
 	 * the SCSI Initiator port name of the passed configfs group 'name'.
 	 */
-	acl = core_tpg_check_initiator_node_acl(&tport->se_tpg,
-						(unsigned char *)name);
-	if (!acl) {
+	nexus->se_sess->se_node_acl = core_tpg_check_initiator_node_acl(
+							&tport->se_tpg,
+							(unsigned char *)name);
+	if (!nexus->se_sess->se_node_acl) {
 		pr_debug("core_tpg_check_initiaitor_node_acl() failed for %s\n",
 			 name);
-		goto acl_failed;
+		transport_free_session(nexus->se_sess);
+		goto transport_init_fail;
 	}
-	tport->se_sess->se_node_acl = acl;
 
 	/*
 	 * Now register the TCM ibmvscsis virtual I_T Nexus as active.
 	 */
-	transport_register_session(&tport->se_tpg, tport->se_sess->se_node_acl,
-				   tport->se_sess, tport);
+	transport_register_session(&tport->se_tpg, nexus->se_sess->se_node_acl,
+				   nexus->se_sess, nexus);
 
-	tport->se_sess->se_tpg = &tport->se_tpg;
+	tport->se_sess = nexus;
 
-	return &tport->se_tpg;
+	return 0;
 
-acl_failed:
-	transport_free_session(tport->se_sess);
 transport_init_fail:
-	kfree(tport);
-	return ERR_PTR(-ENOMEM);
+	kfree(nexus);
+	return rc;
 }
 
 static int ibmvscsis_drop_nexus(struct ibmvscsis_tport *tport)
 {
 	struct se_session *se_sess;
+	struct ibmvscsis_nexus *nexus;
 
 	pr_debug("drop nexus\n");
 
-	se_sess = tport->se_sess;
+	nexus = tport->se_sess;
+	if (!nexus)
+		return -ENODEV;
+
+	se_sess = nexus->se_sess;
 	if (!se_sess)
 		return -ENODEV;
 
 	/*
 	 * Release the SCSI I_T Nexus to the emulated ibmvscsis Target Port
 	 */
-	transport_deregister_session(se_sess);
+	transport_deregister_session(nexus->se_sess);
 
-	transport_free_session(se_sess);
+	transport_free_session(nexus->se_sess);
 	tport->se_sess = NULL;
 
 	return 0;
@@ -1887,7 +1902,8 @@ static long ibmvscsis_srp_login(struct scsi_info *vscsi,
 	if (vscsi->state == SRP_PROCESSING)
 		reason = SRP_LOGIN_REJ_CHANNEL_LIMIT_REACHED;
 
-	if (!ibmvscsis_make_nexus(&vscsi->tport))
+	rc = ibmvscsis_make_nexus(&vscsi->tport);
+	if (rc)
 		reason = SRP_LOGIN_REJ_UNABLE_ESTABLISH_CHANNEL;
 
 	cmd->rsp.format = VIOSRP_SRP_FORMAT;
@@ -2474,11 +2490,13 @@ static void ibmvscsis_parse_cmd(struct scsi_info *vscsi,
 {
 	struct iu_entry *iue = cmd->iue;
 	struct srp_cmd *srp = (struct srp_cmd *)iue->sbuf->buf;
+	struct ibmvscsis_nexus *nexus;
 	u64 unpacked_lun = 0;
 	u32 data_len = 0;
 	int attr = 0;
 	int rc = 0;
 
+	nexus = vscsi->tport.se_sess;
 	/*
 	 * additional length in bytes.  Note that the SRP spec says that
 	 * additional length is in 4-byte words, but technically the
@@ -2529,14 +2547,20 @@ static void ibmvscsis_parse_cmd(struct scsi_info *vscsi,
 	pr_debug("calling submit_cmd, se_cmd %p, lun 0x%llx, cdb 0x%x\n",
 		 &cmd->se_cmd, unpacked_lun, (int)srp->cdb[0]);
 
-	rc = target_submit_cmd(&cmd->se_cmd, vscsi->tport.se_sess, srp->cdb,
+
+	pr_debug("calling submit_cmd t_state: %x\n", cmd->se_cmd.t_state);
+
+	rc = target_submit_cmd(&cmd->se_cmd, nexus->se_sess, srp->cdb,
 			       cmd->sense_buf, unpacked_lun, data_len, attr,
 			       srp_cmd_direction(srp), 0);
-	if (rc) {
+	if (rc) { 
 		pr_err("target_submit_cmd failed, rc %d\n", rc);
-		rc = TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
-		transport_send_check_condition_and_sense(&cmd->se_cmd, rc, 0);
+		goto fail;
 	}
+	return;
+
+fail:
+	transport_send_check_condition_and_sense(&cmd->se_cmd, 0, 0);
 }
 
 /*
@@ -2556,6 +2580,9 @@ static void ibmvscsis_parse_task(struct scsi_info *vscsi,
 	int tcm_type;
 	u64 tag_to_abort = 0;
 	int rc = 0;
+	struct ibmvscsis_nexus *nexus;
+
+	nexus = vscsi->tport.se_sess;
 
 	cmd->rsp.sol_not = srp_tsk->sol_not;
 
@@ -2596,7 +2623,7 @@ static void ibmvscsis_parse_task(struct scsi_info *vscsi,
 
 		pr_debug("calling submit_tmr, func %d\n",
 			 srp_tsk->tsk_mgmt_func);
-		rc = target_submit_tmr(&cmd->se_cmd, vscsi->tport.se_sess, NULL,
+		rc = target_submit_tmr(&cmd->se_cmd, nexus->se_sess, NULL,
 				       unpacked_lun, srp_tsk, tcm_type,
 				       GFP_KERNEL, tag_to_abort, 0);
 		if (rc) {
@@ -3653,6 +3680,9 @@ static int ibmvscsis_write_pending(struct se_cmd *se_cmd)
 	u64 unpacked_lun;
 	int rc;
 
+	pr_debug("write_pending, se_cmd %p, length 0x%x\n",
+		 se_cmd, se_cmd->data_length);
+
 	unpacked_lun = se_cmd->se_lun->unpacked_lun;
 	if (!se_cmd->se_lun) {
 		pr_err("write_pending not valid se_lun 0x%08llx\n",
@@ -3705,6 +3735,9 @@ static int ibmvscsis_queue_data_in(struct se_cmd *se_cmd)
 	pr_debug("queue_data_in, se_cmd %p, length 0x%x\n",
 		 se_cmd, se_cmd->data_length);
 
+	if (unlikely(transport_check_aborted_status(&cmd->se_cmd, false)))
+		pr_err("queue_data_in aborted\n");
+
 	/* TBD: Why does flat addressing not work for the linux client? */
 	if (srp->cdb[0] == REPORT_LUNS && vscsi->client_data.os_type != LINUX)
 		ibmvscsis_modify_rep_luns(se_cmd);
@@ -3746,6 +3779,9 @@ static int ibmvscsis_queue_status(struct se_cmd *se_cmd)
 
 	pr_debug("queue_status %p\n", se_cmd);
 
+	if (unlikely(transport_check_aborted_status(&cmd->se_cmd, false)))
+		pr_err("queue_data_in aborted\n");
+
 	srp_build_response(vscsi, cmd, &len);
 	cmd->rsp.format = SRP_FORMAT;
 	cmd->rsp.len = len;
@@ -3762,6 +3798,11 @@ static void ibmvscsis_queue_tm_rsp(struct se_cmd *se_cmd)
 
 	pr_debug("queue_tm_rsp %p, status %d\n",
 		 se_cmd, (int)se_cmd->se_tmr_req->response);
+
+
+	if (unlikely(transport_check_aborted_status(&cmd->se_cmd, false)))
+		pr_err("queue_data_in aborted\n");
+
 	srp_build_response(vscsi, cmd, &len);
 	cmd->rsp.format = SRP_FORMAT;
 	cmd->rsp.len = len;
