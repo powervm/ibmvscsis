@@ -189,6 +189,10 @@ struct ibmvscsis_cmd {
 	char type;
 };
 
+struct ibmvscsis_nexus {
+	struct se_session *se_sess;
+};
+
 struct ibmvscsis_tport {
 	/* SCSI protocol the tport is providing */
 	u8 tport_proto_id;
@@ -201,7 +205,7 @@ struct ibmvscsis_tport {
 	/* ibmvscsis port target portal group tag for TCM */
 	u16 tport_tpgt;
 	/* Pointer to TCM session for I_T Nexus */
-	struct se_session *se_sess;
+	struct ibmvscsis_nexus *ibmv_nexus;
 	bool enabled;
 	bool releasing;
 };
