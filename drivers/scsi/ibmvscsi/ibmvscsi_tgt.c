@@ -3667,7 +3667,6 @@ static int ibmvscsis_write_pending(struct se_cmd *se_cmd)
 						  struct ibmvscsis_cmd,
 						  se_cmd);
 	struct iu_entry *iue = cmd->iue;
-	u64 unpacked_lun;
 	int rc;
 
 	pr_debug("write_pending, se_cmd %p, length 0x%x\n",
