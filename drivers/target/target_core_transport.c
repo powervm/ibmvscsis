@@ -1667,8 +1667,7 @@ void transport_generic_request_failure(struct se_cmd *cmd,
 	/*
 	 * For SAM Task Attribute emulation for failed struct se_cmd
 	 */
-	if (sense_reason != TCM_UNSUPPORTED_SCSI_OPCODE ||
-	    sense_reason != TCM_INVALID_CDB_FIELD)
+	if (sense_reason != TCM_UNSUPPORTED_SCSI_OPCODE)
 		transport_complete_task_attr(cmd);
 	/*
 	 * Handle special case for COMPARE_AND_WRITE failure, where the
