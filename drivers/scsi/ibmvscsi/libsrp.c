@@ -135,7 +135,6 @@ free_ring:
 	srp_ring_free(target->dev, target->rx_ring, nr, iu_size);
 	return -ENOMEM;
 }
-EXPORT_SYMBOL_GPL(srp_target_alloc);
 
 void srp_target_free(struct srp_target *target)
 {
@@ -144,7 +143,6 @@ void srp_target_free(struct srp_target *target)
 		      target->srp_iu_size);
 	srp_iu_pool_free(&target->iu_queue);
 }
-EXPORT_SYMBOL_GPL(srp_target_free);
 
 struct iu_entry *srp_iu_get(struct srp_target *target)
 {
@@ -162,14 +160,12 @@ struct iu_entry *srp_iu_get(struct srp_target *target)
 	iue->flags = 0;
 	return iue;
 }
-EXPORT_SYMBOL_GPL(srp_iu_get);
 
 void srp_iu_put(struct iu_entry *iue)
 {
 	kfifo_in_locked(&iue->target->iu_queue.queue, (void *)&iue,
 			sizeof(void *), &iue->target->iu_queue.lock);
 }
-EXPORT_SYMBOL_GPL(srp_iu_put);
 
 static int srp_direct_data(struct ibmvscsis_cmd *cmd, struct srp_direct_buf *md,
 			   enum dma_data_direction dir, srp_rdma_t rdma_io,
@@ -347,41 +343,67 @@ int srp_transfer_data(struct ibmvscsis_cmd *cmd, struct srp_cmd *srp_cmd,
 
 	return err;
 }
-EXPORT_SYMBOL_GPL(srp_transfer_data);
 
-u64 srp_data_length(struct srp_cmd *cmd, enum dma_data_direction dir)
+int srp_get_desc_table(struct srp_cmd *srp_cmd, enum dma_data_direction *dir,
+		       u64 *data_len)
 {
-	struct srp_direct_buf *md;
-	struct srp_indirect_buf *id;
-	u64 len = 0;
-	uint offset = cmd->add_cdb_len & ~3;
-	u8 fmt;
+        struct srp_indirect_buf *idb;
+	struct srp_direct_buf *db;
+	unsigned add_cdb_offset;
+	int ret;
+	u8 n_rbuf;
 
-	if (dir == DMA_TO_DEVICE) {
-		fmt = cmd->buf_fmt >> 4;
-	} else {
-		fmt = cmd->buf_fmt & ((1U << 4) - 1);
-		offset += data_out_desc_size(cmd);
-	}
+        /*
+	 * The pointer computations below will only be compiled correctly
+	 * if srp_cmd::add_data is declared as s8*, u8*, s8[] or u8[], so check
+	 * whether srp_cmd::add_data has been declared as a byte pointer.
+	 */
+	BUILD_BUG_ON(!__same_type(srp_cmd->add_data[0], (s8)0)
+		     && !__same_type(srp_cmd->add_data[0], (u8)0));
+        BUG_ON(!dir);
+	BUG_ON(!data_len);
 
-	switch (fmt) {
-	case SRP_NO_DATA_DESC:
-		break;
-	case SRP_DATA_DESC_DIRECT:
-		md = (struct srp_direct_buf *)(cmd->add_data + offset);
-		len = be32_to_cpu(md->len);
-		break;
-	case SRP_DATA_DESC_INDIRECT:
-		id = (struct srp_indirect_buf *)(cmd->add_data + offset);
-		len = be32_to_cpu(id->len);
-		break;
-	default:
-		pr_err("invalid data format %x\n", fmt);
-		break;
+        ret = 0;
+	*data_len = 0;
+
+	*dir = DMA_NONE;
+
+	if (srp_cmd->buf_fmt & 0xf)
+		*dir = DMA_FROM_DEVICE;
+	else if (srp_cmd->buf_fmt >> 4)
+		*dir = DMA_TO_DEVICE;
+
+	add_cdb_offset = srp_cmd->add_cdb_len & ~3;
+	if (((srp_cmd->buf_fmt & 0xf) == SRP_DATA_DESC_DIRECT) ||
+	    ((srp_cmd->buf_fmt >> 4) == SRP_DATA_DESC_DIRECT)) {
+		db = (struct srp_direct_buf *)(srp_cmd->add_data
+					       + add_cdb_offset);
+		*data_len = be32_to_cpu(db->len);
+	} else if (((srp_cmd->buf_fmt & 0xf) == SRP_DATA_DESC_INDIRECT) ||
+		   ((srp_cmd->buf_fmt >> 4) == SRP_DATA_DESC_INDIRECT)) {
+		idb = (struct srp_indirect_buf *)(srp_cmd->add_data
+						  + add_cdb_offset);
+
+		n_rbuf = be32_to_cpu(idb->table_desc.len) / sizeof(*db);
+
+		if (n_rbuf >
+		    (srp_cmd->data_out_desc_cnt + srp_cmd->data_in_desc_cnt)) {
+			pr_err("received unsupported SRP_CMD request"
+			       " type (%u out + %u in != %u / %zu)\n",
+			       srp_cmd->data_out_desc_cnt,
+			       srp_cmd->data_in_desc_cnt,
+			       be32_to_cpu(idb->table_desc.len),
+			       sizeof(*db));
+			ret = -EINVAL;
+			goto out;
+		}
+		*data_len = be32_to_cpu(idb->len);
 	}
-	return len;
+out:
+	return ret;
+
+
 }
-EXPORT_SYMBOL_GPL(srp_data_length);
 
 MODULE_DESCRIPTION("SCSI RDMA Protocol lib functions");
 MODULE_AUTHOR("FUJITA Tomonori");
