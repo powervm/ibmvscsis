@@ -769,7 +769,6 @@ static void ibmvscsis_post_disconnect(struct scsi_info *vscsi, uint new_state,
 
 	pr_debug("Leaving post_disconnect: flags 0x%x, new_state 0x%x\n",
 		 vscsi->flags, vscsi->new_state);
-	return;
 }
 
 /**
@@ -1815,19 +1814,12 @@ static long ibmvscsis_srp_login_rej(struct scsi_info *vscsi,
 	return rc;
 }
 
-/*TODO: Change calls in this function to target_alloc_session() */
 static int ibmvscsis_make_nexus(struct ibmvscsis_tport *tport)
 {
 	char *name = tport->tport_name;
 	struct ibmvscsis_nexus *nexus;
 	int rc;
 
-/*	pr_debug("make nexus\n");
-	if (tport->ibmv_nexus) {
-		pr_debug("tport->ibmv_nexus already exists\n");
-		return 0;
-	}
-*/
 	nexus = kzalloc(sizeof(struct ibmvscsis_nexus), GFP_KERNEL);
 	if (!nexus) {
 		pr_err("Unable to allocate struct ibmvscsis_nexus\n");
@@ -2582,7 +2574,6 @@ static void ibmvscsis_parse_cmd(struct scsi_info *vscsi,
 		dev_err(&vscsi->dev, "0x%llx: parsing SRP descriptor table failed.\n",
 			srp->tag);
 		goto fail;
-		return;
 	}
 
 	cmd->rsp.sol_not = srp->sol_not;
