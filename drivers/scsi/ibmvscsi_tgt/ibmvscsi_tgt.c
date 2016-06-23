@@ -6,7 +6,6 @@
  *
  * Copyright (C) 2005-2011 FUJITA Tomonori <tomof@acm.org>
  * Copyright (C) 2010 Nicholas A. Bellinger <nab@kernel.org>
- * Copyright (C) 2016 Bryant G. Ly <bryantly@linux.vnet.ibm.com> IBM Corp.
  *
  * Authors: Bryant G. Ly <bryantly@linux.vnet.ibm.com>
  * Authors: Michael Cyr <mikecyr@linux.vnet.ibm.com>
@@ -42,10 +41,6 @@
 
 #include "ibmvscsi_tgt.h"
 
-#ifndef H_GET_PARTNER_INFO
-#define H_GET_PARTNER_INFO      0x0000000000000008LL
-#endif
-
 #define IBMVSCSIS_VERSION	"v0.2"
 
 #define	INITIAL_SRP_LIMIT	800
@@ -53,8 +48,6 @@
 
 static uint max_vdma_size = MAX_H_COPY_RDMA;
 
-static const char ibmvscsis_driver_name[] = "ibmvscsis";
-static const char ibmvscsis_workq_name[] = "ibmvscsis";
 static char system_id[SYS_ID_NAME_LEN] = "";
 static char partition_name[PARTITION_NAMELEN] = "UNKNOWN";
 static uint partition_number = -1;
@@ -62,6 +55,11 @@ static uint partition_number = -1;
 /* Adapter list and lock to control it */
 static DEFINE_SPINLOCK(ibmvscsis_dev_lock);
 static LIST_HEAD(ibmvscsis_dev_list);
+
+static long ibmvscsis_parse_command(struct scsi_info *vscsi,
+				    struct viosrp_crq *crq);
+
+static void ibmvscsis_adapter_idle(struct scsi_info *vscsi);
 
 static void ibmvscsis_determine_resid(struct se_cmd *se_cmd,
 				      struct srp_rsp *rsp)
@@ -498,7 +496,7 @@ static void ibmvscsis_free_cmd_resources(struct scsi_info *vscsi,
 			vscsi->debit -= 1;
 		break;
 	case ADAPTER_MAD:
-		vscsi->flags &= (~PROCESSING_MAD);
+		vscsi->flags &= ~PROCESSING_MAD;
 		break;
 	case UNSET_TYPE:
 		break;
@@ -518,8 +516,6 @@ static void ibmvscsis_free_cmd_resources(struct scsi_info *vscsi,
 		complete(&vscsi->wait_idle);
 	}
 }
-
-static void ibmvscsis_adapter_idle(struct scsi_info *vscsi);
 
 /**
  * ibmvscsis_disconnect() - Helper function to disconnect
@@ -860,9 +856,6 @@ static long ibmvscsis_trans_event(struct scsi_info *vscsi,
 
 	return rc;
 }
-
-static long ibmvscsis_parse_command(struct scsi_info *vscsi,
-				    struct viosrp_crq *crq);
 
 /**
  * ibmvscsis_poll_cmd_q() - Poll Command Queue
@@ -3636,15 +3629,13 @@ static int ibmvscsis_queue_data_in(struct se_cmd *se_cmd)
 		sd = se_cmd->sense_buffer;
 		se_cmd->scsi_sense_length = 18;
 		memset(se_cmd->sense_buffer, 0, se_cmd->scsi_sense_length);
-		/* Current error */
-		sd[0] = 0x70;
-		/* sense key = Medium Error */
-		sd[2] = 3;
-		/* additional length (length - 8) */
-		sd[7] = 10;
-		/* asc/ascq 0x801 = Logical Unit Communication time-out */
-		sd[12] = 8;
-		sd[13] = 1;
+		/* Fixed/Current Error = 0
+		 * Sense Key = Medium Error (0x03)
+		 * Additonal Length = 0xa
+		 * Logical Unit Communication Time-out asc/ascq = 0x801
+		 */
+		scsi_build_sense_buffer(0, se_cmd->sense_buffer, MEDIUM_ERROR,
+					0x08, 0x01);
 	}
 
 	srp_build_response(vscsi, cmd, &len);
@@ -3897,7 +3888,7 @@ static struct vio_device_id ibmvscsis_device_table[] = {
 MODULE_DEVICE_TABLE(vio, ibmvscsis_device_table);
 
 static struct vio_driver ibmvscsis_driver = {
-	.name = ibmvscsis_driver_name,
+	.name = "ibmvscsis",
 	.id_table = ibmvscsis_device_table,
 	.probe = ibmvscsis_probe,
 	.remove = ibmvscsis_remove,

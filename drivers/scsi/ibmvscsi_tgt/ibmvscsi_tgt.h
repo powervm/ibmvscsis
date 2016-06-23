@@ -328,6 +328,10 @@ struct scsi_info {
 #define READ_CMD(cdb)	(((cdb)[0] & 0x1F) == 8)
 #define WRITE_CMD(cdb)	(((cdb)[0] & 0x1F) == 0xA)
 
+#ifndef H_GET_PARTNER_INFO
+#define H_GET_PARTNER_INFO      0x0000000000000008LL
+#endif
+
 #define h_copy_rdma(l, sa, sb, da, db) \
 		plpar_hcall_norets(H_COPY_RDMA, l, sa, sb, da, db)
 #define h_vioctl(u, o, a, u1, u2, u3, u4) \
