@@ -157,6 +157,12 @@ static struct genl_family tcmu_genl_family = {
 	.n_mcgrps = ARRAY_SIZE(tcmu_mcgrps),
 };
 
+static const char lu_comm_failure_sense[18] = {
+	0x70, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x0a,
+	0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
+	0x00, 0x00
+};
+
 static struct tcmu_cmd *tcmu_alloc_cmd(struct se_cmd *se_cmd)
 {
 	struct se_device *se_dev = se_cmd->se_dev;
@@ -553,7 +559,8 @@ static int tcmu_queue_cmd(struct se_cmd *se_cmd)
 	return ret;
 }
 
-static void tcmu_handle_completion(struct tcmu_cmd *cmd, struct tcmu_cmd_entry *entry)
+static void tcmu_handle_completion(struct tcmu_cmd *cmd,
+				   struct tcmu_cmd_entry *entry)
 {
 	struct se_cmd *se_cmd = cmd->se_cmd;
 	struct tcmu_dev *udev = cmd->tcmu_dev;
@@ -574,9 +581,11 @@ static void tcmu_handle_completion(struct tcmu_cmd *cmd, struct tcmu_cmd_entry *
 		pr_warn("TCMU: Userspace set UNKNOWN_OP flag on se_cmd %p\n",
 			cmd->se_cmd);
 		entry->rsp.scsi_status = SAM_STAT_CHECK_CONDITION;
+		memcpy(se_cmd->sense_buffer, lu_comm_failure_sense,
+		       sizeof(lu_comm_failure_sense));
 	} else if (entry->rsp.scsi_status == SAM_STAT_CHECK_CONDITION) {
 		memcpy(se_cmd->sense_buffer, entry->rsp.sense_buffer,
-			       se_cmd->scsi_sense_length);
+			       TRANSPORT_SENSE_BUFFER);
 		free_data_area(udev, cmd);
 	} else if (se_cmd->se_cmd_flags & SCF_BIDI) {
 		DECLARE_BITMAP(bitmap, DATA_BLOCK_BITS);
@@ -679,6 +688,8 @@ static int tcmu_check_expired_cmd(int id, void *p, void *data)
 		return 0;
 
 	set_bit(TCMU_CMD_BIT_EXPIRED, &cmd->flags);
+	memcpy(cmd->se_cmd->sense_buffer, lu_comm_failure_sense,
+	       sizeof(lu_comm_failure_sense));
 	target_complete_cmd(cmd->se_cmd, SAM_STAT_CHECK_CONDITION);
 	cmd->se_cmd = NULL;
 
@@ -1142,6 +1153,13 @@ tcmu_parse_cdb(struct se_cmd *cmd)
 	return passthrough_parse_cdb(cmd, tcmu_pass_op);
 }
 
+static void tcmu_transport_complete(struct se_cmd *cmd, struct scatterlist *sg,
+				    unsigned char *sense_buffer)
+{
+	if (cmd->scsi_status == SAM_STAT_CHECK_CONDITION)
+		cmd->se_cmd_flags |= SCF_TRANSPORT_TASK_SENSE;
+}
+
 static const struct target_backend_ops tcmu_ops = {
 	.name			= "user",
 	.owner			= THIS_MODULE,
@@ -1152,6 +1170,7 @@ static const struct target_backend_ops tcmu_ops = {
 	.configure_device	= tcmu_configure_device,
 	.free_device		= tcmu_free_device,
 	.parse_cdb		= tcmu_parse_cdb,
+	.transport_complete     = tcmu_transport_complete,
 	.set_configfs_dev_params = tcmu_set_configfs_dev_params,
 	.show_configfs_dev_params = tcmu_show_configfs_dev_params,
 	.get_device_type	= sbc_get_device_type,
