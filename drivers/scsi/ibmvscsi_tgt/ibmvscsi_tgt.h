@@ -233,6 +233,7 @@ struct scsi_info {
 	struct list_head schedule_q;
 	/* commands sent to TCM */
 	struct list_head active_q;
+	int cmds_in_use;
 	caddr_t *map_buf;
 	/* ioba of map buffer */
 	dma_addr_t map_ioba;

@@ -545,6 +545,8 @@ static void ibmvscsis_free_cmd_resources(struct scsi_info *vscsi,
 
 	cmd->iue = NULL;
 	list_add_tail(&cmd->list, &vscsi->free_cmd);
+	if (vscsi->cmds_in_use > 0)
+		vscsi->cmds_in_use--;
 	srp_iu_put(iue);
 
 	if (list_empty(&vscsi->active_q) && list_empty(&vscsi->schedule_q) &&
@@ -1028,6 +1030,7 @@ static struct ibmvscsis_cmd *ibmvscsis_get_free_cmd(struct scsi_info *vscsi)
 					       struct ibmvscsis_cmd, list);
 		if (cmd) {
 			list_del(&cmd->list);
+                        vscsi->cmds_in_use++;
 			cmd->iue = iue;
 			cmd->type = UNSET_TYPE;
 			memset(&cmd->se_cmd, 0, sizeof(cmd->se_cmd));
@@ -2691,7 +2694,7 @@ static void ibmvscsis_parse_cmd(struct scsi_info *vscsi,
 			       cmd->sense_buf, scsilun_to_int(&srp->lun),
 			       data_len, attr, dir, 0);
 	if (rc) {
-		dev_err(&vscsi->dev, "target_submit_cmd failed, rc %d\n", rc);
+		pr_err("target_submit_cmd failed, rc %d\n", rc);
 		goto fail;
 	}
 	return;
@@ -2769,7 +2772,7 @@ static void ibmvscsis_parse_task(struct scsi_info *vscsi,
 				       scsilun_to_int(&srp_tsk->lun), srp_tsk,
 				       tcm_type, GFP_KERNEL, tag_to_abort, 0);
 		if (rc) {
-			dev_err(&vscsi->dev, "target_submit_tmr failed, rc %d\n",
+			pr_err("target_submit_tmr failed, rc %d\n",
 				rc);
 			cmd->se_cmd.se_tmr_req->response =
 				TMR_FUNCTION_REJECTED;
@@ -3693,6 +3696,20 @@ static int ibmvscsis_remove(struct vio_dev *vdev)
 
 	vio_disable_interrupts(vdev);
 	free_irq(vdev->irq, vscsi);
+
+        spin_lock_bh(&vscsi->intr_lock);
+        if (vscsi->cmds_in_use) {
+		pr_err("Remove called with %d cmds still outstanding\n",
+		       vscsi->cmds_in_use);
+		do {
+			spin_unlock_bh(&vscsi->intr_lock);
+			msleep(100);
+			spin_lock_bh(&vscsi->intr_lock);
+		} while (vscsi->cmds_in_use);
+		pr_debug("cmds_in_use now 0\n");
+        }
+        spin_unlock_bh(&vscsi->intr_lock);
+
 	destroy_workqueue(vscsi->work_q);
 	dma_unmap_single(&vdev->dev, vscsi->map_ioba, PAGE_SIZE,
 			 DMA_BIDIRECTIONAL);
