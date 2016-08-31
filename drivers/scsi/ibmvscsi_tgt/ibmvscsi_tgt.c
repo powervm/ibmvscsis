@@ -2528,9 +2528,7 @@ static void ibmvscsis_modify_std_inquiry(struct se_cmd *se_cmd)
 			repl_len = 16;
 			if (cmd_len - 16 < repl_len)
 				repl_len = cmd_len - 16;
-			if (dev->transport->get_device_type(dev) == TYPE_ROM)
-				memcpy(&buf[16], "VOPTA           ", repl_len);
-			else
+			if (memcmp(&buf[16], "VOPTA", 5))
 				memcpy(&buf[16], "3303      NVDISK", repl_len);
 		}
 		if (cmd_len > 32) {
