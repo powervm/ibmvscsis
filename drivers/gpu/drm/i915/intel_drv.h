@@ -783,7 +783,6 @@ struct intel_dp {
 				     bool has_aux_irq,
 				     int send_bytes,
 				     uint32_t aux_clock_divider);
-	bool train_set_valid;
 
 	/* Displayport compliance testing */
 	unsigned long compliance_test_type;
@@ -1198,7 +1197,7 @@ void intel_csr_ucode_fini(struct drm_device *dev);
 void assert_csr_loaded(struct drm_i915_private *dev_priv);
 
 /* intel_dp.c */
-void intel_dp_init(struct drm_device *dev, int output_reg, enum port port);
+bool intel_dp_init(struct drm_device *dev, int output_reg, enum port port);
 bool intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 			     struct intel_connector *intel_connector);
 void intel_dp_set_link_params(struct intel_dp *intel_dp,
