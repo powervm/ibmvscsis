@@ -2414,6 +2414,86 @@ static long ibmvscsis_parse_command(struct scsi_info *vscsi,
 	return rc;
 }
 
+/**
+ * ibmvscsis_modify_rep_luns() - Modify Report Luns
+ *
+ * Some vscsi clients do not handle an LUA of 0 (they ignore it), so in
+ * order to work around this, we will essentially change all the LUAs to
+ * use the Flat space addressing method, which basically means setting
+ * the uppermost two bits to 01b.  This will allow us to still be
+ * compliant with the SCSI specification, but no LUA we return will be
+ * all 0s.  Note that ibmvscsis_unpack_lun will and off the address
+ * method bits.
+ */
+static void ibmvscsis_modify_rep_luns(struct se_cmd *se_cmd)
+{
+	u16 data_len;
+	s32 len = se_cmd->data_length;
+	unsigned char *buf = NULL;
+
+	if (len <= 8)
+		return;
+
+	len -= 8;
+	buf = transport_kmap_data_sg(se_cmd);
+	if (buf) {
+		data_len = be32_to_cpu(*(u32 *)buf);
+		pr_debug("modify_rep_luns: len %d data_len %hud\n", len,
+			 data_len);
+		if (data_len < len)
+			len = data_len;
+		buf += 8;
+		while (len > 0) {
+			*buf |= SCSI_LUN_ADDR_METHOD_FLAT << 6;
+			len -= 8;
+			buf += 8;
+		}
+		transport_kunmap_data_sg(se_cmd);
+	}
+}
+
+/**
+ * ibmvscsis_modify_std_inquiry() - Modify STD Inquiry
+ *
+ * This function modifies the inquiry data prior to sending to initiator
+ * so that we can support current AIX. Internally we are going to
+ * add new ODM entries to support the emulation from LIO. This function
+ * is temporary until those changes are done.
+ */
+static void ibmvscsis_modify_std_inquiry(struct se_cmd *se_cmd)
+{
+	struct se_device *dev = se_cmd->se_dev;
+	u32 cmd_len = se_cmd->data_length;
+	u32 repl_len;
+	unsigned char *buf = NULL;
+
+	if (cmd_len <= 8)
+		return;
+
+	buf = transport_kmap_data_sg(se_cmd);
+	if (buf) {
+		repl_len = 8;
+		if (cmd_len - 8 < repl_len)
+			repl_len = cmd_len - 8;
+		memcpy(&buf[8], "IBM     ", repl_len);
+
+		if (cmd_len > 16) {
+			repl_len = 16;
+			if (cmd_len - 16 < repl_len)
+				repl_len = cmd_len - 16;
+			if (memcmp(&buf[16], "VOPTA", 5))
+				memcpy(&buf[16], "3303      NVDISK", repl_len);
+		}
+		if (cmd_len > 32) {
+			repl_len = 4;
+			if (cmd_len - 32 < repl_len)
+				repl_len = cmd_len - 32;
+			memcpy(&buf[32], "0001", repl_len);
+		}
+		transport_kunmap_data_sg(se_cmd);
+	}
+}
+
 static int read_dma_window(struct scsi_info *vscsi)
 {
 	struct vio_dev *vdev = vscsi->dma_dev;
