@@ -18,10 +18,6 @@ source "ubuntu/i915/Kconfig"
 ##
 ##
 ##
-source "ubuntu/hio/Kconfig"
-##
-##
-##
 ##
 ##
 ##

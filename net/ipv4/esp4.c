@@ -23,11 +23,6 @@ struct esp_skb_cb {
 	void *tmp;
 };
 
-struct esp_output_extra {
-	__be32 seqhi;
-	u32 esphoff;
-};
-
 #define ESP_SKB_CB(__skb) ((struct esp_skb_cb *)&((__skb)->cb[0]))
 
 static u32 esp4_get_mtu(struct xfrm_state *x, int mtu);
@@ -40,11 +35,11 @@ static u32 esp4_get_mtu(struct xfrm_state *x, int mtu);
  *
  * TODO: Use spare space in skb for this where possible.
  */
-static void *esp_alloc_tmp(struct crypto_aead *aead, int nfrags, int extralen)
+static void *esp_alloc_tmp(struct crypto_aead *aead, int nfrags, int seqhilen)
 {
 	unsigned int len;
 
-	len = extralen;
+	len = seqhilen;
 
 	len += crypto_aead_ivsize(aead);
 
@@ -62,16 +57,15 @@ static void *esp_alloc_tmp(struct crypto_aead *aead, int nfrags, int extralen)
 	return kmalloc(len, GFP_ATOMIC);
 }
 
-static inline void *esp_tmp_extra(void *tmp)
+static inline __be32 *esp_tmp_seqhi(void *tmp)
 {
-	return PTR_ALIGN(tmp, __alignof__(struct esp_output_extra));
+	return PTR_ALIGN((__be32 *)tmp, __alignof__(__be32));
 }
-
-static inline u8 *esp_tmp_iv(struct crypto_aead *aead, void *tmp, int extralen)
+static inline u8 *esp_tmp_iv(struct crypto_aead *aead, void *tmp, int seqhilen)
 {
 	return crypto_aead_ivsize(aead) ?
-	       PTR_ALIGN((u8 *)tmp + extralen,
-			 crypto_aead_alignmask(aead) + 1) : tmp + extralen;
+	       PTR_ALIGN((u8 *)tmp + seqhilen,
+			 crypto_aead_alignmask(aead) + 1) : tmp + seqhilen;
 }
 
 static inline struct aead_request *esp_tmp_req(struct crypto_aead *aead, u8 *iv)
@@ -105,7 +99,7 @@ static void esp_restore_header(struct sk_buff *skb, unsigned int offset)
 {
 	struct ip_esp_hdr *esph = (void *)(skb->data + offset);
 	void *tmp = ESP_SKB_CB(skb)->tmp;
-	__be32 *seqhi = esp_tmp_extra(tmp);
+	__be32 *seqhi = esp_tmp_seqhi(tmp);
 
 	esph->seq_no = esph->spi;
 	esph->spi = *seqhi;
@@ -113,11 +107,7 @@ static void esp_restore_header(struct sk_buff *skb, unsigned int offset)
 
 static void esp_output_restore_header(struct sk_buff *skb)
 {
-	void *tmp = ESP_SKB_CB(skb)->tmp;
-	struct esp_output_extra *extra = esp_tmp_extra(tmp);
-
-	esp_restore_header(skb, skb_transport_offset(skb) + extra->esphoff -
-				sizeof(__be32));
+	esp_restore_header(skb, skb_transport_offset(skb) - sizeof(__be32));
 }
 
 static void esp_output_done_esn(struct crypto_async_request *base, int err)
@@ -131,7 +121,6 @@ static void esp_output_done_esn(struct crypto_async_request *base, int err)
 static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 {
 	int err;
-	struct esp_output_extra *extra;
 	struct ip_esp_hdr *esph;
 	struct crypto_aead *aead;
 	struct aead_request *req;
@@ -148,7 +137,8 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	int tfclen;
 	int nfrags;
 	int assoclen;
-	int extralen;
+	int seqhilen;
+	__be32 *seqhi;
 	__be64 seqno;
 
 	/* skb is pure payload to encrypt */
@@ -176,21 +166,21 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	nfrags = err;
 
 	assoclen = sizeof(*esph);
-	extralen = 0;
+	seqhilen = 0;
 
 	if (x->props.flags & XFRM_STATE_ESN) {
-		extralen += sizeof(*extra);
-		assoclen += sizeof(__be32);
+		seqhilen += sizeof(__be32);
+		assoclen += seqhilen;
 	}
 
-	tmp = esp_alloc_tmp(aead, nfrags, extralen);
+	tmp = esp_alloc_tmp(aead, nfrags, seqhilen);
 	if (!tmp) {
 		err = -ENOMEM;
 		goto error;
 	}
 
-	extra = esp_tmp_extra(tmp);
-	iv = esp_tmp_iv(aead, tmp, extralen);
+	seqhi = esp_tmp_seqhi(tmp);
+	iv = esp_tmp_iv(aead, tmp, seqhilen);
 	req = esp_tmp_req(aead, iv);
 	sg = esp_req_sg(aead, req);
 
@@ -257,10 +247,8 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	 * encryption.
 	 */
 	if ((x->props.flags & XFRM_STATE_ESN)) {
-		extra->esphoff = (unsigned char *)esph -
-				 skb_transport_header(skb);
-		esph = (struct ip_esp_hdr *)((unsigned char *)esph - 4);
-		extra->seqhi = esph->spi;
+		esph = (void *)(skb_transport_header(skb) - sizeof(__be32));
+		*seqhi = esph->spi;
 		esph->seq_no = htonl(XFRM_SKB_CB(skb)->seq.output.hi);
 		aead_request_set_callback(req, 0, esp_output_done_esn, skb);
 	}
@@ -457,7 +445,7 @@ static int esp_input(struct xfrm_state *x, struct sk_buff *skb)
 		goto out;
 
 	ESP_SKB_CB(skb)->tmp = tmp;
-	seqhi = esp_tmp_extra(tmp);
+	seqhi = esp_tmp_seqhi(tmp);
 	iv = esp_tmp_iv(aead, tmp, seqhilen);
 	req = esp_tmp_req(aead, iv);
 	sg = esp_req_sg(aead, req);

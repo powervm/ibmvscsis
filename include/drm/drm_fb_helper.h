@@ -148,7 +148,6 @@ struct drm_fb_helper {
 };
 
 #ifdef CONFIG_DRM_FBDEV_EMULATION
-int drm_fb_helper_modinit(void);
 void drm_fb_helper_prepare(struct drm_device *dev, struct drm_fb_helper *helper,
 			   const struct drm_fb_helper_funcs *funcs);
 int drm_fb_helper_init(struct drm_device *dev,
@@ -213,11 +212,6 @@ int drm_fb_helper_add_one_connector(struct drm_fb_helper *fb_helper, struct drm_
 int drm_fb_helper_remove_one_connector(struct drm_fb_helper *fb_helper,
 				       struct drm_connector *connector);
 #else
-static inline int drm_fb_helper_modinit(void)
-{
-	return 0;
-}
-
 static inline void drm_fb_helper_prepare(struct drm_device *dev,
 					struct drm_fb_helper *helper,
 					const struct drm_fb_helper_funcs *funcs)

@@ -574,8 +574,7 @@ static int tipc_nl_compat_link_dump(struct tipc_nl_compat_msg *msg,
 
 	link_info.dest = nla_get_flag(link[TIPC_NLA_LINK_DEST]);
 	link_info.up = htonl(nla_get_flag(link[TIPC_NLA_LINK_UP]));
-	nla_strlcpy(link_info.str, link[TIPC_NLA_LINK_NAME],
-		    TIPC_MAX_LINK_NAME);
+	strcpy(link_info.str, nla_data(link[TIPC_NLA_LINK_NAME]));
 
 	return tipc_add_tlv(msg->rep, TIPC_TLV_LINK_INFO,
 			    &link_info, sizeof(link_info));
@@ -803,7 +802,7 @@ static int tipc_nl_compat_name_table_dump(struct tipc_nl_compat_msg *msg,
 		goto out;
 
 	tipc_tlv_sprintf(msg->rep, "%-10u %s",
-			 nla_get_u32(publ[TIPC_NLA_PUBL_KEY]),
+			 nla_get_u32(publ[TIPC_NLA_PUBL_REF]),
 			 scope_str[nla_get_u32(publ[TIPC_NLA_PUBL_SCOPE])]);
 out:
 	tipc_tlv_sprintf(msg->rep, "\n");

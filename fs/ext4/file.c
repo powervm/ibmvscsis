@@ -435,7 +435,7 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
  */
 static int ext4_find_unwritten_pgoff(struct inode *inode,
 				     int whence,
-				     ext4_lblk_t end_blk,
+				     struct ext4_map_blocks *map,
 				     loff_t *offset)
 {
 	struct pagevec pvec;
@@ -450,7 +450,7 @@ static int ext4_find_unwritten_pgoff(struct inode *inode,
 	blkbits = inode->i_sb->s_blocksize_bits;
 	startoff = *offset;
 	lastoff = startoff;
-	endoff = (loff_t)end_blk << blkbits;
+	endoff = (loff_t)(map->m_lblk + map->m_len) << blkbits;
 
 	index = startoff >> PAGE_CACHE_SHIFT;
 	end = endoff >> PAGE_CACHE_SHIFT;
@@ -568,11 +568,12 @@ out:
 static loff_t ext4_seek_data(struct file *file, loff_t offset, loff_t maxsize)
 {
 	struct inode *inode = file->f_mapping->host;
+	struct ext4_map_blocks map;
 	struct extent_status es;
 	ext4_lblk_t start, last, end;
 	loff_t dataoff, isize;
 	int blkbits;
-	int ret;
+	int ret = 0;
 
 	mutex_lock(&inode->i_mutex);
 
@@ -589,32 +590,41 @@ static loff_t ext4_seek_data(struct file *file, loff_t offset, loff_t maxsize)
 	dataoff = offset;
 
 	do {
-		ret = ext4_get_next_extent(inode, last, end - last + 1, &es);
-		if (ret <= 0) {
-			/* No extent found -> no data */
-			if (ret == 0)
-				ret = -ENXIO;
-			mutex_unlock(&inode->i_mutex);
-			return ret;
+		map.m_lblk = last;
+		map.m_len = end - last + 1;
+		ret = ext4_map_blocks(NULL, inode, &map, 0);
+		if (ret > 0 && !(map.m_flags & EXT4_MAP_UNWRITTEN)) {
+			if (last != start)
+				dataoff = (loff_t)last << blkbits;
+			break;
 		}
 
-		last = es.es_lblk;
-		if (last != start)
-			dataoff = (loff_t)last << blkbits;
-		if (!ext4_es_is_unwritten(&es))
+		/*
+		 * If there is a delay extent at this offset,
+		 * it will be as a data.
+		 */
+		ext4_es_find_delayed_extent_range(inode, last, last, &es);
+		if (es.es_len != 0 && in_range(last, es.es_lblk, es.es_len)) {
+			if (last != start)
+				dataoff = (loff_t)last << blkbits;
 			break;
+		}
 
 		/*
 		 * If there is a unwritten extent at this offset,
 		 * it will be as a data or a hole according to page
 		 * cache that has data or not.
 		 */
-		if (ext4_find_unwritten_pgoff(inode, SEEK_DATA,
-					      es.es_lblk + es.es_len, &dataoff))
-			break;
-		last += es.es_len;
+		if (map.m_flags & EXT4_MAP_UNWRITTEN) {
+			int unwritten;
+			unwritten = ext4_find_unwritten_pgoff(inode, SEEK_DATA,
+							      &map, &dataoff);
+			if (unwritten)
+				break;
+		}
+
+		last++;
 		dataoff = (loff_t)last << blkbits;
-		cond_resched();
 	} while (last <= end);
 
 	mutex_unlock(&inode->i_mutex);
@@ -631,11 +641,12 @@ static loff_t ext4_seek_data(struct file *file, loff_t offset, loff_t maxsize)
 static loff_t ext4_seek_hole(struct file *file, loff_t offset, loff_t maxsize)
 {
 	struct inode *inode = file->f_mapping->host;
+	struct ext4_map_blocks map;
 	struct extent_status es;
 	ext4_lblk_t start, last, end;
 	loff_t holeoff, isize;
 	int blkbits;
-	int ret;
+	int ret = 0;
 
 	mutex_lock(&inode->i_mutex);
 
@@ -652,30 +663,44 @@ static loff_t ext4_seek_hole(struct file *file, loff_t offset, loff_t maxsize)
 	holeoff = offset;
 
 	do {
-		ret = ext4_get_next_extent(inode, last, end - last + 1, &es);
-		if (ret < 0) {
-			mutex_unlock(&inode->i_mutex);
-			return ret;
+		map.m_lblk = last;
+		map.m_len = end - last + 1;
+		ret = ext4_map_blocks(NULL, inode, &map, 0);
+		if (ret > 0 && !(map.m_flags & EXT4_MAP_UNWRITTEN)) {
+			last += ret;
+			holeoff = (loff_t)last << blkbits;
+			continue;
 		}
-		/* Found a hole? */
-		if (ret == 0 || es.es_lblk > last) {
-			if (last != start)
-				holeoff = (loff_t)last << blkbits;
-			break;
+
+		/*
+		 * If there is a delay extent at this offset,
+		 * we will skip this extent.
+		 */
+		ext4_es_find_delayed_extent_range(inode, last, last, &es);
+		if (es.es_len != 0 && in_range(last, es.es_lblk, es.es_len)) {
+			last = es.es_lblk + es.es_len;
+			holeoff = (loff_t)last << blkbits;
+			continue;
 		}
+
 		/*
 		 * If there is a unwritten extent at this offset,
 		 * it will be as a data or a hole according to page
 		 * cache that has data or not.
 		 */
-		if (ext4_es_is_unwritten(&es) &&
-		    ext4_find_unwritten_pgoff(inode, SEEK_HOLE,
-					      last + es.es_len, &holeoff))
-			break;
+		if (map.m_flags & EXT4_MAP_UNWRITTEN) {
+			int unwritten;
+			unwritten = ext4_find_unwritten_pgoff(inode, SEEK_HOLE,
+							      &map, &holeoff);
+			if (!unwritten) {
+				last += ret;
+				holeoff = (loff_t)last << blkbits;
+				continue;
+			}
+		}
 
-		last += es.es_len;
-		holeoff = (loff_t)last << blkbits;
-		cond_resched();
+		/* find a hole */
+		break;
 	} while (last <= end);
 
 	mutex_unlock(&inode->i_mutex);

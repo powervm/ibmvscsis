@@ -3452,10 +3452,6 @@ init_open_stateid(struct nfs4_ol_stateid *stp, struct nfs4_file *fp,
 	struct nfs4_openowner *oo = open->op_openowner;
 	struct nfs4_ol_stateid *retstp = NULL;
 
-	/* We are moving these outside of the spinlocks to avoid the warnings */
-	mutex_init(&stp->st_mutex);
-	mutex_lock(&stp->st_mutex);
-
 	spin_lock(&oo->oo_owner.so_client->cl_lock);
 	spin_lock(&fp->fi_lock);
 
@@ -3471,17 +3467,13 @@ init_open_stateid(struct nfs4_ol_stateid *stp, struct nfs4_file *fp,
 	stp->st_access_bmap = 0;
 	stp->st_deny_bmap = 0;
 	stp->st_openstp = NULL;
+	init_rwsem(&stp->st_rwsem);
 	list_add(&stp->st_perstateowner, &oo->oo_owner.so_stateids);
 	list_add(&stp->st_perfile, &fp->fi_stateids);
 
 out_unlock:
 	spin_unlock(&fp->fi_lock);
 	spin_unlock(&oo->oo_owner.so_client->cl_lock);
-	if (retstp) {
-		mutex_lock(&retstp->st_mutex);
-		/* Not that we need to, just for neatness */
-		mutex_unlock(&stp->st_mutex);
-	}
 	return retstp;
 }
 
@@ -4308,34 +4300,32 @@ nfsd4_process_open2(struct svc_rqst *rqstp, struct svc_fh *current_fh, struct nf
 	 */
 	if (stp) {
 		/* Stateid was found, this is an OPEN upgrade */
-		mutex_lock(&stp->st_mutex);
+		down_read(&stp->st_rwsem);
 		status = nfs4_upgrade_open(rqstp, fp, current_fh, stp, open);
 		if (status) {
-			mutex_unlock(&stp->st_mutex);
+			up_read(&stp->st_rwsem);
 			goto out;
 		}
 	} else {
 		stp = open->op_stp;
 		open->op_stp = NULL;
-		/*
-		 * init_open_stateid() either returns a locked stateid
-		 * it found, or initializes and locks the new one we passed in
-		 */
 		swapstp = init_open_stateid(stp, fp, open);
 		if (swapstp) {
 			nfs4_put_stid(&stp->st_stid);
 			stp = swapstp;
+			down_read(&stp->st_rwsem);
 			status = nfs4_upgrade_open(rqstp, fp, current_fh,
 						stp, open);
 			if (status) {
-				mutex_unlock(&stp->st_mutex);
+				up_read(&stp->st_rwsem);
 				goto out;
 			}
 			goto upgrade_out;
 		}
+		down_read(&stp->st_rwsem);
 		status = nfs4_get_vfs_file(rqstp, fp, current_fh, stp, open);
 		if (status) {
-			mutex_unlock(&stp->st_mutex);
+			up_read(&stp->st_rwsem);
 			release_open_stateid(stp);
 			goto out;
 		}
@@ -4347,7 +4337,7 @@ nfsd4_process_open2(struct svc_rqst *rqstp, struct svc_fh *current_fh, struct nf
 	}
 upgrade_out:
 	nfs4_inc_and_copy_stateid(&open->op_stateid, &stp->st_stid);
-	mutex_unlock(&stp->st_mutex);
+	up_read(&stp->st_rwsem);
 
 	if (nfsd4_has_session(&resp->cstate)) {
 		if (open->op_deleg_want & NFS4_SHARE_WANT_NO_DELEG) {
@@ -4960,12 +4950,12 @@ static __be32 nfs4_seqid_op_checks(struct nfsd4_compound_state *cstate, stateid_
 		 * revoked delegations are kept only for free_stateid.
 		 */
 		return nfserr_bad_stateid;
-	mutex_lock(&stp->st_mutex);
+	down_write(&stp->st_rwsem);
 	status = check_stateid_generation(stateid, &stp->st_stid.sc_stateid, nfsd4_has_session(cstate));
 	if (status == nfs_ok)
 		status = nfs4_check_fh(current_fh, &stp->st_stid);
 	if (status != nfs_ok)
-		mutex_unlock(&stp->st_mutex);
+		up_write(&stp->st_rwsem);
 	return status;
 }
 
@@ -5013,7 +5003,7 @@ static __be32 nfs4_preprocess_confirmed_seqid_op(struct nfsd4_compound_state *cs
 		return status;
 	oo = openowner(stp->st_stateowner);
 	if (!(oo->oo_flags & NFS4_OO_CONFIRMED)) {
-		mutex_unlock(&stp->st_mutex);
+		up_write(&stp->st_rwsem);
 		nfs4_put_stid(&stp->st_stid);
 		return nfserr_bad_stateid;
 	}
@@ -5045,12 +5035,12 @@ nfsd4_open_confirm(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	oo = openowner(stp->st_stateowner);
 	status = nfserr_bad_stateid;
 	if (oo->oo_flags & NFS4_OO_CONFIRMED) {
-		mutex_unlock(&stp->st_mutex);
+		up_write(&stp->st_rwsem);
 		goto put_stateid;
 	}
 	oo->oo_flags |= NFS4_OO_CONFIRMED;
 	nfs4_inc_and_copy_stateid(&oc->oc_resp_stateid, &stp->st_stid);
-	mutex_unlock(&stp->st_mutex);
+	up_write(&stp->st_rwsem);
 	dprintk("NFSD: %s: success, seqid=%d stateid=" STATEID_FMT "\n",
 		__func__, oc->oc_seqid, STATEID_VAL(&stp->st_stid.sc_stateid));
 
@@ -5126,7 +5116,7 @@ nfsd4_open_downgrade(struct svc_rqst *rqstp,
 	nfs4_inc_and_copy_stateid(&od->od_stateid, &stp->st_stid);
 	status = nfs_ok;
 put_stateid:
-	mutex_unlock(&stp->st_mutex);
+	up_write(&stp->st_rwsem);
 	nfs4_put_stid(&stp->st_stid);
 out:
 	nfsd4_bump_seqid(cstate, status);
@@ -5179,7 +5169,7 @@ nfsd4_close(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	if (status)
 		goto out; 
 	nfs4_inc_and_copy_stateid(&close->cl_stateid, &stp->st_stid);
-	mutex_unlock(&stp->st_mutex);
+	up_write(&stp->st_rwsem);
 
 	nfsd4_close_open_stateid(stp);
 
@@ -5405,7 +5395,7 @@ init_lock_stateid(struct nfs4_ol_stateid *stp, struct nfs4_lockowner *lo,
 	stp->st_access_bmap = 0;
 	stp->st_deny_bmap = open_stp->st_deny_bmap;
 	stp->st_openstp = open_stp;
-	mutex_init(&stp->st_mutex);
+	init_rwsem(&stp->st_rwsem);
 	list_add(&stp->st_locks, &open_stp->st_locks);
 	list_add(&stp->st_perstateowner, &lo->lo_owner.so_stateids);
 	spin_lock(&fp->fi_lock);
@@ -5574,7 +5564,7 @@ nfsd4_lock(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 					&open_stp, nn);
 		if (status)
 			goto out;
-		mutex_unlock(&open_stp->st_mutex);
+		up_write(&open_stp->st_rwsem);
 		open_sop = openowner(open_stp->st_stateowner);
 		status = nfserr_bad_stateid;
 		if (!same_clid(&open_sop->oo_owner.so_client->cl_clientid,
@@ -5583,7 +5573,7 @@ nfsd4_lock(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		status = lookup_or_create_lock_state(cstate, open_stp, lock,
 							&lock_stp, &new);
 		if (status == nfs_ok)
-			mutex_lock(&lock_stp->st_mutex);
+			down_write(&lock_stp->st_rwsem);
 	} else {
 		status = nfs4_preprocess_seqid_op(cstate,
 				       lock->lk_old_lock_seqid,
@@ -5687,7 +5677,7 @@ out:
 		    seqid_mutating_err(ntohl(status)))
 			lock_sop->lo_owner.so_seqid++;
 
-		mutex_unlock(&lock_stp->st_mutex);
+		up_write(&lock_stp->st_rwsem);
 
 		/*
 		 * If this is a new, never-before-used stateid, and we are
@@ -5857,7 +5847,7 @@ nfsd4_locku(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 fput:
 	fput(filp);
 put_stateid:
-	mutex_unlock(&stp->st_mutex);
+	up_write(&stp->st_rwsem);
 	nfs4_put_stid(&stp->st_stid);
 out:
 	nfsd4_bump_seqid(cstate, status);

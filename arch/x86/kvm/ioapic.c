@@ -233,7 +233,7 @@ static void kvm_ioapic_inject_all(struct kvm_ioapic *ioapic, unsigned long irr)
 }
 
 
-void kvm_ioapic_scan_entry(struct kvm_vcpu *vcpu, ulong *ioapic_handled_vectors)
+void kvm_ioapic_scan_entry(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
 {
 	struct kvm_ioapic *ioapic = vcpu->kvm->arch.vioapic;
 	union kvm_ioapic_redirect_entry *e;
@@ -250,7 +250,7 @@ void kvm_ioapic_scan_entry(struct kvm_vcpu *vcpu, ulong *ioapic_handled_vectors)
 			    (e->fields.trig_mode == IOAPIC_EDGE_TRIG &&
 			     kvm_apic_pending_eoi(vcpu, e->fields.vector)))
 				__set_bit(e->fields.vector,
-					  ioapic_handled_vectors);
+					(unsigned long *)eoi_exit_bitmap);
 		}
 	}
 	spin_unlock(&ioapic->lock);

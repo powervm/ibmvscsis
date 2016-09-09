@@ -39,7 +39,6 @@ struct ics_irq_state {
 	u8  saved_priority;
 	u8  resend;
 	u8  masked_pending;
-	u8  lsi;		/* level-sensitive interrupt */
 	u8  asserted; /* Only for LSI */
 	u8  exists;
 };
