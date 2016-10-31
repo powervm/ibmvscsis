@@ -484,8 +484,7 @@ static int iscsit_response_queue(struct iscsi_conn *, struct iscsi_cmd *, int);
 
 static int iscsit_queue_rsp(struct iscsi_conn *conn, struct iscsi_cmd *cmd)
 {
-	iscsit_add_cmd_to_response_queue(cmd, cmd->conn, cmd->i_state);
-	return 0;
+	return iscsit_add_cmd_to_response_queue(cmd, cmd->conn, cmd->i_state);
 }
 
 static void iscsit_aborted_task(struct iscsi_conn *conn, struct iscsi_cmd *cmd)
