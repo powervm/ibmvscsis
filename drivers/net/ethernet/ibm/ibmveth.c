@@ -137,6 +137,11 @@ static inline int ibmveth_rxq_frame_offset(struct ibmveth_adapter *adapter)
 	return ibmveth_rxq_flags(adapter) & IBMVETH_RXQ_OFF_MASK;
 }
 
+static inline int ibmveth_rxq_large_recv(struct ibmveth_adapter *adapter)
+{
+	return ibmveth_rxq_flags(adapter) & IBMVETH_RXQ_LRG_PKT;
+}
+
 static inline int ibmveth_rxq_frame_length(struct ibmveth_adapter *adapter)
 {
 	return be32_to_cpu(adapter->rx_queue.queue_addr[adapter->rx_queue.index].length);
@@ -797,8 +802,7 @@ static int ibmveth_set_csum_offload(struct net_device *dev, u32 data)
 
 	ret = h_illan_attributes(adapter->vdev->unit_address, 0, 0, &ret_attr);
 
-	if (ret == H_SUCCESS && !(ret_attr & IBMVETH_ILLAN_ACTIVE_TRUNK) &&
-	    !(ret_attr & IBMVETH_ILLAN_TRUNK_PRI_MASK) &&
+	if (ret == H_SUCCESS &&
 	    (ret_attr & IBMVETH_ILLAN_PADDED_PKT_CSUM)) {
 		ret4 = h_illan_attributes(adapter->vdev->unit_address, clr_attr,
 					 set_attr, &ret_attr);
@@ -1053,18 +1057,12 @@ static netdev_tx_t ibmveth_start_xmit(struct sk_buff *skb,
 
 	desc_flags = IBMVETH_BUF_VALID;
 
-	if (skb_is_gso(skb) && adapter->fw_large_send_support)
-		desc_flags |= IBMVETH_BUF_LRG_SND;
-
 	if (skb->ip_summed == CHECKSUM_PARTIAL) {
-		unsigned char *buf = skb_transport_header(skb) +
-						skb->csum_offset;
-
 		desc_flags |= (IBMVETH_BUF_NO_CSUM | IBMVETH_BUF_CSUM_GOOD);
 
-		/* Need to zero out the checksum */
-		buf[0] = 0;
-		buf[1] = 0;
+		if (skb_is_gso(skb) && adapter->fw_large_send_support) {
+			desc_flags |= IBMVETH_BUF_LRG_SND;
+		}
 	}
 
 retry_bounce:
@@ -1117,7 +1115,7 @@ retry_bounce:
 		descs[i+1].fields.address = dma_addr;
 	}
 
-	if (skb_is_gso(skb)) {
+	if (skb->ip_summed == CHECKSUM_PARTIAL && skb_is_gso(skb)) {
 		if (adapter->fw_large_send_support) {
 			mss = (unsigned long)skb_shinfo(skb)->gso_size;
 			adapter->tx_large_packets++;
@@ -1182,6 +1180,7 @@ static int ibmveth_poll(struct napi_struct *napi, int budget)
 	int frames_processed = 0;
 	unsigned long lpar_rc;
 	struct iphdr *iph;
+	unsigned short mss = 0;
 
 restart_poll:
 	while (frames_processed < budget) {
@@ -1199,8 +1198,12 @@ restart_poll:
 			int length = ibmveth_rxq_frame_length(adapter);
 			int offset = ibmveth_rxq_frame_offset(adapter);
 			int csum_good = ibmveth_rxq_csum_good(adapter);
+			bool lrg_rcv = ibmveth_rxq_large_recv(adapter);
 
 			skb = ibmveth_rxq_get_buffer(adapter);
+
+			if (lrg_rcv)
+				mss = be64_to_cpu(*(((u64 *)skb->data)+1));
 
 			new_skb = NULL;
 			if (length < rx_copybreak)
@@ -1237,9 +1240,36 @@ restart_poll:
 						iph->check = ip_fast_csum((unsigned char *)iph, iph->ihl);
 						adapter->rx_large_packets++;
 					}
+
+					/* set CHECKSUM_PARTIAL to offload checksum calculation */
+					if (!skb_partial_csum_set(skb, (iph->ihl * 4), offsetof(struct tcphdr, check))) {
+						/* TODO: Need a new rx statistic for this error, release/free skb, increment frames_processed & break here ? */
+						pr_err("Error in setting partial checksum for packet\n");
+					}
+
+					skb_reset_network_header(skb);
 				}
 			}
 
+			if (lrg_rcv) {
+				if (skb->protocol == htons(ETH_P_IP)) {
+					if (ip_hdr(skb)->protocol ==
+								IPPROTO_TCP) {
+						skb_shinfo(skb)->gso_type =
+								SKB_GSO_TCPV4;
+						skb_shinfo(skb)->gso_size = mss;
+					}
+				} else if (skb->protocol == htons(ETH_P_IPV6)) {
+					if (ipv6_hdr(skb)->nexthdr ==
+								IPPROTO_TCP) {
+						skb_shinfo(skb)->gso_type =
+								SKB_GSO_TCPV6;
+						skb_shinfo(skb)->gso_size = mss;
+					}
+				}
+
+				adapter->rx_large_packets++;
+			}
 			napi_gro_receive(napi, skb);	/* send it up */
 
 			netdev->stats.rx_packets++;
