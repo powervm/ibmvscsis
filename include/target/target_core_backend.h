@@ -12,6 +12,9 @@
 #define TRANSPORT_FLAG_PASSTHROUGH_ALUA		0x2
 #define TRANSPORT_FLAG_PASSTHROUGH_PGR          0x4
 
+struct request_queue;
+struct scatterlist;
+
 struct target_backend_ops {
 	char name[16];
 	char inquiry_prod[16];
