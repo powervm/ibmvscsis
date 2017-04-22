@@ -7,6 +7,7 @@
  * backend module.
  */
 #define TRANSPORT_FLAG_PASSTHROUGH_ALUA		0x2
+#define TRANSPORT_FLAG_PASSTHROUGH_PGR          0x4
 
 struct target_backend_ops {
 	char name[16];
