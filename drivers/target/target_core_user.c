@@ -1090,7 +1090,7 @@ static struct page *tcmu_try_get_block_page(struct tcmu_dev *udev, uint32_t dbi)
 	return page;
 }
 
-static int tcmu_vma_fault(struct vm_fault *vmf)
+static int tcmu_vma_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct tcmu_dev *udev = vma->vm_private_data;
 	struct uio_info *info = &udev->uio_info;
@@ -1346,14 +1346,6 @@ static int tcmu_check_and_free_pending_cmd(struct tcmu_cmd *cmd)
 		return 0;
 	}
 	return -EINVAL;
-}
-
-static void tcmu_dev_call_rcu(struct rcu_head *p)
-{
-	struct se_device *dev = container_of(p, struct se_device, rcu_head);
-	struct tcmu_dev *udev = TCMU_DEV(dev);
-
-	kfree(udev);
 }
 
 static bool tcmu_dev_configured(struct tcmu_dev *udev)
