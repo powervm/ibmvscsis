@@ -1441,18 +1441,6 @@ tcmu_parse_cdb(struct se_cmd *cmd)
 	return passthrough_parse_cdb(cmd, tcmu_queue_cmd);
 }
 
-<<<<<<< HEAD
-static void tcmu_transport_complete(struct se_cmd *cmd, struct scatterlist *sg,
-				    unsigned char *sense_buffer)
-{
-	if (cmd->scsi_status == SAM_STAT_CHECK_CONDITION)
-		/* Setting this flag will prevent target_complete_cmd from
-		 * calling target_complete_failure_work, which would overwrite
-		 * the sense data we already set.
-		 */
-		cmd->se_cmd_flags |= SCF_TRANSPORT_TASK_SENSE;
-}
-
 static ssize_t tcmu_cmd_time_out_show(struct config_item *item, char *page)
 {
 	struct se_dev_attrib *da = container_of(to_config_group(item),
