@@ -1592,13 +1592,13 @@ EXPORT_SYMBOL drivers/net/dsa/b53/b53_common 0xe0ea3668	b53_vlan_dump
 EXPORT_SYMBOL drivers/net/dsa/b53/b53_common 0xe1a4a241	b53_get_sset_count
 EXPORT_SYMBOL drivers/net/dsa/b53/b53_common 0xeb925471	b53_br_set_stp_state
 EXPORT_SYMBOL drivers/net/dsa/b53/b53_common 0xef8b3c57	b53_vlan_filtering
-EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0x2267a657	hnae_ae_unregister
-EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0x33427b4a	hnae_get_handle
-EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0x4123a245	hnae_ae_register
-EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0x452076e0	hnae_put_handle
+EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0x064a8577	hnae_ae_unregister
+EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0x68883040	hnae_reinit_handle
+EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0x6e0986a0	hnae_ae_register
+EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0x6f35bcc5	hnae_get_handle
 EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0xb1266858	hnae_register_notifier
-EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0xb83bbaaa	hnae_reinit_handle
 EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0xdf24adef	hnae_unregister_notifier
+EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hnae 0xfd7db56f	hnae_put_handle
 EXPORT_SYMBOL drivers/net/ethernet/hisilicon/hns/hns_dsaf 0xb213872b	hns_dsaf_roce_reset
 EXPORT_SYMBOL drivers/net/hamradio/hdlcdrv 0x06c1d9c7	hdlcdrv_register
 EXPORT_SYMBOL drivers/net/hamradio/hdlcdrv 0x1c1e1933	hdlcdrv_receiver
@@ -5558,6 +5558,7 @@ EXPORT_SYMBOL vmlinux 0x40d59096	unregister_restart_handler
 EXPORT_SYMBOL vmlinux 0x40eab19c	disk_stack_limits
 EXPORT_SYMBOL vmlinux 0x40ed524a	_raw_read_lock_irq
 EXPORT_SYMBOL vmlinux 0x40f07981	__ashldi3
+EXPORT_SYMBOL vmlinux 0x41172061	__inode_add_bytes
 EXPORT_SYMBOL vmlinux 0x41310321	fb_blank
 EXPORT_SYMBOL vmlinux 0x41482d8b	strndup_user
 EXPORT_SYMBOL vmlinux 0x415b5b26	xfrm_init_replay
