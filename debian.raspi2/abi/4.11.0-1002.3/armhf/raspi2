@@ -9456,8 +9456,8 @@ EXPORT_SYMBOL_GPL drivers/iio/imu/bmi160/bmi160_core 0x0e6dec8c	bmi160_core_remo
 EXPORT_SYMBOL_GPL drivers/iio/imu/bmi160/bmi160_core 0x21f95189	bmi160_core_probe
 EXPORT_SYMBOL_GPL drivers/iio/imu/inv_mpu6050/inv-mpu6050 0x0aaa18f5	inv_mpu_core_remove
 EXPORT_SYMBOL_GPL drivers/iio/imu/inv_mpu6050/inv-mpu6050 0x394b626f	inv_mpu_core_probe
+EXPORT_SYMBOL_GPL drivers/iio/imu/inv_mpu6050/inv-mpu6050 0xaf105b8c	inv_mpu6050_set_power_itg
 EXPORT_SYMBOL_GPL drivers/iio/imu/inv_mpu6050/inv-mpu6050 0xc31f7430	inv_mpu_pmops
-EXPORT_SYMBOL_GPL drivers/iio/imu/inv_mpu6050/inv-mpu6050 0xe7f0b8d7	inv_mpu6050_set_power_itg
 EXPORT_SYMBOL_GPL drivers/iio/industrialio 0x0ce4484b	devm_iio_channel_release
 EXPORT_SYMBOL_GPL drivers/iio/industrialio 0x12465302	iio_buffer_set_attrs
 EXPORT_SYMBOL_GPL drivers/iio/industrialio 0x12981d90	devm_iio_device_free
