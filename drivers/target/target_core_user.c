@@ -1019,7 +1019,6 @@ static int tcmu_open(struct uio_info *info, struct inode *inode)
 	if (test_and_set_bit(TCMU_DEV_BIT_OPEN, &udev->flags))
 		return -EBUSY;
 
-	udev->inode = inode;
 	kref_get(&udev->kref);
 
 	pr_debug("open\n");
@@ -1312,8 +1311,6 @@ static void tcmu_destroy_device(struct se_device *dev)
 	idr_destroy(&udev->commands);
 	spin_unlock_irq(&udev->commands_lock);
 	WARN_ON(!all_expired);
-
-	tcmu_blocks_release(udev);
 
 	tcmu_netlink_event(udev, TCMU_CMD_REMOVED_DEVICE, 0, NULL);
 
