@@ -1,7 +1,7 @@
 #ifndef TARGET_CORE_IBLOCK_H
 #define TARGET_CORE_IBLOCK_H
 
-#define IBLOCK_VERSION		"4.0"
+#define IBLOCK_VERSION		"4.0.2"
 
 #define IBLOCK_MAX_CDBS		16
 #define IBLOCK_LBA_SHIFT	9

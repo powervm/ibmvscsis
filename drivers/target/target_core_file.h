@@ -1,7 +1,7 @@
 #ifndef TARGET_CORE_FILE_H
 #define TARGET_CORE_FILE_H
 
-#define FD_VERSION		"4.0"
+#define FD_VERSION		"4.0.2"
 
 #define FD_MAX_DEV_NAME		256
 #define FD_MAX_DEV_PROT_NAME	FD_MAX_DEV_NAME + 16
