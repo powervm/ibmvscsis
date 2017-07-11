@@ -1201,7 +1201,7 @@ static struct page *tcmu_try_get_block_page(struct tcmu_dev *udev, uint32_t dbi)
 	return page;
 }
 
-static int tcmu_vma_fault(struct vm_fault *vmf)
+static int tcmu_vma_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct tcmu_dev *udev = vma->vm_private_data;
 	struct uio_info *info = &udev->uio_info;
