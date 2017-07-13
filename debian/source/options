@@ -3,7 +3,6 @@
 # Ignore any symlinks created since the orig which are rebuilt by reconstruct.
 extend-diff-ignore=^arch/arm64/boot/dts/overlays$
 extend-diff-ignore=^spl/rpm/redhat/spl-dkms.spec.in$
-extend-diff-ignore=^spl/rpm/redhat/spl.spec.in$
 extend-diff-ignore=^ubuntu/vbox/vboxguest/include$
 extend-diff-ignore=^ubuntu/vbox/vboxguest/r0drv$
 extend-diff-ignore=^ubuntu/vbox/vboxsf/include$
