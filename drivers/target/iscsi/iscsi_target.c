@@ -481,7 +481,8 @@ static void iscsit_get_rx_pdu(struct iscsi_conn *);
 
 int iscsit_queue_rsp(struct iscsi_conn *conn, struct iscsi_cmd *cmd)
 {
-	return iscsit_add_cmd_to_response_queue(cmd, cmd->conn, cmd->i_state);
+	iscsit_add_cmd_to_response_queue(cmd, cmd->conn, cmd->i_state);
+	return 0;
 }
 EXPORT_SYMBOL(iscsit_queue_rsp);
 
