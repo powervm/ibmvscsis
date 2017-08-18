@@ -94,7 +94,7 @@ struct tcmu_dev {
 	size_t dev_size;
 	u32 cmdr_size;
 	u32 cmdr_last_cleaned;
-	/* Offset of data area from start of mb */
+	/* Offset of data ring from start of mb */
 	size_t data_off;
 	size_t data_size;
 	/* Ring head + tail values. */
@@ -341,7 +341,7 @@ static void gather_and_free_data_area(struct tcmu_dev *udev,
 
 /*
  * We can't queue a command until we have space available on the cmd ring *and*
- * space available on the data area.
+ * space available on the data ring.
  *
  * Called with ring lock held.
  */
@@ -475,7 +475,9 @@ tcmu_queue_cmd_ring(struct tcmu_cmd *tcmu_cmd)
 	entry->hdr.kflags = 0;
 	entry->hdr.uflags = 0;
 
-	/* Handle allocating space from the data area */
+	/*
+	 * Fix up iovecs, and handle if allocation in data ring wrapped.
+	 */
 	iov = &entry->req.iov[0];
 	iov_cnt = 0;
 	copy_to_data_area = (se_cmd->data_direction == DMA_TO_DEVICE
@@ -542,10 +544,8 @@ static void tcmu_handle_completion(struct tcmu_cmd *cmd, struct tcmu_cmd_entry *
 	struct tcmu_dev *udev = cmd->tcmu_dev;
 
 	if (test_bit(TCMU_CMD_BIT_EXPIRED, &cmd->flags)) {
-		/*
-		 * cmd has been completed already from timeout, just reclaim
-		 * data area space and free cmd
-		 */
+		/* cmd has been completed already from timeout, just reclaim data
+		   ring space */
 		UPDATE_HEAD(udev->data_tail, cmd->data_length, udev->data_size);
 		return;
 	}
