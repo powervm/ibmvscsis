@@ -279,7 +279,7 @@ static void iblock_complete_cmd(struct se_cmd *cmd)
 	struct iblock_req *ibr = cmd->priv;
 	u8 status;
 
-	if (!refcount_dec_and_test(&ibr->pending))
+	if (!atomic_dec_and_test(&ibr->pending))
 		return;
 
 	if (atomic_read(&ibr->ib_bio_err_cnt))
@@ -484,7 +484,7 @@ iblock_execute_write_same(struct se_cmd *cmd)
 	bio_list_init(&list);
 	bio_list_add(&list, bio);
 
-	refcount_set(&ibr->pending, 1);
+	atomic_set(&ibr->pending, 1);
 
 	while (sectors) {
 		while (bio_add_page(bio, sg_page(sg), sg->length, sg->offset)
@@ -494,7 +494,7 @@ iblock_execute_write_same(struct se_cmd *cmd)
 			if (!bio)
 				goto fail_put_bios;
 
-			refcount_inc(&ibr->pending);
+			atomic_inc(&ibr->pending);
 			bio_list_add(&list, bio);
 		}
 
@@ -706,7 +706,7 @@ iblock_execute_rw(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 	cmd->priv = ibr;
 
 	if (!sgl_nents) {
-		refcount_set(&ibr->pending, 1);
+		atomic_set(&ibr->pending, 1);
 		iblock_complete_cmd(cmd);
 		return 0;
 	}
@@ -719,7 +719,7 @@ iblock_execute_rw(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 	bio_list_init(&list);
 	bio_list_add(&list, bio);
 
-	refcount_set(&ibr->pending, 2);
+	atomic_set(&ibr->pending, 2);
 	bio_cnt = 1;
 
 	for_each_sg(sgl, sg, sgl_nents, i) {
@@ -739,7 +739,7 @@ iblock_execute_rw(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 			if (!bio)
 				goto fail_put_bios;
 
-			refcount_inc(&ibr->pending);
+			atomic_inc(&ibr->pending);
 			bio_list_add(&list, bio);
 			bio_cnt++;
 		}
