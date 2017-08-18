@@ -382,8 +382,7 @@ static bool is_ring_space_avail(struct tcmu_dev *udev, size_t cmd_size, size_t d
 	return true;
 }
 
-static sense_reason_t
-tcmu_queue_cmd_ring(struct tcmu_cmd *tcmu_cmd)
+static int tcmu_queue_cmd_ring(struct tcmu_cmd *tcmu_cmd)
 {
 	struct tcmu_dev *udev = tcmu_cmd->tcmu_dev;
 	struct se_cmd *se_cmd = tcmu_cmd->se_cmd;
@@ -397,7 +396,7 @@ tcmu_queue_cmd_ring(struct tcmu_cmd *tcmu_cmd)
 	bool copy_to_data_area;
 
 	if (test_bit(TCMU_DEV_BIT_BROKEN, &udev->flags))
-		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
+		return -EINVAL;
 
 	/*
 	 * Must be a certain minimum size for response sense info, but
@@ -437,7 +436,7 @@ tcmu_queue_cmd_ring(struct tcmu_cmd *tcmu_cmd)
 		finish_wait(&udev->wait_cmdr, &__wait);
 		if (!ret) {
 			pr_warn("tcmu: command timed out\n");
-			return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
+			return -ETIMEDOUT;
 		}
 
 		spin_lock_irq(&udev->cmdr_lock);
@@ -507,11 +506,10 @@ tcmu_queue_cmd_ring(struct tcmu_cmd *tcmu_cmd)
 	mod_timer(&udev->timeout,
 		round_jiffies_up(jiffies + msecs_to_jiffies(TCMU_TIME_OUT)));
 
-	return TCM_NO_SENSE;
+	return 0;
 }
 
-static sense_reason_t
-tcmu_queue_cmd(struct se_cmd *se_cmd)
+static int tcmu_queue_cmd(struct se_cmd *se_cmd)
 {
 	struct se_device *se_dev = se_cmd->se_dev;
 	struct tcmu_dev *udev = TCMU_DEV(se_dev);
@@ -520,10 +518,10 @@ tcmu_queue_cmd(struct se_cmd *se_cmd)
 
 	tcmu_cmd = tcmu_alloc_cmd(se_cmd);
 	if (!tcmu_cmd)
-		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
+		return -ENOMEM;
 
 	ret = tcmu_queue_cmd_ring(tcmu_cmd);
-	if (ret != TCM_NO_SENSE) {
+	if (ret < 0) {
 		pr_err("TCMU: Could not queue command\n");
 		spin_lock_irq(&udev->commands_lock);
 		idr_remove(&udev->commands, tcmu_cmd->cmd_id);
@@ -1099,9 +1097,20 @@ static sector_t tcmu_get_blocks(struct se_device *dev)
 }
 
 static sense_reason_t
+tcmu_pass_op(struct se_cmd *se_cmd)
+{
+	int ret = tcmu_queue_cmd(se_cmd);
+
+	if (ret != 0)
+		return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
+	else
+		return TCM_NO_SENSE;
+}
+
+static sense_reason_t
 tcmu_parse_cdb(struct se_cmd *cmd)
 {
-	return passthrough_parse_cdb(cmd, tcmu_queue_cmd);
+	return passthrough_parse_cdb(cmd, tcmu_pass_op);
 }
 
 static void tcmu_transport_complete(struct se_cmd *cmd, struct scatterlist *sg,
