@@ -1,8 +1,6 @@
 #ifndef TARGET_CORE_UA_H
 #define TARGET_CORE_UA_H
 
-#include <target/target_core_base.h>
-
 /*
  * From spc4r17, Table D.1: ASC and ASCQ Assignement
  */

@@ -18,7 +18,6 @@
 
 #include <linux/list.h>
 #include <linux/percpu_ida.h>
-#include <net/ipv6.h>         /* ipv6_addr_equal() */
 #include <scsi/scsi_tcq.h>
 #include <scsi/iscsi_proto.h>
 #include <target/target_core_base.h>

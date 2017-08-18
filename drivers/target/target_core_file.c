@@ -32,7 +32,6 @@
 #include <linux/module.h>
 #include <linux/vmalloc.h>
 #include <linux/falloc.h>
-#include <linux/uio.h>
 #include <scsi/scsi_proto.h>
 #include <asm/unaligned.h>
 

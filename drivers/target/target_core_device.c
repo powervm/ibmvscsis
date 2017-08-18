@@ -33,7 +33,6 @@
 #include <linux/kthread.h>
 #include <linux/in.h>
 #include <linux/export.h>
-#include <linux/t10-pi.h>
 #include <asm/unaligned.h>
 #include <net/sock.h>
 #include <net/tcp.h>

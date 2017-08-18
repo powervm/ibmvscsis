@@ -1,5 +1,3 @@
-#include <target/target_core_base.h>
-
 #define XCOPY_HDR_LEN			16
 #define XCOPY_TARGET_DESC_LEN		32
 #define XCOPY_SEGMENT_DESC_LEN		28
