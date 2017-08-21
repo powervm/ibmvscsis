@@ -1199,7 +1199,7 @@ static struct page *tcmu_try_get_block_page(struct tcmu_dev *udev, uint32_t dbi)
 	return page;
 }
 
-static int tcmu_vma_fault(struct vm_fault *vmf)
+static int tcmu_vma_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct tcmu_dev *udev = vma->vm_private_data;
 	struct uio_info *info = &udev->uio_info;
@@ -1381,9 +1381,8 @@ static int tcmu_netlink_event(struct tcmu_dev *udev, enum tcmu_genl_cmd cmd,
 			ret = nla_put_string(skb, reconfig_attr, reconfig_data);
 			break;
 		case TCMU_ATTR_DEV_SIZE:
-			ret = nla_put_u64_64bit(skb, reconfig_attr,
-						*((u64 *)reconfig_data),
-						TCMU_ATTR_PAD);
+			ret = nla_put_u64(skb, reconfig_attr,
+					  *((u64 *)reconfig_data));
 			break;
 		case TCMU_ATTR_WRITECACHE:
 			ret = nla_put_u8(skb, reconfig_attr,
