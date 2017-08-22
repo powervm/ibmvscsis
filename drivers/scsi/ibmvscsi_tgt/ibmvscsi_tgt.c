@@ -3752,6 +3752,11 @@ static void ibmvscsis_release_cmd(struct se_cmd *se_cmd)
 	spin_unlock_bh(&vscsi->intr_lock);
 }
 
+static void ibmvscsis_close_session(struct se_session *se_sess)
+{
+	return;
+}
+
 static u32 ibmvscsis_sess_get_index(struct se_session *se_sess)
 {
 	return 0;
@@ -4047,6 +4052,7 @@ static const struct target_core_fabric_ops ibmvscsis_ops = {
 	.check_stop_free		= ibmvscsis_check_stop_free,
 	.shutdown_session		= ibmvscsis_shutdown_session,
 	.release_cmd			= ibmvscsis_release_cmd,
+	.close_session			= ibmvscsis_close_session,
 	.sess_get_index			= ibmvscsis_sess_get_index,
 	.write_pending			= ibmvscsis_write_pending,
 	.write_pending_status		= ibmvscsis_write_pending_status,
