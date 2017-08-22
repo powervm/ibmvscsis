@@ -3734,6 +3734,11 @@ static int ibmvscsis_check_stop_free(struct se_cmd *se_cmd)
 	return target_put_sess_cmd(se_cmd);
 }
 
+static int ibmvscsis_shutdown_session(struct se_session *se_sess)
+{
+	return 0;
+}
+
 static void ibmvscsis_release_cmd(struct se_cmd *se_cmd)
 {
 	struct ibmvscsis_cmd *cmd = container_of(se_cmd, struct ibmvscsis_cmd,
@@ -4040,6 +4045,7 @@ static const struct target_core_fabric_ops ibmvscsis_ops = {
 	.tpg_check_prod_mode_write_protect = ibmvscsis_check_false,
 	.tpg_get_inst_index		= ibmvscsis_tpg_get_inst_index,
 	.check_stop_free		= ibmvscsis_check_stop_free,
+	.shutdown_session		= ibmvscsis_shutdown_session,
 	.release_cmd			= ibmvscsis_release_cmd,
 	.sess_get_index			= ibmvscsis_sess_get_index,
 	.write_pending			= ibmvscsis_write_pending,
