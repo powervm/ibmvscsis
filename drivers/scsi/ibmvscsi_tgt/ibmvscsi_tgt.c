@@ -121,7 +121,7 @@ static bool connection_broken(struct scsi_info *vscsi)
 				   cpu_to_be64(buffer[MSG_HI]),
 				   cpu_to_be64(buffer[MSG_LOW]));
 
-	pr_debug("connection_broken: rc %ld\n", h_return_code);
+	dev_dbg(&vscsi->dev, "connection_broken: rc %ld\n", h_return_code);
 
 	if (h_return_code == H_CLOSED)
 		rc = true;
@@ -209,7 +209,7 @@ static long ibmvscsis_unregister_command_q(struct scsi_info *vscsi)
 		}
 	} while (qrc != H_SUCCESS && rc == ADAPT_SUCCESS);
 
-	pr_debug("Freeing CRQ: phyp rc %ld, rc %ld\n", qrc, rc);
+	dev_dbg(&vscsi->dev, "Freeing CRQ: phyp rc %ld, rc %ld\n", qrc, rc);
 
 	return rc;
 }
@@ -290,7 +290,7 @@ static long ibmvscsis_free_command_q(struct scsi_info *vscsi)
 			ibmvscsis_delete_client_info(vscsi, false);
 		}
 
-		pr_debug("free_command_q: flags 0x%x, state 0x%hx, acr_flags 0x%x, acr_state 0x%hx\n",
+		dev_dbg(&vscsi->dev, "free_command_q: flags 0x%x, state 0x%hx, acr_flags 0x%x, acr_state 0x%hx\n",
 			 vscsi->flags, vscsi->state, vscsi->phyp_acr_flags,
 			 vscsi->phyp_acr_state);
 	}
@@ -427,7 +427,7 @@ static void ibmvscsis_disconnect(struct work_struct *work)
 	vscsi->flags |= DISCONNECT_SCHEDULED;
 	vscsi->flags &= ~SCHEDULE_DISCONNECT;
 
-	pr_debug("disconnect: flags 0x%x, state 0x%hx\n", vscsi->flags,
+	dev_dbg(&vscsi->dev, "disconnect: flags 0x%x, state 0x%hx\n", vscsi->flags,
 		 vscsi->state);
 
 	/*
@@ -539,13 +539,13 @@ static void ibmvscsis_disconnect(struct work_struct *work)
 	}
 
 	if (wait_idle) {
-		pr_debug("disconnect start wait, active %d, sched %d\n",
+		dev_dbg(&vscsi->dev, "disconnect start wait, active %d, sched %d\n",
 			 (int)list_empty(&vscsi->active_q),
 			 (int)list_empty(&vscsi->schedule_q));
 		if (!list_empty(&vscsi->active_q) ||
 		    !list_empty(&vscsi->schedule_q)) {
 			vscsi->flags |= WAIT_FOR_IDLE;
-			pr_debug("disconnect flags 0x%x\n", vscsi->flags);
+			dev_dbg(&vscsi->dev, "disconnect flags 0x%x\n", vscsi->flags);
 			/*
 			 * This routine is can not be called with the interrupt
 			 * lock held.
@@ -554,7 +554,7 @@ static void ibmvscsis_disconnect(struct work_struct *work)
 			wait_for_completion(&vscsi->wait_idle);
 			spin_lock_bh(&vscsi->intr_lock);
 		}
-		pr_debug("disconnect stop wait\n");
+		dev_dbg(&vscsi->dev, "disconnect stop wait\n");
 
 		ibmvscsis_adapter_idle(vscsi);
 	}
@@ -596,7 +596,7 @@ static void ibmvscsis_post_disconnect(struct scsi_info *vscsi, uint new_state,
 
 	vscsi->flags |= flag_bits;
 
-	pr_debug("post_disconnect: new_state 0x%x, flag_bits 0x%x, vscsi->flags 0x%x, state %hx\n",
+	dev_dbg(&vscsi->dev, "post_disconnect: new_state 0x%x, flag_bits 0x%x, vscsi->flags 0x%x, state %hx\n",
 		 new_state, flag_bits, vscsi->flags, vscsi->state);
 
 	if (!(vscsi->flags & (DISCONNECT_SCHEDULED | SCHEDULE_DISCONNECT))) {
@@ -647,7 +647,7 @@ static void ibmvscsis_post_disconnect(struct scsi_info *vscsi, uint new_state,
 		}
 	}
 
-	pr_debug("Leaving post_disconnect: flags 0x%x, new_state 0x%x\n",
+	dev_dbg(&vscsi->dev, "Leaving post_disconnect: flags 0x%x, new_state 0x%x\n",
 		 vscsi->flags, vscsi->new_state);
 }
 
@@ -723,7 +723,7 @@ static long ibmvscsis_handle_init_msg(struct scsi_info *vscsi)
 			break;
 
 		case H_CLOSED:
-			pr_warn("init_msg: failed to send, rc %ld\n", rc);
+			dev_warn(&vscsi->dev, "init_msg: failed to send, rc %ld\n", rc);
 			rc = 0;
 			break;
 		}
@@ -767,7 +767,7 @@ static long ibmvscsis_init_msg(struct scsi_info *vscsi, struct viosrp_crq *crq)
 {
 	long rc = ADAPT_SUCCESS;
 
-	pr_debug("init_msg: state 0x%hx\n", vscsi->state);
+	dev_dbg(&vscsi->dev, "init_msg: state 0x%hx\n", vscsi->state);
 
 	rc = h_vioctl(vscsi->dds.unit_id, H_GET_PARTNER_INFO,
 		      (u64)vscsi->map_ioba | ((u64)PAGE_SIZE << 32), 0, 0, 0,
@@ -775,10 +775,10 @@ static long ibmvscsis_init_msg(struct scsi_info *vscsi, struct viosrp_crq *crq)
 	if (rc == H_SUCCESS) {
 		vscsi->client_data.partition_number =
 			be64_to_cpu(*(u64 *)vscsi->map_buf);
-		pr_debug("init_msg, part num %d\n",
+		dev_dbg(&vscsi->dev, "init_msg, part num %d\n",
 			 vscsi->client_data.partition_number);
 	} else {
-		pr_debug("init_msg h_vioctl rc %ld\n", rc);
+		dev_dbg(&vscsi->dev, "init_msg h_vioctl rc %ld\n", rc);
 		rc = ADAPT_SUCCESS;
 	}
 
@@ -812,7 +812,7 @@ static long ibmvscsis_establish_new_q(struct scsi_info *vscsi)
 	if (rc == H_SUCCESS)
 		vscsi->flags |= PREP_FOR_SUSPEND_ENABLED;
 	else if (rc != H_NOT_FOUND)
-		pr_err("Error from Enable Prepare for Suspend: %ld\n", rc);
+		dev_err(&vscsi->dev, "Error from Enable Prepare for Suspend: %ld\n", rc);
 
 	vscsi->flags &= PRESERVE_FLAG_FIELDS;
 	vscsi->rsp_q_timer.timer_pops = 0;
@@ -821,7 +821,7 @@ static long ibmvscsis_establish_new_q(struct scsi_info *vscsi)
 
 	rc = vio_enable_interrupts(vscsi->dma_dev);
 	if (rc) {
-		pr_warn("establish_new_q: failed to enable interrupts, rc %ld\n",
+		dev_warn(&vscsi->dev, "establish_new_q: failed to enable interrupts, rc %ld\n",
 			rc);
 		return rc;
 	}
@@ -882,7 +882,7 @@ static void ibmvscsis_reset_queue(struct scsi_info *vscsi)
 	int bytes;
 	long rc = ADAPT_SUCCESS;
 
-	pr_debug("reset_queue: flags 0x%x\n", vscsi->flags);
+	dev_dbg(&vscsi->dev, "reset_queue: flags 0x%x\n", vscsi->flags);
 
 	/* don't reset, the client did it for us */
 	if (vscsi->flags & (CLIENT_FAILED | TRANS_EVENT)) {
@@ -905,7 +905,7 @@ static void ibmvscsis_reset_queue(struct scsi_info *vscsi)
 			}
 
 			if (rc != ADAPT_SUCCESS) {
-				pr_debug("reset_queue: reg_crq rc %ld\n", rc);
+				dev_dbg(&vscsi->dev, "reset_queue: reg_crq rc %ld\n", rc);
 
 				vscsi->state = ERR_DISCONNECTED;
 				vscsi->flags |= RESPONSE_Q_DOWN;
@@ -984,14 +984,14 @@ static long ibmvscsis_ready_for_suspend(struct scsi_info *vscsi, bool idle)
 	/* See if there is a Resume event in the queue */
 	crq = vscsi->cmd_q.base_addr + vscsi->cmd_q.index;
 
-	pr_debug("ready_suspend: flags 0x%x, state 0x%hx crq_valid:%x\n",
+	dev_dbg(&vscsi->dev, "ready_suspend: flags 0x%x, state 0x%hx crq_valid:%x\n",
 		 vscsi->flags, vscsi->state, (int)crq->valid);
 
 	if (!(vscsi->flags & PREP_FOR_SUSPEND_ABORTED) && !(crq->valid)) {
 		rc = h_vioctl(vscsi->dds.unit_id, H_READY_FOR_SUSPEND, 0, 0, 0,
 			      0, 0);
 		if (rc) {
-			pr_err("Ready for Suspend Vioctl failed: %ld\n", rc);
+			dev_err(&vscsi->dev, "Ready for Suspend Vioctl failed: %ld\n", rc);
 			rc = 0;
 		}
 	} else if (((vscsi->flags & PREP_FOR_SUSPEND_OVERWRITE) &&
@@ -1011,7 +1011,7 @@ static long ibmvscsis_ready_for_suspend(struct scsi_info *vscsi, bool idle)
 
 		if ((crq->valid) && ((crq->valid != VALID_TRANS_EVENT) ||
 				     (crq->format != RESUME_FROM_SUSP)))
-			pr_err("Invalid element in CRQ after Prepare for Suspend");
+			dev_err(&vscsi->dev, "Invalid element in CRQ after Prepare for Suspend");
 	}
 
 	vscsi->flags &= ~(PREP_FOR_SUSPEND_PENDING | PREP_FOR_SUSPEND_ABORTED);
@@ -1035,7 +1035,7 @@ static long ibmvscsis_trans_event(struct scsi_info *vscsi,
 {
 	long rc = ADAPT_SUCCESS;
 
-	pr_debug("trans_event: format %d, flags 0x%x, state 0x%hx\n",
+	dev_dbg(&vscsi->dev, "trans_event: format %d, flags 0x%x, state 0x%hx\n",
 		 (int)crq->format, vscsi->flags, vscsi->state);
 
 	switch (crq->format) {
@@ -1072,14 +1072,14 @@ static long ibmvscsis_trans_event(struct scsi_info *vscsi,
 			    !list_empty(&vscsi->schedule_q) ||
 			    !list_empty(&vscsi->waiting_rsp) ||
 			    !list_empty(&vscsi->active_q)) {
-				pr_debug("debit %d, sched %d, wait %d, active %d\n",
+				dev_dbg(&vscsi->dev, "debit %d, sched %d, wait %d, active %d\n",
 					 vscsi->debit,
 					 (int)list_empty(&vscsi->schedule_q),
 					 (int)list_empty(&vscsi->waiting_rsp),
 					 (int)list_empty(&vscsi->active_q));
-				pr_warn("connection lost with outstanding work\n");
+				dev_warn(&vscsi->dev, "connection lost with outstanding work\n");
 			} else {
-				pr_debug("trans_event: SRP Processing, but no outstanding work\n");
+				dev_dbg(&vscsi->dev, "trans_event: SRP Processing, but no outstanding work\n");
 			}
 
 			ibmvscsis_post_disconnect(vscsi, WAIT_IDLE,
@@ -1096,7 +1096,7 @@ static long ibmvscsis_trans_event(struct scsi_info *vscsi,
 		break;
 
 	case PREPARE_FOR_SUSPEND:
-		pr_debug("Prep for Suspend, crq status = 0x%x\n",
+		dev_dbg(&vscsi->dev, "Prep for Suspend, crq status = 0x%x\n",
 			 (int)crq->status);
 		switch (vscsi->state) {
 		case ERR_DISCONNECTED:
@@ -1118,14 +1118,14 @@ static long ibmvscsis_trans_event(struct scsi_info *vscsi,
 		case ERR_DISCONNECT:
 		case ERR_DISCONNECT_RECONNECT:
 		case WAIT_IDLE:
-			pr_err("Invalid state for Prepare for Suspend Trans Event: 0x%x\n",
+			dev_err(&vscsi->dev, "Invalid state for Prepare for Suspend Trans Event: 0x%x\n",
 			       vscsi->state);
 			break;
 		}
 		break;
 
 	case RESUME_FROM_SUSP:
-		pr_debug("Resume from Suspend, crq status = 0x%x\n",
+		dev_dbg(&vscsi->dev, "Resume from Suspend, crq status = 0x%x\n",
 			 (int)crq->status);
 		if (vscsi->flags & PREP_FOR_SUSPEND_PENDING) {
 			vscsi->flags |= PREP_FOR_SUSPEND_ABORTED;
@@ -1151,7 +1151,7 @@ static long ibmvscsis_trans_event(struct scsi_info *vscsi,
 
 	rc = vscsi->flags & SCHEDULE_DISCONNECT;
 
-	pr_debug("Leaving trans_event: flags 0x%x, state 0x%hx, rc %ld\n",
+	dev_dbg(&vscsi->dev, "Leaving trans_event: flags 0x%x, state 0x%hx, rc %ld\n",
 		 vscsi->flags, vscsi->state, rc);
 
 	return rc;
@@ -1174,7 +1174,7 @@ static void ibmvscsis_poll_cmd_q(struct scsi_info *vscsi)
 	bool ack = true;
 	volatile u8 valid;
 
-	pr_debug("poll_cmd_q: flags 0x%x, state 0x%hx, q index %ud\n",
+	dev_dbg(&vscsi->dev, "poll_cmd_q: flags 0x%x, state 0x%hx, q index %ud\n",
 		 vscsi->flags, vscsi->state, vscsi->cmd_q.index);
 
 	rc = vscsi->flags & SCHEDULE_DISCONNECT;
@@ -1203,7 +1203,7 @@ poll_work:
 				 * if a tranport event has occurred leave
 				 * everything but transport events on the queue
 				 */
-				pr_debug("poll_cmd_q, ignoring\n");
+				dev_dbg(&vscsi->dev, "poll_cmd_q, ignoring\n");
 
 				/*
 				 * need to decrement the queue index so we can
@@ -1232,7 +1232,7 @@ poll_work:
 		if (ack) {
 			vio_enable_interrupts(vscsi->dma_dev);
 			ack = false;
-			pr_debug("poll_cmd_q, reenabling interrupts\n");
+			dev_dbg(&vscsi->dev, "poll_cmd_q, reenabling interrupts\n");
 		}
 		valid = crq->valid;
 		dma_rmb();
@@ -1240,7 +1240,7 @@ poll_work:
 			goto poll_work;
 	}
 
-	pr_debug("Leaving poll_cmd_q: rc %ld\n", rc);
+	dev_dbg(&vscsi->dev, "Leaving poll_cmd_q: rc %ld\n", rc);
 }
 
 /**
@@ -1257,7 +1257,7 @@ static void ibmvscsis_free_cmd_qs(struct scsi_info *vscsi)
 {
 	struct ibmvscsis_cmd *cmd, *nxt;
 
-	pr_debug("free_cmd_qs: waiting_rsp empty %d, timer starter %d\n",
+	dev_dbg(&vscsi->dev, "free_cmd_qs: waiting_rsp empty %d, timer starter %d\n",
 		 (int)list_empty(&vscsi->waiting_rsp),
 		 vscsi->rsp_q_timer.started);
 
@@ -1316,7 +1316,7 @@ static void ibmvscsis_adapter_idle(struct scsi_info *vscsi)
 	int free_qs = false;
 	long rc = 0;
 
-	pr_debug("adapter_idle: flags 0x%x, state 0x%hx\n", vscsi->flags,
+	dev_dbg(&vscsi->dev, "adapter_idle: flags 0x%x, state 0x%hx\n", vscsi->flags,
 		 vscsi->state);
 
 	/* Only need to free qs if we're disconnecting from client */
@@ -1335,7 +1335,7 @@ static void ibmvscsis_adapter_idle(struct scsi_info *vscsi)
 		break;
 	case ERR_DISCONNECT_RECONNECT:
 		ibmvscsis_reset_queue(vscsi);
-		pr_debug("adapter_idle, disc_rec: flags 0x%x\n", vscsi->flags);
+		dev_dbg(&vscsi->dev, "adapter_idle, disc_rec: flags 0x%x\n", vscsi->flags);
 		break;
 
 	case ERR_DISCONNECT:
@@ -1346,7 +1346,7 @@ static void ibmvscsis_adapter_idle(struct scsi_info *vscsi)
 			vscsi->state = ERR_DISCONNECTED;
 		else
 			vscsi->state = WAIT_ENABLED;
-		pr_debug("adapter_idle, disc: flags 0x%x, state 0x%hx\n",
+		dev_dbg(&vscsi->dev, "adapter_idle, disc: flags 0x%x, state 0x%hx\n",
 			 vscsi->flags, vscsi->state);
 		break;
 
@@ -1369,14 +1369,14 @@ static void ibmvscsis_adapter_idle(struct scsi_info *vscsi)
 			vscsi->flags &= ~DISCONNECT_SCHEDULED;
 		}
 
-		pr_debug("adapter_idle, wait: flags 0x%x, state 0x%hx\n",
+		dev_dbg(&vscsi->dev, "adapter_idle, wait: flags 0x%x, state 0x%hx\n",
 			 vscsi->flags, vscsi->state);
 		ibmvscsis_poll_cmd_q(vscsi);
 		break;
 
 	case ERR_DISCONNECTED:
 		vscsi->flags &= ~DISCONNECT_SCHEDULED;
-		pr_debug("adapter_idle, disconnected: flags 0x%x, state 0x%hx\n",
+		dev_dbg(&vscsi->dev, "adapter_idle, disconnected: flags 0x%x, state 0x%hx\n",
 			 vscsi->flags, vscsi->state);
 		break;
 
@@ -1418,12 +1418,12 @@ static void ibmvscsis_adapter_idle(struct scsi_info *vscsi)
 		vscsi->phyp_acr_state = 0;
 		vscsi->phyp_acr_flags = 0;
 
-		pr_debug("adapter_idle: flags 0x%x, state 0x%hx, acr_flags 0x%x, acr_state 0x%hx\n",
+		dev_dbg(&vscsi->dev, "adapter_idle: flags 0x%x, state 0x%hx, acr_flags 0x%x, acr_state 0x%hx\n",
 			 vscsi->flags, vscsi->state, vscsi->phyp_acr_flags,
 			 vscsi->phyp_acr_state);
 	}
 
-	pr_debug("Leaving adapter_idle: flags 0x%x, state 0x%hx, new_state 0x%x\n",
+	dev_dbg(&vscsi->dev, "Leaving adapter_idle: flags 0x%x, state 0x%hx, new_state 0x%x\n",
 		 vscsi->flags, vscsi->state, vscsi->new_state);
 }
 
@@ -1463,7 +1463,7 @@ static long ibmvscsis_copy_crq_packet(struct scsi_info *vscsi,
 		cmd->init_time = mftb();
 		iue->remote_token = crq->IU_data_ptr;
 		iue->iu_len = len;
-		pr_debug("copy_crq: ioba 0x%llx, init_time 0x%llx\n",
+		dev_dbg(&vscsi->dev, "copy_crq: ioba 0x%llx, init_time 0x%llx\n",
 			 be64_to_cpu(crq->IU_data_ptr), cmd->init_time);
 		break;
 	case H_PERMISSION:
@@ -1535,9 +1535,9 @@ static long ibmvscsis_adapter_info(struct scsi_info *vscsi,
 			if (connection_broken(vscsi))
 				flag_bits = (RESPONSE_Q_DOWN | CLIENT_FAILED);
 		}
-		pr_warn("adapter_info: h_copy_rdma from client failed, rc %ld\n",
+		dev_warn(&vscsi->dev, "adapter_info: h_copy_rdma from client failed, rc %ld\n",
 			rc);
-		pr_debug("adapter_info: ioba 0x%llx, flags 0x%x, flag_bits 0x%x\n",
+		dev_dbg(&vscsi->dev, "adapter_info: ioba 0x%llx, flags 0x%x, flag_bits 0x%x\n",
 			 be64_to_cpu(mad->buffer), vscsi->flags, flag_bits);
 		ibmvscsis_post_disconnect(vscsi, ERR_DISCONNECT_RECONNECT,
 					  flag_bits);
@@ -1594,7 +1594,7 @@ static long ibmvscsis_adapter_info(struct scsi_info *vscsi,
 
 free_dma:
 	dma_free_coherent(&vscsi->dma_dev->dev, sizeof(*info), info, token);
-	pr_debug("Leaving adapter_info, rc %ld\n", rc);
+	dev_dbg(&vscsi->dev, "Leaving adapter_info, rc %ld\n", rc);
 
 	return rc;
 }
@@ -1628,7 +1628,7 @@ static int ibmvscsis_cap_mad(struct scsi_info *vscsi, struct iu_entry *iue)
 	 */
 	min_len = offsetof(struct capabilities, migration);
 	if ((olen < min_len) || (olen > PAGE_SIZE)) {
-		pr_warn("cap_mad: invalid len %d\n", olen);
+		dev_warn(&vscsi->dev, "cap_mad: invalid len %d\n", olen);
 		mad->common.status = cpu_to_be16(VIOSRP_MAD_FAILED);
 		return 0;
 	}
@@ -1653,7 +1653,7 @@ static int ibmvscsis_cap_mad(struct scsi_info *vscsi, struct iu_entry *iue)
 		common = (struct mad_capability_common *)&cap->migration;
 
 		while ((len > 0) && (status == VIOSRP_MAD_SUCCESS) && !rc) {
-			pr_debug("cap_mad: len left %hd, cap type %d, cap len %hd\n",
+			dev_dbg(&vscsi->dev, "cap_mad: len left %hd, cap type %d, cap len %hd\n",
 				 len, be32_to_cpu(common->cap_type),
 				 be16_to_cpu(common->length));
 
@@ -1672,7 +1672,7 @@ static int ibmvscsis_cap_mad(struct scsi_info *vscsi, struct iu_entry *iue)
 
 			switch (common->cap_type) {
 			default:
-				pr_debug("cap_mad: unsupported capability\n");
+				dev_dbg(&vscsi->dev, "cap_mad: unsupported capability\n");
 				common->server_support = 0;
 				flag = cpu_to_be32((u32)CAP_LIST_SUPPORTED);
 				cap->flags &= ~flag;
@@ -1692,7 +1692,7 @@ static int ibmvscsis_cap_mad(struct scsi_info *vscsi, struct iu_entry *iue)
 				 be64_to_cpu(mad->buffer));
 
 		if (rc != H_SUCCESS) {
-			pr_debug("cap_mad: failed to copy to client, rc %ld\n",
+			dev_dbg(&vscsi->dev, "cap_mad: failed to copy to client, rc %ld\n",
 				 rc);
 
 			if (rc == H_PERMISSION) {
@@ -1701,7 +1701,7 @@ static int ibmvscsis_cap_mad(struct scsi_info *vscsi, struct iu_entry *iue)
 						     CLIENT_FAILED);
 			}
 
-			pr_warn("cap_mad: error copying data to client, rc %ld\n",
+			dev_warn(&vscsi->dev, "cap_mad: error copying data to client, rc %ld\n",
 				rc);
 			ibmvscsis_post_disconnect(vscsi,
 						  ERR_DISCONNECT_RECONNECT,
@@ -1711,7 +1711,7 @@ static int ibmvscsis_cap_mad(struct scsi_info *vscsi, struct iu_entry *iue)
 
 	dma_free_coherent(&vscsi->dma_dev->dev, olen, cap, token);
 
-	pr_debug("Leaving cap_mad, rc %ld, client_cap 0x%x\n",
+	dev_dbg(&vscsi->dev, "Leaving cap_mad, rc %ld, client_cap 0x%x\n",
 		 rc, vscsi->client_cap);
 
 	return rc;
@@ -1748,7 +1748,7 @@ static long ibmvscsis_process_mad(struct scsi_info *vscsi, struct iu_entry *iue)
 			vscsi->fast_fail = true;
 			mad->status = cpu_to_be16(VIOSRP_MAD_SUCCESS);
 		} else {
-			pr_warn("fast fail mad sent after login\n");
+			dev_warn(&vscsi->dev, "fast fail mad sent after login\n");
 			mad->status = cpu_to_be16(VIOSRP_MAD_FAILED);
 		}
 		break;
@@ -1808,7 +1808,7 @@ static void srp_snd_msg_failed(struct scsi_info *vscsi, long rc)
 	 */
 	if ((vscsi->rsp_q_timer.timer_pops < MAX_TIMER_POPS) ||
 	    (vscsi->state == SRP_PROCESSING)) {
-		pr_debug("snd_msg_failed: response queue full, flags 0x%x, timer started %d, pops %d\n",
+		dev_dbg(&vscsi->dev, "snd_msg_failed: response queue full, flags 0x%x, timer started %d, pops %d\n",
 			 vscsi->flags, (int)vscsi->rsp_q_timer.started,
 			 vscsi->rsp_q_timer.timer_pops);
 
@@ -1946,7 +1946,7 @@ static void ibmvscsis_send_messages(struct scsi_info *vscsi)
 							be64_to_cpu(msg_hi),
 							be64_to_cpu(cmd->rsp.tag));
 
-					pr_debug("send_messages: cmd %p, tag 0x%llx, rc %ld\n",
+					dev_dbg(&vscsi->dev, "send_messages: cmd %p, tag 0x%llx, rc %ld\n",
 						 cmd, be64_to_cpu(cmd->rsp.tag), rc);
 
 					/* if all ok free up the command
@@ -2002,7 +2002,7 @@ static void ibmvscsis_send_mad_resp(struct scsi_info *vscsi,
 		list_add_tail(&cmd->list, &vscsi->waiting_rsp);
 		ibmvscsis_send_messages(vscsi);
 	} else {
-		pr_debug("Error sending mad response, rc %ld\n", rc);
+		dev_dbg(&vscsi->dev, "Error sending mad response, rc %ld\n", rc);
 		if (rc == H_PERMISSION) {
 			if (connection_broken(vscsi))
 				flag_bits = (RESPONSE_Q_DOWN | CLIENT_FAILED);
@@ -2038,7 +2038,7 @@ static long ibmvscsis_mad(struct scsi_info *vscsi, struct viosrp_crq *crq)
 		 * expecting a response.
 		 */
 	case WAIT_CONNECTION:
-		pr_debug("mad: in Wait Connection state, ignoring MAD, flags %d\n",
+		dev_dbg(&vscsi->dev, "mad: in Wait Connection state, ignoring MAD, flags %d\n",
 			 vscsi->flags);
 		return ADAPT_SUCCESS;
 
@@ -2074,11 +2074,11 @@ static long ibmvscsis_mad(struct scsi_info *vscsi, struct viosrp_crq *crq)
 	if (!rc) {
 		mad = (struct mad_common *)&vio_iu(iue)->mad;
 
-		pr_debug("mad: type %d\n", be32_to_cpu(mad->type));
+		dev_dbg(&vscsi->dev, "mad: type %d\n", be32_to_cpu(mad->type));
 
 		rc = ibmvscsis_process_mad(vscsi, iue);
 
-		pr_debug("mad: status %hd, rc %ld\n", be16_to_cpu(mad->status),
+		dev_dbg(&vscsi->dev, "mad: status %hd, rc %ld\n", be16_to_cpu(mad->status),
 			 rc);
 
 		if (!rc)
@@ -2087,7 +2087,7 @@ static long ibmvscsis_mad(struct scsi_info *vscsi, struct viosrp_crq *crq)
 		ibmvscsis_free_cmd_resources(vscsi, cmd);
 	}
 
-	pr_debug("Leaving mad, rc %ld\n", rc);
+	dev_dbg(&vscsi->dev, "Leaving mad, rc %ld\n", rc);
 	return rc;
 }
 
@@ -2210,16 +2210,17 @@ static int ibmvscsis_make_nexus(struct ibmvscsis_tport *tport)
 {
 	char *name = tport->tport_name;
 	struct ibmvscsis_nexus *nexus;
+	struct scsi_info *vscsi = container_of(tport, struct scsi_info, tport);
 	int rc;
 
 	if (tport->ibmv_nexus) {
-		pr_debug("tport->ibmv_nexus already exists\n");
+		dev_dbg(&vscsi->dev, "tport->ibmv_nexus already exists\n");
 		return 0;
 	}
 
 	nexus = kzalloc(sizeof(*nexus), GFP_KERNEL);
 	if (!nexus) {
-		pr_err("Unable to allocate struct ibmvscsis_nexus\n");
+		dev_err(&vscsi->dev, "Unable to allocate struct ibmvscsis_nexus\n");
 		return -ENOMEM;
 	}
 
@@ -2315,7 +2316,7 @@ static long ibmvscsis_srp_login(struct scsi_info *vscsi,
 	cmd->rsp.format = VIOSRP_SRP_FORMAT;
 	cmd->rsp.tag = req->tag;
 
-	pr_debug("srp_login: reason 0x%x\n", reason);
+	dev_dbg(&vscsi->dev, "srp_login: reason 0x%x\n", reason);
 
 	if (reason)
 		rc = ibmvscsis_srp_login_rej(vscsi, cmd, reason);
@@ -2332,7 +2333,7 @@ static long ibmvscsis_srp_login(struct scsi_info *vscsi,
 		ibmvscsis_free_cmd_resources(vscsi, cmd);
 	}
 
-	pr_debug("Leaving srp_login, rc %ld\n", rc);
+	dev_dbg(&vscsi->dev, "Leaving srp_login, rc %ld\n", rc);
 	return rc;
 }
 
@@ -2414,7 +2415,7 @@ static void ibmvscsis_srp_cmd(struct scsi_info *vscsi, struct viosrp_crq *crq)
 
 		case SRP_TSK_MGMT:
 			tsk = &vio_iu(iue)->srp.tsk_mgmt;
-			pr_debug("tsk_mgmt tag: %llu (0x%llx)\n", tsk->tag,
+			dev_dbg(&vscsi->dev, "tsk_mgmt tag: %llu (0x%llx)\n", tsk->tag,
 				 tsk->tag);
 			cmd->rsp.tag = tsk->tag;
 			vscsi->debit += 1;
@@ -2424,7 +2425,7 @@ static void ibmvscsis_srp_cmd(struct scsi_info *vscsi, struct viosrp_crq *crq)
 			break;
 
 		case SRP_CMD:
-			pr_debug("srp_cmd tag: %llu (0x%llx)\n", srp->tag,
+			dev_dbg(&vscsi->dev, "srp_cmd tag: %llu (0x%llx)\n", srp->tag,
 				 srp->tag);
 			cmd->rsp.tag = srp->tag;
 			vscsi->debit += 1;
@@ -2602,7 +2603,7 @@ static int read_dma_window(struct scsi_info *vscsi)
 						       "ibm,my-dma-window",
 						       NULL);
 	if (!dma_window) {
-		pr_err("Couldn't find ibm,my-dma-window property\n");
+		dev_err(&vscsi->dev, "Couldn't find ibm,my-dma-window property\n");
 		return -1;
 	}
 
@@ -2612,7 +2613,7 @@ static int read_dma_window(struct scsi_info *vscsi)
 	prop = (const __be32 *)vio_get_attribute(vdev, "ibm,#dma-address-cells",
 						 NULL);
 	if (!prop) {
-		pr_warn("Couldn't find ibm,#dma-address-cells property\n");
+		dev_warn(&vscsi->dev, "Couldn't find ibm,#dma-address-cells property\n");
 		dma_window++;
 	} else {
 		dma_window += be32_to_cpu(*prop);
@@ -2621,7 +2622,7 @@ static int read_dma_window(struct scsi_info *vscsi)
 	prop = (const __be32 *)vio_get_attribute(vdev, "ibm,#dma-size-cells",
 						 NULL);
 	if (!prop) {
-		pr_warn("Couldn't find ibm,#dma-size-cells property\n");
+		dev_warn(&vscsi->dev, "Couldn't find ibm,#dma-size-cells property\n");
 		dma_window++;
 	} else {
 		dma_window += be32_to_cpu(*prop);
@@ -2807,7 +2808,7 @@ static void ibmvscsis_parse_task(struct scsi_info *vscsi,
 
 		srp_tsk->lun.scsi_lun[0] &= 0x3f;
 
-		pr_debug("calling submit_tmr, func %d\n",
+		dev_dbg(&vscsi->dev, "calling submit_tmr, func %d\n",
 			 srp_tsk->tsk_mgmt_func);
 		rc = target_submit_tmr(&cmd->se_cmd, nexus->se_sess, NULL,
 				       scsilun_to_int(&srp_tsk->lun), srp_tsk,
@@ -3112,7 +3113,7 @@ static long srp_build_response(struct scsi_info *vscsi,
 	if (cmd->type == SCSI_CDB) {
 		rsp->status = ibmvscsis_fast_fail(vscsi, cmd);
 		if (rsp->status) {
-			pr_debug("build_resp: cmd %p, scsi status %d\n", cmd,
+			dev_dbg(&vscsi->dev, "build_resp: cmd %p, scsi status %d\n", cmd,
 				 (int)rsp->status);
 			ibmvscsis_determine_resid(se_cmd, rsp);
 			if (se_cmd->scsi_sense_length && se_cmd->sense_buffer) {
@@ -3126,7 +3127,7 @@ static long srp_build_response(struct scsi_info *vscsi,
 			rsp->sol_not = (cmd->rsp.sol_not & UCSOLNT) >>
 				UCSOLNT_RESP_SHIFT;
 		} else if (cmd->flags & CMD_FAST_FAIL) {
-			pr_debug("build_resp: cmd %p, fast fail\n", cmd);
+			dev_dbg(&vscsi->dev, "build_resp: cmd %p, fast fail\n", cmd);
 			rsp->sol_not = (cmd->rsp.sol_not & UCSOLNT) >>
 				UCSOLNT_RESP_SHIFT;
 		} else {
@@ -3342,7 +3343,7 @@ static void ibmvscsis_handle_crq(unsigned long data)
 
 	spin_lock_bh(&vscsi->intr_lock);
 
-	pr_debug("got interrupt\n");
+	dev_dbg(&vscsi->dev, "got interrupt\n");
 
 	/*
 	 * if we are in a path where we are waiting for all pending commands
@@ -3352,7 +3353,7 @@ static void ibmvscsis_handle_crq(unsigned long data)
 	if (TARGET_STOP(vscsi)) {
 		vio_enable_interrupts(vscsi->dma_dev);
 
-		pr_debug("handle_crq, don't process: flags 0x%x, state 0x%hx\n",
+		dev_dbg(&vscsi->dev, "handle_crq, don't process: flags 0x%x, state 0x%hx\n",
 			 vscsi->flags, vscsi->state);
 		spin_unlock_bh(&vscsi->intr_lock);
 		return;
@@ -3416,18 +3417,18 @@ cmd_work:
 		if (ack) {
 			vio_enable_interrupts(vscsi->dma_dev);
 			ack = false;
-			pr_debug("handle_crq, reenabling interrupts\n");
+			dev_dbg(&vscsi->dev, "handle_crq, reenabling interrupts\n");
 		}
 		valid = crq->valid;
 		dma_rmb();
 		if (valid)
 			goto cmd_work;
 	} else {
-		pr_debug("handle_crq, error: flags 0x%x, state 0x%hx, crq index 0x%x\n",
+		dev_dbg(&vscsi->dev, "handle_crq, error: flags 0x%x, state 0x%hx, crq index 0x%x\n",
 			 vscsi->flags, vscsi->state, vscsi->cmd_q.index);
 	}
 
-	pr_debug("Leaving handle_crq: schedule_q empty %d, flags 0x%x, state 0x%hx\n",
+	dev_dbg(&vscsi->dev, "Leaving handle_crq: schedule_q empty %d, flags 0x%x, state 0x%hx\n",
 		 (int)list_empty(&vscsi->schedule_q), vscsi->flags,
 		 vscsi->state);
 
@@ -3445,7 +3446,7 @@ static int ibmvscsis_probe(struct vio_dev *vdev,
 	vscsi = kzalloc(sizeof(*vscsi), GFP_KERNEL);
 	if (!vscsi) {
 		rc = -ENOMEM;
-		pr_err("probe: allocation of adapter failed\n");
+		dev_err(&vdev->dev, "probe: allocation of adapter failed\n");
 		return rc;
 	}
 
@@ -3458,12 +3459,12 @@ static int ibmvscsis_probe(struct vio_dev *vdev,
 	snprintf(vscsi->tport.tport_name, IBMVSCSIS_NAMELEN, "%s",
 		 dev_name(&vdev->dev));
 
-	pr_debug("probe tport_name: %s\n", vscsi->tport.tport_name);
+	dev_dbg(&vscsi->dev, "probe tport_name: %s\n", vscsi->tport.tport_name);
 
 	rc = read_dma_window(vscsi);
 	if (rc)
 		goto free_adapter;
-	pr_debug("Probe: liobn 0x%x, riobn 0x%x\n",
+	dev_dbg(&vscsi->dev, "Probe: liobn 0x%x, riobn 0x%x\n",
 		 vscsi->dds.window[LOCAL].liobn,
 		 vscsi->dds.window[REMOTE].liobn);
 
@@ -3542,7 +3543,7 @@ static int ibmvscsis_probe(struct vio_dev *vdev,
 	 * client can connect" and the client isn't activated yet.
 	 * We'll make the call again when he sends an init msg.
 	 */
-	pr_debug("probe hrc %ld, client partition num %d\n",
+	dev_dbg(&vscsi->dev, "probe hrc %ld, client partition num %d\n",
 		 hrc, vscsi->client_data.partition_number);
 
 	tasklet_init(&vscsi->work_task, ibmvscsis_handle_crq,
@@ -3603,7 +3604,7 @@ static int ibmvscsis_remove(struct vio_dev *vdev)
 {
 	struct scsi_info *vscsi = dev_get_drvdata(&vdev->dev);
 
-	pr_debug("remove (%s)\n", dev_name(&vscsi->dma_dev->dev));
+	dev_dbg(&vscsi->dev, "remove (%s)\n", dev_name(&vscsi->dma_dev->dev));
 
 	spin_lock_bh(&vscsi->intr_lock);
 	ibmvscsis_post_disconnect(vscsi, UNCONFIGURING, 0);
@@ -3768,14 +3769,14 @@ static int ibmvscsis_write_pending(struct se_cmd *se_cmd)
 	 * attempt an srp_transfer_data.
 	 */
 	if ((vscsi->flags & (CLIENT_FAILED | RESPONSE_Q_DOWN))) {
-		pr_err("write_pending failed since: %d\n", vscsi->flags);
+		dev_err(&vscsi->dev, "write_pending failed since: %d\n", vscsi->flags);
 		return 0;
 	}
 
 	rc = srp_transfer_data(cmd, &vio_iu(iue)->srp.cmd, ibmvscsis_rdma,
 			       1, 1);
 	if (rc) {
-		pr_err("srp_transfer_data() failed: %d\n", rc);
+		dev_err(&vscsi->dev, "srp_transfer_data() failed: %d\n", rc);
 		return -EIO;
 	}
 	/*
@@ -3813,7 +3814,7 @@ static int ibmvscsis_queue_data_in(struct se_cmd *se_cmd)
 	rc = srp_transfer_data(cmd, &vio_iu(iue)->srp.cmd, ibmvscsis_rdma, 1,
 			       1);
 	if (rc) {
-		pr_err("srp_transfer_data failed: %d\n", rc);
+		dev_err(&vscsi->dev, "srp_transfer_data failed: %d\n", rc);
 		sd = se_cmd->sense_buffer;
 		se_cmd->scsi_sense_length = 18;
 		memset(se_cmd->sense_buffer, 0, se_cmd->scsi_sense_length);
@@ -3836,7 +3837,7 @@ static int ibmvscsis_queue_status(struct se_cmd *se_cmd)
 	struct scsi_info *vscsi = cmd->adapter;
 	uint len;
 
-	pr_debug("queue_status %p\n", se_cmd);
+	dev_dbg(&vscsi->dev, "queue_status %p\n", se_cmd);
 
 	srp_build_response(vscsi, cmd, &len);
 	cmd->rsp.format = SRP_FORMAT;
@@ -3856,7 +3857,7 @@ static void ibmvscsis_queue_tm_rsp(struct se_cmd *se_cmd)
 	u64 tag_to_abort = be64_to_cpu(srp_tsk->task_tag);
 	uint len;
 
-	pr_debug("queue_tm_rsp %p, status %d\n",
+	dev_dbg(&vscsi->dev, "queue_tm_rsp %p, status %d\n",
 		 se_cmd, (int)se_cmd->se_tmr_req->response);
 
 	if (srp_tsk->tsk_mgmt_func == SRP_TSK_ABORT_TASK &&
@@ -3879,7 +3880,11 @@ static void ibmvscsis_queue_tm_rsp(struct se_cmd *se_cmd)
 
 static void ibmvscsis_aborted_task(struct se_cmd *se_cmd)
 {
-	pr_debug("ibmvscsis_aborted_task %p task_tag: %llu\n",
+	struct ibmvscsis_cmd *cmd = container_of(se_cmd, struct ibmvscsis_cmd,
+						 se_cmd);
+	struct scsi_info *vscsi = cmd->adapter;
+
+	dev_dbg(&vscsi->dev, "ibmvscsis_aborted_task %p task_tag: %llu\n",
 		 se_cmd, se_cmd->tag);
 }
 
@@ -3888,11 +3893,13 @@ static struct se_wwn *ibmvscsis_make_tport(struct target_fabric_configfs *tf,
 					   const char *name)
 {
 	struct ibmvscsis_tport *tport;
+	struct scsi_info *vscsi;
 
 	tport = ibmvscsis_lookup_port(name);
 	if (tport) {
+		vscsi = container_of(tport, struct scsi_info, tport);
 		tport->tport_proto_id = SCSI_PROTOCOL_SRP;
-		pr_debug("make_tport(%s), pointer:%p, tport_id:%x\n",
+		dev_dbg(&vscsi->dev, "make_tport(%s), pointer:%p, tport_id:%x\n",
 			 name, tport, tport->tport_proto_id);
 		return &tport->tport_wwn;
 	}
@@ -3905,8 +3912,9 @@ static void ibmvscsis_drop_tport(struct se_wwn *wwn)
 	struct ibmvscsis_tport *tport = container_of(wwn,
 						     struct ibmvscsis_tport,
 						     tport_wwn);
+	struct scsi_info *vscsi = container_of(tport, struct scsi_info, tport);							 
 
-	pr_debug("drop_tport(%s)\n",
+	dev_dbg(&vscsi->dev, "drop_tport(%s)\n",
 		 config_item_name(&tport->tport_wwn.wwn_group.cg_item));
 }
 
@@ -3992,12 +4000,12 @@ static ssize_t ibmvscsis_tpg_enable_store(struct config_item *item,
 
 	rc = kstrtoul(page, 0, &tmp);
 	if (rc < 0) {
-		pr_err("Unable to extract srpt_tpg_store_enable\n");
+		dev_err(&vscsi->dev, "Unable to extract srpt_tpg_store_enable\n");
 		return -EINVAL;
 	}
 
 	if ((tmp != 0) && (tmp != 1)) {
-		pr_err("Illegal value for srpt_tpg_store_enable\n");
+		dev_err(&vscsi->dev, "Illegal value for srpt_tpg_store_enable\n");
 		return -EINVAL;
 	}
 
@@ -4006,7 +4014,7 @@ static ssize_t ibmvscsis_tpg_enable_store(struct config_item *item,
 		tport->enabled = true;
 		lrc = ibmvscsis_enable_change_state(vscsi);
 		if (lrc)
-			pr_err("enable_change_state failed, rc %ld state %d\n",
+			dev_err(&vscsi->dev, "enable_change_state failed, rc %ld state %d\n",
 			       lrc, vscsi->state);
 		spin_unlock_bh(&vscsi->intr_lock);
 	} else {
@@ -4017,7 +4025,7 @@ static ssize_t ibmvscsis_tpg_enable_store(struct config_item *item,
 		spin_unlock_bh(&vscsi->intr_lock);
 	}
 
-	pr_debug("tpg_enable_store, tmp %ld, state %d\n", tmp, vscsi->state);
+	dev_dbg(&vscsi->dev, "tpg_enable_store, tmp %ld, state %d\n", tmp, vscsi->state);
 
 	return count;
 }
