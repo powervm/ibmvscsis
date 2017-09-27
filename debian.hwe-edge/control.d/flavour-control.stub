@@ -26,9 +26,9 @@ Build-Profiles: <!stage1>
 Architecture: ARCH
 Section: kernel
 Priority: optional
-Provides: linux-image, fuse-module, =PROVIDES=${linux:rprovides}
-Depends: ${misc:Depends}, ${shlibs:Depends}, initramfs-tools | linux-initramfs-tool, kmod
-Recommends: BOOTLOADER
+Provides: linux-image, fuse-module, aufs-dkms, =PROVIDES=${linux:rprovides}
+Depends: ${misc:Depends}, ${shlibs:Depends}, kmod
+Recommends: BOOTLOADER, initramfs-tools | linux-initramfs-tool
 Breaks: flash-kernel (<< 3.0~rc.4ubuntu62.2) [arm64]
 Suggests: fdutils, linux-tools, linux-headers-PKGVER-ABINUM-FLAVOUR
 Description: Linux kernel image for version PKGVER on DESC
