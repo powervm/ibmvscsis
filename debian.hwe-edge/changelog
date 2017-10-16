@@ -1,11 +1,11 @@
-linux-hwe-edge (4.13.0-16.19~16.04.2) artful; urgency=low
+linux-hwe-edge (4.13.0-16.19~16.04.3) xenial; urgency=low
 
-  * linux-hwe-edge: 4.13.0-16.19~16.04.2 -proposed tracker (LP: #1723443)
+  * linux-hwe-edge: 4.13.0-16.19~16.04.3 -proposed tracker (LP: #1724021)
 
   * Miscellaneous Ubuntu changes
     - [Debian] Remove build dep on libnuma-dev for s390x, again
 
- -- Seth Forshee <seth.forshee@canonical.com>  Fri, 13 Oct 2017 09:32:04 -0500
+ -- Seth Forshee <seth.forshee@canonical.com>  Mon, 16 Oct 2017 12:20:46 -0500
 
 linux-hwe-edge (4.13.0-16.19~16.04.1) xenial; urgency=low
 
