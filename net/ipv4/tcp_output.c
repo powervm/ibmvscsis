@@ -957,6 +957,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	skb_set_hash_from_sk(skb, sk);
 	atomic_add(skb->truesize, &sk->sk_wmem_alloc);
 
+	skb_set_dst_pending_confirm(skb, sk->sk_dst_pending_confirm);
+
 	/* Build TCP header and checksum it. */
 	th = tcp_hdr(skb);
 	th->source		= inet->inet_sport;
@@ -3255,6 +3257,9 @@ int tcp_connect(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *buff;
 	int err;
+
+	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
+		return -EHOSTUNREACH; /* Routing failure or similar. */
 
 	tcp_connect_init(sk);
 

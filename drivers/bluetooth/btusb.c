@@ -341,6 +341,7 @@ static const struct usb_device_id blacklist_table[] = {
 	{ USB_DEVICE(0x13d3, 0x3410), .driver_info = BTUSB_REALTEK },
 	{ USB_DEVICE(0x13d3, 0x3416), .driver_info = BTUSB_REALTEK },
 	{ USB_DEVICE(0x13d3, 0x3459), .driver_info = BTUSB_REALTEK },
+	{ USB_DEVICE(0x13d3, 0x3494), .driver_info = BTUSB_REALTEK },
 
 	/* Additional Realtek 8821AE Bluetooth devices */
 	{ USB_DEVICE(0x0b05, 0x17dc), .driver_info = BTUSB_REALTEK },
@@ -1659,8 +1660,8 @@ static int btusb_setup_intel(struct hci_dev *hdev)
 	struct sk_buff *skb;
 	const struct firmware *fw;
 	const u8 *fw_ptr;
-	int disable_patch;
-	struct intel_version *ver;
+	int disable_patch, err;
+	struct intel_version ver;
 
 	const u8 mfg_enable[] = { 0x01, 0x00 };
 	const u8 mfg_disable[] = { 0x00, 0x00 };
@@ -1691,35 +1692,22 @@ static int btusb_setup_intel(struct hci_dev *hdev)
 	 * The returned information are hardware variant and revision plus
 	 * firmware variant, revision and build number.
 	 */
-	skb = __hci_cmd_sync(hdev, 0xfc05, 0, NULL, HCI_INIT_TIMEOUT);
-	if (IS_ERR(skb)) {
-		BT_ERR("%s reading Intel fw version command failed (%ld)",
-		       hdev->name, PTR_ERR(skb));
-		return PTR_ERR(skb);
-	}
-
-	if (skb->len != sizeof(*ver)) {
-		BT_ERR("%s Intel version event length mismatch", hdev->name);
-		kfree_skb(skb);
-		return -EIO;
-	}
-
-	ver = (struct intel_version *)skb->data;
+	err = btintel_read_version(hdev, &ver);
+	if (err)
+		return err;
 
 	BT_INFO("%s: read Intel version: %02x%02x%02x%02x%02x%02x%02x%02x%02x",
-		hdev->name, ver->hw_platform, ver->hw_variant,
-		ver->hw_revision, ver->fw_variant,  ver->fw_revision,
-		ver->fw_build_num, ver->fw_build_ww, ver->fw_build_yy,
-		ver->fw_patch_num);
+		hdev->name, ver.hw_platform, ver.hw_variant, ver.hw_revision,
+		ver.fw_variant,  ver.fw_revision, ver.fw_build_num,
+		ver.fw_build_ww, ver.fw_build_yy, ver.fw_patch_num);
 
 	/* fw_patch_num indicates the version of patch the device currently
 	 * have. If there is no patch data in the device, it is always 0x00.
 	 * So, if it is other than 0x00, no need to patch the device again.
 	 */
-	if (ver->fw_patch_num) {
+	if (ver.fw_patch_num) {
 		BT_INFO("%s: Intel device is already patched. patch num: %02x",
-			hdev->name, ver->fw_patch_num);
-		kfree_skb(skb);
+			hdev->name, ver.fw_patch_num);
 		goto complete;
 	}
 
@@ -1729,14 +1717,10 @@ static int btusb_setup_intel(struct hci_dev *hdev)
 	 * If no patch file is found, allow the device to operate without
 	 * a patch.
 	 */
-	fw = btusb_setup_intel_get_fw(hdev, ver);
-	if (!fw) {
-		kfree_skb(skb);
+	fw = btusb_setup_intel_get_fw(hdev, &ver);
+	if (!fw)
 		goto complete;
-	}
 	fw_ptr = fw->data;
-
-	kfree_skb(skb);
 
 	/* This Intel specific command enables the manufacturer mode of the
 	 * controller.
@@ -2022,7 +2006,7 @@ static int btusb_setup_intel_new(struct hci_dev *hdev)
 					  0x00, 0x08, 0x04, 0x00 };
 	struct btusb_data *data = hci_get_drvdata(hdev);
 	struct sk_buff *skb;
-	struct intel_version *ver;
+	struct intel_version ver;
 	struct intel_boot_params *params;
 	const struct firmware *fw;
 	const u8 *fw_ptr;
@@ -2040,45 +2024,36 @@ static int btusb_setup_intel_new(struct hci_dev *hdev)
 	 * is in bootloader mode or if it already has operational firmware
 	 * loaded.
 	 */
-	skb = __hci_cmd_sync(hdev, 0xfc05, 0, NULL, HCI_INIT_TIMEOUT);
-	if (IS_ERR(skb)) {
-		BT_ERR("%s: Reading Intel version information failed (%ld)",
-		       hdev->name, PTR_ERR(skb));
-		return PTR_ERR(skb);
-	}
-
-	if (skb->len != sizeof(*ver)) {
-		BT_ERR("%s: Intel version event size mismatch", hdev->name);
-		kfree_skb(skb);
-		return -EILSEQ;
-	}
-
-	ver = (struct intel_version *)skb->data;
+	err = btintel_read_version(hdev, &ver);
+	if (err)
+		return err;
 
 	/* The hardware platform number has a fixed value of 0x37 and
 	 * for now only accept this single value.
 	 */
-	if (ver->hw_platform != 0x37) {
+	if (ver.hw_platform != 0x37) {
 		BT_ERR("%s: Unsupported Intel hardware platform (%u)",
-		       hdev->name, ver->hw_platform);
-		kfree_skb(skb);
+		       hdev->name, ver.hw_platform);
 		return -EINVAL;
 	}
 
-	/* At the moment the iBT 3.0 hardware variants 0x0b (LnP/SfP)
-	 * and 0x0c (WsP) are supported by this firmware loading method.
+	/* Check for supported iBT hardware variants of this firmware
+	 * loading method.
 	 *
 	 * This check has been put in place to ensure correct forward
 	 * compatibility options when newer hardware variants come along.
 	 */
-	if (ver->hw_variant != 0x0b && ver->hw_variant != 0x0c) {
+	switch (ver.hw_variant) {
+	case 0x0b:	/* SfP */
+	case 0x0c:	/* WsP */
+		break;
+	default:
 		BT_ERR("%s: Unsupported Intel hardware variant (%u)",
-		       hdev->name, ver->hw_variant);
-		kfree_skb(skb);
+		       hdev->name, ver.hw_variant);
 		return -EINVAL;
 	}
 
-	btintel_version_info(hdev, ver);
+	btintel_version_info(hdev, &ver);
 
 	/* The firmware variant determines if the device is in bootloader
 	 * mode or is running operational firmware. The value 0x06 identifies
@@ -2093,8 +2068,7 @@ static int btusb_setup_intel_new(struct hci_dev *hdev)
 	 * It is not possible to use the Secure Boot Parameters in this
 	 * case since that command is only available in bootloader mode.
 	 */
-	if (ver->fw_variant == 0x23) {
-		kfree_skb(skb);
+	if (ver.fw_variant == 0x23) {
 		clear_bit(BTUSB_BOOTLOADER, &data->flags);
 		btintel_check_bdaddr(hdev);
 		return 0;
@@ -2103,14 +2077,11 @@ static int btusb_setup_intel_new(struct hci_dev *hdev)
 	/* If the device is not in bootloader mode, then the only possible
 	 * choice is to return an error and abort the device initialization.
 	 */
-	if (ver->fw_variant != 0x06) {
+	if (ver.fw_variant != 0x06) {
 		BT_ERR("%s: Unsupported Intel firmware variant (%u)",
-		       hdev->name, ver->fw_variant);
-		kfree_skb(skb);
+		       hdev->name, ver.fw_variant);
 		return -ENODEV;
 	}
-
-	kfree_skb(skb);
 
 	/* Read the secure boot parameters to identify the operating
 	 * details of the bootloader.
@@ -2171,10 +2142,14 @@ static int btusb_setup_intel_new(struct hci_dev *hdev)
 	/* With this Intel bootloader only the hardware variant and device
 	 * revision information are used to select the right firmware.
 	 *
-	 * Currently this bootloader support is limited to hardware variant
-	 * iBT 3.0 (LnP/SfP) which is identified by the value 11 (0x0b).
+	 * The firmware filename is ibt-<hw_variant>-<dev_revid>.sfi.
+	 *
+	 * Currently the supported hardware variants are:
+	 *   11 (0x0b) for iBT3.0 (LnP/SfP)
+	 *   12 (0x0c) for iBT3.5 (WsP)
 	 */
-	snprintf(fwname, sizeof(fwname), "intel/ibt-11-%u.sfi",
+	snprintf(fwname, sizeof(fwname), "intel/ibt-%u-%u.sfi",
+		 le16_to_cpu(ver.hw_variant),
 		 le16_to_cpu(params->dev_revid));
 
 	err = request_firmware(&fw, fwname, &hdev->dev);
@@ -2190,7 +2165,8 @@ static int btusb_setup_intel_new(struct hci_dev *hdev)
 	/* Save the DDC file name for later use to apply once the firmware
 	 * downloading is done.
 	 */
-	snprintf(fwname, sizeof(fwname), "intel/ibt-11-%u.ddc",
+	snprintf(fwname, sizeof(fwname), "intel/ibt-%u-%u.ddc",
+		 le16_to_cpu(ver.hw_variant),
 		 le16_to_cpu(params->dev_revid));
 
 	kfree_skb(skb);

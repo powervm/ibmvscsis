@@ -25,17 +25,6 @@ static inline void __tlb_flush_idte(unsigned long asce)
 		: : "a" (2048), "a" (asce) : "cc");
 }
 
-/*
- * Flush TLB entries for a specific ASCE on the local CPU
- */
-static inline void __tlb_flush_idte_local(unsigned long asce)
-{
-	/* Local TLB flush for the mm */
-	asm volatile(
-		"	.insn	rrf,0xb98e0000,0,%0,%1,1"
-		: : "a" (2048), "a" (asce) : "cc");
-}
-
 #ifdef CONFIG_SMP
 void smp_ptlb_all(void);
 
@@ -58,51 +47,26 @@ static inline void __tlb_flush_global(void)
 }
 
 /*
- * Flush TLB entries for a specific mm on all CPUs (in case gmap is used
- * this implicates multiple ASCEs!).
+ * Flush TLB entries for a specific ASCE on all CPUs.
  */
-static inline void __tlb_flush_full(struct mm_struct *mm)
+static inline void __tlb_flush_mm(struct mm_struct * mm)
 {
+	/*
+	 * If the machine has IDTE we prefer to do a per mm flush
+	 * on all cpus instead of doing a local flush if the mm
+	 * only ran on the local cpu.
+	 */
 	preempt_disable();
 	atomic_add(0x10000, &mm->context.attach_count);
-	if (cpumask_equal(mm_cpumask(mm), cpumask_of(smp_processor_id()))) {
-		/* Local TLB flush */
-		__tlb_flush_local();
+	/* Reset TLB flush mask */
+	if (MACHINE_HAS_TLB_LC)
+		cpumask_copy(mm_cpumask(mm), &mm->context.cpu_attach_mask);
+	barrier();
+	if (MACHINE_HAS_IDTE && list_empty(&mm->context.gmap_list)) {
+		__tlb_flush_idte(mm->context.asce);
 	} else {
 		/* Global TLB flush */
 		__tlb_flush_global();
-		/* Reset TLB flush mask */
-		if (MACHINE_HAS_TLB_LC)
-			cpumask_copy(mm_cpumask(mm),
-				     &mm->context.cpu_attach_mask);
-	}
-	atomic_sub(0x10000, &mm->context.attach_count);
-	preempt_enable();
-}
-
-/*
- * Flush TLB entries for a specific ASCE on all CPUs. Should never be used
- * when more than one asce (e.g. gmap) ran on this mm.
- */
-static inline void __tlb_flush_asce(struct mm_struct *mm, unsigned long asce)
-{
-	int active, count;
-
-	preempt_disable();
-	active = (mm == current->active_mm) ? 1 : 0;
-	count = atomic_add_return(0x10000, &mm->context.attach_count);
-	if (MACHINE_HAS_TLB_LC && (count & 0xffff) <= active &&
-	    cpumask_equal(mm_cpumask(mm), cpumask_of(smp_processor_id()))) {
-		__tlb_flush_idte_local(asce);
-	} else {
-		if (MACHINE_HAS_IDTE)
-			__tlb_flush_idte(asce);
-		else
-			__tlb_flush_global();
-		/* Reset TLB flush mask */
-		if (MACHINE_HAS_TLB_LC)
-			cpumask_copy(mm_cpumask(mm),
-				     &mm->context.cpu_attach_mask);
 	}
 	atomic_sub(0x10000, &mm->context.attach_count);
 	preempt_enable();
@@ -117,47 +81,35 @@ static inline void __tlb_flush_kernel(void)
 }
 #else
 #define __tlb_flush_global()	__tlb_flush_local()
-#define __tlb_flush_full(mm)	__tlb_flush_local()
 
 /*
  * Flush TLB entries for a specific ASCE on all CPUs.
  */
 static inline void __tlb_flush_asce(struct mm_struct *mm, unsigned long asce)
 {
-	if (MACHINE_HAS_TLB_LC)
-		__tlb_flush_idte_local(asce);
-	else
-		__tlb_flush_local();
+	__tlb_flush_local();
 }
 
 static inline void __tlb_flush_kernel(void)
 {
-	if (MACHINE_HAS_TLB_LC)
-		__tlb_flush_idte_local(init_mm.context.asce);
-	else
-		__tlb_flush_local();
+	__tlb_flush_local();
 }
-#endif
 
 static inline void __tlb_flush_mm(struct mm_struct * mm)
 {
-	/*
-	 * If the machine has IDTE we prefer to do a per mm flush
-	 * on all cpus instead of doing a local flush if the mm
-	 * only ran on the local cpu.
-	 */
-	if (MACHINE_HAS_IDTE && list_empty(&mm->context.gmap_list))
-		__tlb_flush_asce(mm, mm->context.asce);
-	else
-		__tlb_flush_full(mm);
+	__tlb_flush_local();
 }
+
+#endif
 
 static inline void __tlb_flush_mm_lazy(struct mm_struct * mm)
 {
+	spin_lock(&mm->context.lock);
 	if (mm->context.flush_mm) {
-		__tlb_flush_mm(mm);
 		mm->context.flush_mm = 0;
+		__tlb_flush_mm(mm);
 	}
+	spin_unlock(&mm->context.lock);
 }
 
 /*

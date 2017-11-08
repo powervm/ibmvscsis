@@ -3627,9 +3627,9 @@ packet_setsockopt(struct socket *sock, int level, int optname, char __user *optv
 		if (val > INT_MAX)
 			return -EINVAL;
 		lock_sock(sk);
-		if (po->rx_ring.pg_vec || po->tx_ring.pg_vec)
+		if (po->rx_ring.pg_vec || po->tx_ring.pg_vec) {
 			ret = -EBUSY;
-		else {
+		} else {
 			po->tp_reserve = val;
 			ret = 0;
 		}
@@ -4230,7 +4230,7 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 		register_prot_hook(sk);
 	}
 	spin_unlock(&po->bind_lock);
-	if (closing && (po->tp_version > TPACKET_V2)) {
+	if (pg_vec && (po->tp_version > TPACKET_V2)) {
 		/* Because we don't support block-based V3 on tx-ring */
 		if (!tx_ring)
 			prb_shutdown_retire_blk_timer(po, rb_queue);

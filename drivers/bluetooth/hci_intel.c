@@ -548,7 +548,7 @@ static int intel_setup(struct hci_uart *hu)
 	struct intel_device *idev = NULL;
 	struct hci_dev *hdev = hu->hdev;
 	struct sk_buff *skb;
-	struct intel_version *ver;
+	struct intel_version ver;
 	struct intel_boot_params *params;
 	struct list_head *p;
 	const struct firmware *fw;
@@ -596,51 +596,36 @@ static int intel_setup(struct hci_uart *hu)
 	 * is in bootloader mode or if it already has operational firmware
 	 * loaded.
 	 */
-	skb = __hci_cmd_sync(hdev, 0xfc05, 0, NULL, HCI_INIT_TIMEOUT);
-	if (IS_ERR(skb)) {
-		bt_dev_err(hdev, "Reading Intel version information failed (%ld)",
-			   PTR_ERR(skb));
-		return PTR_ERR(skb);
-	}
-
-	if (skb->len != sizeof(*ver)) {
-		bt_dev_err(hdev, "Intel version event size mismatch");
-		kfree_skb(skb);
-		return -EILSEQ;
-	}
-
-	ver = (struct intel_version *)skb->data;
-	if (ver->status) {
-		bt_dev_err(hdev, "Intel version command failure (%02x)",
-			   ver->status);
-		err = -bt_to_errno(ver->status);
-		kfree_skb(skb);
+	 err = btintel_read_version(hdev, &ver);
+	 if (err)
 		return err;
-	}
 
 	/* The hardware platform number has a fixed value of 0x37 and
 	 * for now only accept this single value.
 	 */
-	if (ver->hw_platform != 0x37) {
+	if (ver.hw_platform != 0x37) {
 		bt_dev_err(hdev, "Unsupported Intel hardware platform (%u)",
-			   ver->hw_platform);
-		kfree_skb(skb);
+			   ver.hw_platform);
 		return -EINVAL;
 	}
 
-	/* At the moment only the hardware variant iBT 3.0 (LnP/SfP) is
-	 * supported by this firmware loading method. This check has been
-	 * put in place to ensure correct forward compatibility options
-	 * when newer hardware variants come along.
-	 */
-	if (ver->hw_variant != 0x0b) {
+        /* Check for supported iBT hardware variants of this firmware
+         * loading method.
+         *
+         * This check has been put in place to ensure correct forward
+         * compatibility options when newer hardware variants come along.
+         */
+	switch (ver.hw_variant) {
+	case 0x0b:	/* LnP */
+	case 0x0c:	/* WsP */
+		break;
+	default:
 		bt_dev_err(hdev, "Unsupported Intel hardware variant (%u)",
-			   ver->hw_variant);
-		kfree_skb(skb);
+			   ver.hw_variant);
 		return -EINVAL;
 	}
 
-	btintel_version_info(hdev, ver);
+	btintel_version_info(hdev, &ver);
 
 	/* The firmware variant determines if the device is in bootloader
 	 * mode or is running operational firmware. The value 0x06 identifies
@@ -655,8 +640,7 @@ static int intel_setup(struct hci_uart *hu)
 	 * It is not possible to use the Secure Boot Parameters in this
 	 * case since that command is only available in bootloader mode.
 	 */
-	if (ver->fw_variant == 0x23) {
-		kfree_skb(skb);
+	if (ver.fw_variant == 0x23) {
 		clear_bit(STATE_BOOTLOADER, &intel->flags);
 		btintel_check_bdaddr(hdev);
 		return 0;
@@ -665,14 +649,11 @@ static int intel_setup(struct hci_uart *hu)
 	/* If the device is not in bootloader mode, then the only possible
 	 * choice is to return an error and abort the device initialization.
 	 */
-	if (ver->fw_variant != 0x06) {
+	if (ver.fw_variant != 0x06) {
 		bt_dev_err(hdev, "Unsupported Intel firmware variant (%u)",
-			   ver->fw_variant);
-		kfree_skb(skb);
+			   ver.fw_variant);
 		return -ENODEV;
 	}
-
-	kfree_skb(skb);
 
 	/* Read the secure boot parameters to identify the operating
 	 * details of the bootloader.
@@ -731,11 +712,14 @@ static int intel_setup(struct hci_uart *hu)
 	/* With this Intel bootloader only the hardware variant and device
 	 * revision information are used to select the right firmware.
 	 *
-	 * Currently this bootloader support is limited to hardware variant
-	 * iBT 3.0 (LnP/SfP) which is identified by the value 11 (0x0b).
+	 * The firmware filename is ibt-<hw_variant>-<dev_revid>.sfi.
+	 *
+	 * Currently the supported hardware variants are:
+	 *   11 (0x0b) for iBT 3.0 (LnP/SfP)
 	 */
-	snprintf(fwname, sizeof(fwname), "intel/ibt-11-%u.sfi",
-		 le16_to_cpu(params->dev_revid));
+	snprintf(fwname, sizeof(fwname), "intel/ibt-%u-%u.sfi",
+		le16_to_cpu(ver.hw_variant),
+		le16_to_cpu(params->dev_revid));
 
 	err = request_firmware(&fw, fwname, &hdev->dev);
 	if (err < 0) {
@@ -748,8 +732,9 @@ static int intel_setup(struct hci_uart *hu)
 	bt_dev_info(hdev, "Found device firmware: %s", fwname);
 
 	/* Save the DDC file name for later */
-	snprintf(fwname, sizeof(fwname), "intel/ibt-11-%u.ddc",
-		 le16_to_cpu(params->dev_revid));
+	snprintf(fwname, sizeof(fwname), "intel/ibt-%u-%u.ddc",
+		le16_to_cpu(ver.hw_variant),
+		le16_to_cpu(params->dev_revid));
 
 	kfree_skb(skb);
 
