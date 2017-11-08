@@ -1696,6 +1696,13 @@ static void tcmu_destroy_device(struct se_device *dev)
 	list_del(&udev->node);
 	mutex_unlock(&root_udev_mutex);
 
+	mutex_lock(&root_udev_waiter_mutex);
+	mutex_lock(&udev->cmdr_lock);
+	if (is_in_waiter_list(udev))
+		list_del(&udev->waiter);
+	mutex_unlock(&udev->cmdr_lock);
+	mutex_unlock(&root_udev_waiter_mutex);
+
 	tcmu_netlink_event(udev, TCMU_CMD_REMOVED_DEVICE, 0, NULL);
 
 	uio_unregister_device(&udev->uio_info);
