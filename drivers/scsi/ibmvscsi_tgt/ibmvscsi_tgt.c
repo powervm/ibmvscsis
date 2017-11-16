@@ -41,7 +41,7 @@
 
 #include "ibmvscsi_tgt.h"
 
-#define IBMVSCSIS_VERSION	"v0.4"
+#define IBMVSCSIS_VERSION	"v0.5"
 
 #define	INITIAL_SRP_LIMIT	800
 #define	DEFAULT_MAX_SECTORS	256
@@ -3770,7 +3770,8 @@ static int ibmvscsis_write_pending(struct se_cmd *se_cmd)
 	 */
 	if ((vscsi->flags & (CLIENT_FAILED | RESPONSE_Q_DOWN))) {
 		dev_err(&vscsi->dev, "write_pending failed since: %d\n", vscsi->flags);
-		return 0;
+		return -EIO;
+
 	}
 
 	rc = srp_transfer_data(cmd, &vio_iu(iue)->srp.cmd, ibmvscsis_rdma,
