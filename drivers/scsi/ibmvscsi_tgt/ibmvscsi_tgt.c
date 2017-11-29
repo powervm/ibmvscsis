@@ -3924,7 +3924,6 @@ static struct se_portal_group *ibmvscsis_make_tpg(struct se_wwn *wwn,
 		return ERR_PTR(rc);
 	tport->tport_tpgt = tpgt;
 
-	tport->enabled = true;
 	tport->releasing = false;
 
 	rc = core_tpg_register(&tport->tport_wwn, &tport->se_tpg,
@@ -3985,7 +3984,6 @@ static ssize_t ibmvscsis_tpg_enable_store(struct config_item *item,
 						     struct ibmvscsis_tport,
 						     se_tpg);
 	struct scsi_info *vscsi = container_of(tport, struct scsi_info, tport);
-	struct scsi_info *vscsi_tmp = vscsi;
 	unsigned long tmp;
 	int rc;
 	long lrc;
@@ -4001,36 +3999,22 @@ static ssize_t ibmvscsis_tpg_enable_store(struct config_item *item,
 		return -EINVAL;
 	}
 
-	if (tport->enabled == tmp)
-		goto out;
-
-	tport->enabled = tmp;
-
-	if (tport->enabled) {
+	if (tmp) {
 		spin_lock_bh(&vscsi->intr_lock);
+		tport->enabled = true;
 		lrc = ibmvscsis_enable_change_state(vscsi);
 		if (lrc)
 			pr_err("enable_change_state failed, rc %ld state %d\n",
 			       lrc, vscsi->state);
 		spin_unlock_bh(&vscsi->intr_lock);
 	} else {
-		spin_lock_bh(&ibmvscsis_dev_lock);
-		list_for_each_entry(vscsi_tmp, &ibmvscsis_dev_list, list) {
-			if (&vscsi_tmp->tport == tport) {
-				spin_lock_bh(&vscsi->intr_lock);
-				tport->enabled = false;
-				/* This simulates the server going down */
-				ibmvscsis_post_disconnect(vscsi, ERR_DISCONNECT, 0);
-				spin_unlock_bh(&vscsi->intr_lock);
-			}
-			if (vscsi_tmp != vscsi) {
-				dev_err(&vscsi->dev, "tport->enabled failed due to duplicate tport, enabled %ld", tport->enabled);
-			}
-		}
-		spin_unlock_bh(&ibmvscsis_dev_lock);
+		spin_lock_bh(&vscsi->intr_lock);
+		tport->enabled = false;
+		/* This simulates the server going down */
+		ibmvscsis_post_disconnect(vscsi, ERR_DISCONNECT, 0);
+		spin_unlock_bh(&vscsi->intr_lock);
 	}
 
-out:
 	pr_debug("tpg_enable_store, tmp %ld, state %d\n", tmp, vscsi->state);
 
 	return count;
