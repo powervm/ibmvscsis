@@ -1,6 +1,15 @@
-linux-hwe-edge (4.13.0-18.21~16.04.1) xenial; urgency=low
+linux-hwe-edge (4.13.0-19.22~16.04.1) xenial; urgency=low
 
-  * linux-hwe-edge: 4.13.0-18.21~16.04.1 -proposed tracker (LP: #1733534)
+  * linux-hwe-edge: 4.13.0-19.22~16.04.1 -proposed tracker (LP: #1736121)
+
+  * linux: 4.13.0-19.22 -proposed tracker (LP: #1736118)
+
+  * CVE-2017-1000405
+    - mm, thp: Do not make page table dirty unconditionally in touch_p[mu]d()
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Mon, 04 Dec 2017 12:27:13 +0100
+
+linux (4.13.0-18.21) artful; urgency=low
 
   * linux: 4.13.0-18.21 -proposed tracker (LP: #1733530)
 
