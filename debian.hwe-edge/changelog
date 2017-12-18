@@ -1,6 +1,15 @@
-linux-hwe-edge (4.13.0-19.22~16.04.1) xenial; urgency=low
+linux-hwe-edge (4.13.0-21.24~16.04.1) xenial; urgency=low
 
-  * linux-hwe-edge: 4.13.0-19.22~16.04.1 -proposed tracker (LP: #1736121)
+  * linux-hwe-edge: 4.13.0-21.24~16.04.1 -proposed tracker (LP: #1738842)
+
+  * linux: 4.13.0-21.24 -proposed tracker (LP: #1738823)
+
+  * Ubuntu 17.10 corrupting BIOS - many LENOVO laptops models (LP: #1734147)
+    - [Config] CONFIG_SPI_INTEL_SPI_PLATFORM=n
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Mon, 18 Dec 2017 14:13:33 -0200
+
+linux (4.13.0-19.22) artful; urgency=low
 
   * linux: 4.13.0-19.22 -proposed tracker (LP: #1736118)
 
