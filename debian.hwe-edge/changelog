@@ -1,6 +1,18 @@
-linux-hwe-edge (4.13.0-21.24~16.04.1) xenial; urgency=low
+linux-hwe-edge (4.13.0-22.25~16.04.1) xenial; urgency=low
 
-  * linux-hwe-edge: 4.13.0-21.24~16.04.1 -proposed tracker (LP: #1738842)
+  * linux-hwe-edge: 4.13.0-22.25~16.04.1 -proposed tracker (LP: #1738796)
+
+  * linux: 4.13.0-22.25 -proposed tracker (LP: #1738791)
+
+  * CVE-2017-15115
+    - sctp: do not peel off an assoc from one netns to another one
+
+  * CVE-2017-8824
+    - dccp: CVE-2017-8824: use-after-free in DCCP code
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Tue, 19 Dec 2017 08:05:53 -0200
+
+linux (4.13.0-21.24) artful; urgency=low
 
   * linux: 4.13.0-21.24 -proposed tracker (LP: #1738823)
 
