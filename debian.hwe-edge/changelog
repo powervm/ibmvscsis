@@ -1,6 +1,15 @@
-linux-hwe-edge (4.13.0-23.27~16.04.1) xenial; urgency=low
+linux-hwe-edge (4.13.0-24.28~16.04.1) xenial; urgency=low
 
-  * linux-hwe-edge: 4.13.0-23.27~16.04.1 -proposed tracker (LP: #1741560)
+  * linux-hwe-edge: 4.13.0-24.28~16.04.1 -proposed tracker (LP: #1741749)
+
+  * linux: 4.13.0-24.28 -proposed tracker (LP: #1741745)
+
+  * CVE-2017-5754
+    - x86/cpu, x86/pti: Do not enable PTI on AMD processors
+
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Sun, 07 Jan 2018 15:34:55 +0100
+
+linux (4.13.0-23.27) artful; urgency=low
 
   * linux: 4.13.0-23.27 -proposed tracker (LP: #1741556)
 
