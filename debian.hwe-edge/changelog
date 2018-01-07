@@ -1,9 +1,10 @@
-linux-hwe-edge (4.13.0-23.26~16.04.1) xenial; urgency=low
+linux-hwe-edge (4.13.0-23.27~16.04.1) xenial; urgency=low
 
-  * linux-hwe-edge: 4.13.0-23.26~16.04.1 -proposed tracker (LP: #1741560)
+  * linux-hwe-edge: 4.13.0-23.27~16.04.1 -proposed tracker (LP: #1741560)
 
-  * linux: 4.13.0-23.26 -proposed tracker (LP: #1741556)
+  * linux: 4.13.0-23.27 -proposed tracker (LP: #1741556)
 
+  [ Kleber Sacilotto de Souza ]
   * CVE-2017-5754
     - x86/mm: Add the 'nopcid' boot option to turn off PCID
     - x86/mm: Enable CR4.PCIDE on supported systems
@@ -231,6 +232,8 @@ linux-hwe-edge (4.13.0-23.26~16.04.1) xenial; urgency=low
     - SAUCE: only attempt to use PCID in 64 bit builds
     - SAUCE: BODGE: temporarily disable some kprobe trace points which are
       cratering
+    - s390/mm: use generic mm_hooks
+    - objtool: use sh to invoke sync-check.sh in the Makefile
 
   * CVE-2017-17862
     - bpf: fix branch pruning logic
@@ -244,7 +247,7 @@ linux-hwe-edge (4.13.0-23.26~16.04.1) xenial; urgency=low
   * CVE-2017-17863
     - SAUCE: bpf: reject out-of-bounds stack pointer calculation
 
- -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Sat, 06 Jan 2018 15:37:28 +0100
+ -- Marcelo Henrique Cerri <marcelo.cerri@canonical.com>  Sat, 06 Jan 2018 20:01:35 +0000
 
 linux (4.13.0-21.24) artful; urgency=low
 
