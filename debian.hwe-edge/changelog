@@ -1,6 +1,6 @@
-linux-hwe-edge (4.13.0-25.29~16.04.1) xenial; urgency=low
+linux-hwe-edge (4.13.0-25.29~16.04.2) xenial; urgency=low
 
-  * linux-hwe-edge: 4.13.0-25.29~16.04.1 -proposed tracker (LP: #1741960)
+  * linux-hwe-edge: 4.13.0-25.29~16.04.2 -proposed tracker (LP: #1741960)
 
   * linux: 4.13.0-25.29 -proposed tracker (LP: #1741955)
 
@@ -8,7 +8,7 @@ linux-hwe-edge (4.13.0-25.29~16.04.1) xenial; urgency=low
     - Revert "UBUNTU: [Config] updateconfigs to enable PTI"
     - [Config] Enable PTI with UNWINDER_FRAME_POINTER
 
- -- Marcelo Henrique Cerri <marcelo.cerri@canonical.com>  Mon, 08 Jan 2018 17:13:57 -0200
+ -- Marcelo Henrique Cerri <marcelo.cerri@canonical.com>  Tue, 09 Jan 2018 09:25:51 -0200
 
 linux (4.13.0-24.28) artful; urgency=low
 
