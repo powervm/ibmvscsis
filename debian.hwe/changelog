@@ -1,4 +1,4 @@
-linux-hwe (4.13.0-25.29~16.04.2) xenial; urgency=low
+linux-hwe (4.13.0-26.29~16.04.2) xenial; urgency=low
 
   * linux-hwe: 4.13.0-25.29~16.04.2 -proposed tracker (LP: #1741960)
 
