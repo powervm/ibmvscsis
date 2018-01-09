@@ -5930,6 +5930,7 @@ EXPORT_SYMBOL vmlinux 0x54a23d77	xfrm_dev_state_flush
 EXPORT_SYMBOL vmlinux 0x54ac4150	deactivate_locked_super
 EXPORT_SYMBOL vmlinux 0x54b1bd8e	xfrm_unregister_mode
 EXPORT_SYMBOL vmlinux 0x54c136c4	fscrypt_d_ops
+EXPORT_SYMBOL vmlinux 0x54c99fac	mem_section
 EXPORT_SYMBOL vmlinux 0x54e6fcdd	net_enable_timestamp
 EXPORT_SYMBOL vmlinux 0x550a7434	netpoll_parse_options
 EXPORT_SYMBOL vmlinux 0x551bd071	__rb_erase_color
@@ -8768,7 +8769,6 @@ EXPORT_SYMBOL vmlinux 0xf7584a9c	find_font
 EXPORT_SYMBOL vmlinux 0xf75cd5cc	tty_port_close_end
 EXPORT_SYMBOL vmlinux 0xf75ef52b	keyring_search
 EXPORT_SYMBOL vmlinux 0xf77555cd	__memcpy_toio
-EXPORT_SYMBOL vmlinux 0xf7b0695a	mem_section
 EXPORT_SYMBOL vmlinux 0xf7c36e25	DWC_THREAD_SHOULD_STOP
 EXPORT_SYMBOL vmlinux 0xf7c927c8	filemap_check_errors
 EXPORT_SYMBOL vmlinux 0xf7e8a937	ndo_dflt_fdb_dump
@@ -13635,7 +13635,6 @@ EXPORT_SYMBOL_GPL vmlinux 0x15ad2ff8	devfreq_event_set_event
 EXPORT_SYMBOL_GPL vmlinux 0x15d75e46	cpufreq_table_index_unsorted
 EXPORT_SYMBOL_GPL vmlinux 0x15d992c2	thermal_zone_get_slope
 EXPORT_SYMBOL_GPL vmlinux 0x15efd446	rcu_batches_started
-EXPORT_SYMBOL_GPL vmlinux 0x15f917dc	bpf_analyzer
 EXPORT_SYMBOL_GPL vmlinux 0x1628bcda	kill_pid_info_as_cred
 EXPORT_SYMBOL_GPL vmlinux 0x1628f41f	rtc_alarm_irq_enable
 EXPORT_SYMBOL_GPL vmlinux 0x163ee21b	blkg_print_stat_ios_recursive
@@ -14468,6 +14467,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x48d6db92	blocking_notifier_chain_register
 EXPORT_SYMBOL_GPL vmlinux 0x48dd97cb	extcon_get_extcon_dev
 EXPORT_SYMBOL_GPL vmlinux 0x48f6a46e	ata_sff_prereset
 EXPORT_SYMBOL_GPL vmlinux 0x4906a967	hid_snto32
+EXPORT_SYMBOL_GPL vmlinux 0x490ab52e	bpf_analyzer
 EXPORT_SYMBOL_GPL vmlinux 0x49156b60	__tracepoint_kfree_skb
 EXPORT_SYMBOL_GPL vmlinux 0x4919520c	irq_set_chained_handler_and_data
 EXPORT_SYMBOL_GPL vmlinux 0x491aca24	cpu_topology

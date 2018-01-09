@@ -15999,7 +15999,6 @@ EXPORT_SYMBOL_GPL vmlinux 0x9b41b430	irq_get_irq_data
 EXPORT_SYMBOL_GPL vmlinux 0x9b6db964	anon_transport_class_unregister
 EXPORT_SYMBOL_GPL vmlinux 0x9b92d16e	pinctrl_gpio_set_config
 EXPORT_SYMBOL_GPL vmlinux 0x9b92e77e	ata_port_schedule_eh
-EXPORT_SYMBOL_GPL vmlinux 0x9b9da27d	bpf_analyzer
 EXPORT_SYMBOL_GPL vmlinux 0x9ba76582	crypto_unregister_skciphers
 EXPORT_SYMBOL_GPL vmlinux 0x9bb5cb3c	blk_execute_rq_nowait
 EXPORT_SYMBOL_GPL vmlinux 0x9bb6e21a	pinctrl_utils_add_map_mux
@@ -16397,6 +16396,7 @@ EXPORT_SYMBOL_GPL vmlinux 0xb4c840b6	crypto_alloc_skcipher
 EXPORT_SYMBOL_GPL vmlinux 0xb4d87c68	gpiod_set_raw_value_cansleep
 EXPORT_SYMBOL_GPL vmlinux 0xb4e31630	scsi_unregister_device_handler
 EXPORT_SYMBOL_GPL vmlinux 0xb4ea7cf7	kgdb_connected
+EXPORT_SYMBOL_GPL vmlinux 0xb4eade67	bpf_analyzer
 EXPORT_SYMBOL_GPL vmlinux 0xb4f43794	cpufreq_cooling_unregister
 EXPORT_SYMBOL_GPL vmlinux 0xb4faed09	blkg_print_stat_bytes
 EXPORT_SYMBOL_GPL vmlinux 0xb4fe68b3	led_trigger_blink
