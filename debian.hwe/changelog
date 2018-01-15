@@ -1,6 +1,26 @@
-linux-hwe (4.13.0-29.32~16.04.1) xenial; urgency=low
+linux-hwe (4.13.0-30.33~16.04.1) xenial; urgency=low
 
-  * linux-hwe: 4.13.0-29.32~16.04.1 -proposed tracker (LP: #1742928)
+  * linux-hwe: 4.13.0-30.33~16.04.1 -proposed tracker (LP: #1743416)
+
+  * linux: 4.13.0-30.33 -proposed tracker (LP: #1743412)
+
+  * Do not duplicate changelog entries assigned to more than one bug or CVE
+    (LP: #1743383)
+    - [Packaging] git-ubuntu-log -- handle multiple bugs/cves better
+
+  * Unable to handle kernel NULL pointer dereference at isci_task_abort_task
+    (LP: #1726519)
+    - Revert "scsi: libsas: allow async aborts"
+
+  * CVE-2017-5715 // CVE-2017-5753
+    - SAUCE: x86/microcode: Extend post microcode reload to support IBPB feature
+      -- repair missmerge
+    - Revert "x86/svm: Add code to clear registers on VM exit"
+    - kvm: vmx: Scrub hardware GPRs at VM-exit
+
+ -- Marcelo Henrique Cerri <marcelo.cerri@canonical.com>  Mon, 15 Jan 2018 16:46:07 -0200
+
+linux (4.13.0-29.32) artful; urgency=low
 
   * linux: 4.13.0-29.32 -proposed tracker (LP: #1742722)
 
@@ -11,7 +31,7 @@ linux-hwe (4.13.0-29.32~16.04.1) xenial; urgency=low
     - Revert "UBUNTU: [Config] updateconfigs to enable
       GENERIC_CPU_VULNERABILITIES"
 
- -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Fri, 12 Jan 2018 13:30:17 +0100
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Fri, 12 Jan 2018 12:10:51 +0100
 
 linux (4.13.0-28.31) artful; urgency=low
 
