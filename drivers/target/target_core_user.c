@@ -1084,11 +1084,7 @@ static int tcmu_check_expired_cmd(int id, void *p, void *data)
 		return 0;
 
 	is_running = list_empty(&cmd->cmdr_queue_entry);
-	pr_debug("Timing out cmd %u on dev %s that is %s.\n",
-		 id, udev->name, is_running ? "inflight" : "queued");
-
 	se_cmd = cmd->se_cmd;
-	cmd->se_cmd = NULL;
 
 	if (is_running) {
 		set_bit(TCMU_CMD_BIT_EXPIRED, &cmd->flags);
@@ -1103,6 +1099,10 @@ static int tcmu_check_expired_cmd(int id, void *p, void *data)
 		tcmu_free_cmd(cmd);
 		scsi_status = SAM_STAT_TASK_SET_FULL;
 	}
+
+	pr_debug("Timing out cmd %u on dev %s that is %s.\n",
+		 id, udev->name, is_running ? "inflight" : "queued");
+
 	target_complete_cmd(se_cmd, scsi_status);
 	return 0;
 }
