@@ -1,6 +1,18 @@
-linux-hwe (4.13.0-30.33~16.04.1) xenial; urgency=low
+linux-hwe (4.13.0-31.34~16.04.1) xenial; urgency=low
 
-  * linux-hwe: 4.13.0-30.33~16.04.1 -proposed tracker (LP: #1743416)
+  * linux-hwe: 4.13.0-31.34~16.04.1 -proposed tracker (LP: #1744298)
+
+  * linux: 4.13.0-31.34 -proposed tracker (LP: #1744294)
+
+  [ Stefan Bader ]
+  * CVE-2017-5715 // CVE-2017-5753
+    - SAUCE: s390: improve cpu alternative handling for gmb and nobp
+    - SAUCE: s390: print messages for gmb and nobp
+    - [Config] KERNEL_NOBP=y
+
+ -- Marcelo Henrique Cerri <marcelo.cerri@canonical.com>  Fri, 19 Jan 2018 09:56:09 -0200
+
+linux (4.13.0-30.33) artful; urgency=low
 
   * linux: 4.13.0-30.33 -proposed tracker (LP: #1743412)
 
