@@ -1,6 +1,11 @@
-linux-hwe (4.13.0-31.34~16.04.1) xenial; urgency=low
+linux-hwe (4.13.0-32.35~16.04.1) xenial; urgency=low
 
-  * linux-hwe: 4.13.0-31.34~16.04.1 -proposed tracker (LP: #1744298)
+  * CVE-2017-5715 // CVE-2017-5753
+    - SAUCE: x86/entry: Fix up retpoline assembler labels
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Tue, 23 Jan 2018 09:13:39 +0100
+
+linux (4.13.0-31.34) artful; urgency=low
 
   * linux: 4.13.0-31.34 -proposed tracker (LP: #1744294)
 
