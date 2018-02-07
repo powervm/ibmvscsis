@@ -1,4 +1,340 @@
-linux-hwe (4.13.0-32.35~16.04.1) xenial; urgency=low
+linux-hwe (4.13.0-33.36~16.04.1) xenial; urgency=low
+
+  * linux-hwe: 4.13.0-33.36~16.04.1 -proposed tracker (LP: #1746909)
+
+  * linux: 4.13.0-33.36 -proposed tracker (LP: #1746903)
+
+  [ Stefan Bader ]
+  * starting VMs causing retpoline4 to reboot (LP: #1747507) // CVE-2017-5715
+    (Spectre v2 retpoline)
+    - x86/retpoline: Fill RSB on context switch for affected CPUs
+    - x86/retpoline: Add LFENCE to the retpoline/RSB filling RSB macros
+    - x86/retpoline: Optimize inline assembler for vmexit_fill_RSB
+    - x86/retpoline: Remove the esp/rsp thunk
+    - x86/retpoline: Simplify vmexit_fill_RSB()
+
+  * Missing install-time driver for QLogic QED 25/40/100Gb Ethernet NIC
+    (LP: #1743638)
+    - [d-i] Add qede to nic-modules udeb
+
+  * hisi_sas: driver robustness fixes (LP: #1739807)
+    - scsi: hisi_sas: fix reset and port ID refresh issues
+    - scsi: hisi_sas: avoid potential v2 hw interrupt issue
+    - scsi: hisi_sas: fix v2 hw underflow residual value
+    - scsi: hisi_sas: add v2 hw DFX feature
+    - scsi: hisi_sas: add irq and tasklet cleanup in v2 hw
+    - scsi: hisi_sas: service interrupt ITCT_CLR interrupt in v2 hw
+    - scsi: hisi_sas: fix internal abort slot timeout bug
+    - scsi: hisi_sas: us start_phy in PHY_FUNC_LINK_RESET
+    - scsi: hisi_sas: fix NULL check in SMP abort task path
+    - scsi: hisi_sas: fix the risk of freeing slot twice
+    - scsi: hisi_sas: kill tasklet when destroying irq in v3 hw
+    - scsi: hisi_sas: complete all tasklets prior to host reset
+
+  * [Artful/Zesty] ACPI APEI error handling bug fixes (LP: #1732990)
+    - ACPI: APEI: fix the wrong iteration of generic error status block
+    - ACPI / APEI: clear error status before acknowledging the error
+
+  * [Zesty/Artful] On ARM64 PCIE physical function passthrough guest fails to
+    boot (LP: #1732804)
+    - vfio/pci: Virtualize Maximum Payload Size
+    - vfio/pci: Virtualize Maximum Read Request Size
+
+  * hisi_sas: Add ATA command support for SMR disks (LP: #1739891)
+    - scsi: hisi_sas: support zone management commands
+
+  * thunderx2: i2c driver PEC and ACPI clock fixes (LP: #1738073)
+    - ACPI / APD: Add clock frequency for ThunderX2 I2C controller
+    - i2c: xlp9xx: Get clock frequency with clk API
+    - i2c: xlp9xx: Handle I2C_M_RECV_LEN in msg->flags
+
+  * Falkor erratum 1041 needs workaround (LP: #1738497)
+    - [Config] CONFIG_QCOM_FALKOR_ERRATUM_E1041=y
+    - arm64: Add software workaround for Falkor erratum 1041
+
+  * ThunderX: TX failure unless checksum offload disabled (LP: #1736593)
+    - net: thunderx: Fix TCP/UDP checksum offload for IPv6 pkts
+    - net: thunderx: Fix TCP/UDP checksum offload for IPv4 pkts
+
+  * arm64/thunderx: Unhandled context faults in ACPI mode (LP: #1736774)
+    - PCI: Set Cavium ACS capability quirk flags to assert RR/CR/SV/UF
+    - PCI: Apply Cavium ThunderX ACS quirk to more Root Ports
+
+  * arm64: Unfair rwlock can stall the system (LP: #1732238)
+    - locking/qrwlock: Use 'struct qrwlock' instead of 'struct __qrwlock'
+    - locking/atomic: Add atomic_cond_read_acquire()
+    - locking/qrwlock: Use atomic_cond_read_acquire() when spinning in qrwlock
+    - locking/qrwlock, arm64: Move rwlock implementation over to qrwlocks
+    - locking/qrwlock: Prevent slowpath writers getting held up by fastpath
+
+  * Shutdown hang on 16.04 with iscsi targets (LP: #1569925)
+    - scsi: libiscsi: Allow sd_shutdown on bad transport
+
+  * bt_iter() crash due to NULL pointer (LP: #1744300)
+    - blk-mq-tag: check for NULL rq when iterating tags
+
+  * hisilicon hibmc regression due to ea642c3216cb ("drm/ttm: add io_mem_pfn
+    callback") (LP: #1738334)
+    - SAUCE: drm: hibmc: Initialize the hibmc_bo_driver.io_mem_pfn
+
+  * CVE-2017-5754 ARM64 KPTI fixes
+    - arm64: Add ASM_BUG()
+    - arm64: consistently use bl for C exception entry
+    - arm64: syscallno is secretly an int, make it official
+    - arm64: Abstract syscallno manipulation
+    - arm64: move non-entry code out of .entry.text
+    - arm64: unwind: avoid percpu indirection for irq stack
+    - arm64: unwind: disregard frame.sp when validating frame pointer
+    - arm64: mm: Fix set_memory_valid() declaration
+    - arm64: Convert __inval_cache_range() to area-based
+    - arm64: Expose DC CVAP to userspace
+    - arm64: Handle trapped DC CVAP
+    - arm64: Implement pmem API support
+    - arm64: uaccess: Implement *_flushcache variants
+    - arm64/vdso: Support mremap() for vDSO
+    - arm64: unwind: reference pt_regs via embedded stack frame
+    - arm64: unwind: remove sp from struct stackframe
+    - arm64: uaccess: Add the uaccess_flushcache.c file
+    - arm64: fix pmem interface definition
+    - arm64: compat: Remove leftover variable declaration
+    - fork: allow arch-override of VMAP stack alignment
+    - arm64: kernel: remove {THREAD,IRQ_STACK}_START_SP
+    - arm64: factor out PAGE_* and CONT_* definitions
+    - arm64: clean up THREAD_* definitions
+    - arm64: clean up irq stack definitions
+    - arm64: move SEGMENT_ALIGN to <asm/memory.h>
+    - efi/arm64: add EFI_KIMG_ALIGN
+    - arm64: factor out entry stack manipulation
+    - arm64: assembler: allow adr_this_cpu to use the stack pointer
+    - arm64: use an irq stack pointer
+    - arm64: add basic VMAP_STACK support
+    - arm64: add on_accessible_stack()
+    - arm64: add VMAP_STACK overflow detection
+    - arm64: Convert pte handling from inline asm to using (cmp)xchg
+    - kvm: arm64: Convert kvm_set_s2pte_readonly() from inline asm to cmpxchg()
+    - arm64: Move PTE_RDONLY bit handling out of set_pte_at()
+    - arm64: Ignore hardware dirty bit updates in ptep_set_wrprotect()
+    - arm64: Remove the !CONFIG_ARM64_HW_AFDBM alternative code paths
+    - arm64: introduce separated bits for mm_context_t flags
+    - arm64: cleanup {COMPAT_,}SET_PERSONALITY() macro
+    - KVM: arm/arm64: Fix guest external abort matching
+    - KVM: arm/arm64: vgic: constify seq_operations and file_operations
+    - KVM: arm/arm64: vITS: Drop its_ite->lpi field
+    - KVM: arm/arm64: Extract GICv3 max APRn index calculation
+    - KVM: arm/arm64: Support uaccess of GICC_APRn
+    - arm64: move TASK_* definitions to <asm/processor.h>
+    - arm64: Use larger stacks when KASAN is selected
+    - arm64: sysreg: Move SPE registers and PSB into common header files
+    - arm64: head: Init PMSCR_EL2.{PA,PCT} when entered at EL2 without VHE
+    - arm64: Update fault_info table with new exception types
+    - arm64: Use existing defines for mdscr
+    - arm64: Fix single stepping in kernel traps
+    - arm64: asm-bug: Renumber macro local labels to avoid clashes
+    - arm64: Implement arch-specific pte_access_permitted()
+    - arm64: explicitly mask all exceptions
+    - arm64: introduce an order for exceptions
+    - arm64: Move the async/fiq helpers to explicitly set process context flags
+    - arm64: Mask all exceptions during kernel_exit
+    - arm64: entry.S: Remove disable_dbg
+    - arm64: entry.S: convert el1_sync
+    - arm64: entry.S convert el0_sync
+    - arm64: entry.S: convert elX_irq
+    - arm64: entry.S: move SError handling into a C function for future expansion
+    - arm64: pgd: Mark pgd_cache as __ro_after_init
+    - arm64: cpu_ops: Add missing 'const' qualifiers
+    - arm64: context: Fix comments and remove pointless smp_wmb()
+    - arm64: SW PAN: Point saved ttbr0 at the zero page when switching to init_mm
+    - arm64: SW PAN: Update saved ttbr0 value on enter_lazy_tlb
+    - arm64: Expose support for optional ARMv8-A features
+    - arm64: KVM: Hide unsupported AArch64 CPU features from guests
+    - arm64: mm: Use non-global mappings for kernel space
+    - arm64: mm: Temporarily disable ARM64_SW_TTBR0_PAN
+    - arm64: mm: Move ASID from TTBR0 to TTBR1
+    - arm64: mm: Remove pre_ttbr0_update_workaround for Falkor erratum #E1003
+    - arm64: mm: Rename post_ttbr0_update_workaround
+    - arm64: mm: Fix and re-enable ARM64_SW_TTBR0_PAN
+    - arm64: mm: Allocate ASIDs in pairs
+    - arm64: mm: Add arm64_kernel_unmapped_at_el0 helper
+    - arm64: mm: Invalidate both kernel and user ASIDs when performing TLBI
+    - arm64: entry: Add exception trampoline page for exceptions from EL0
+    - arm64: mm: Map entry trampoline into trampoline and kernel page tables
+    - arm64: entry: Explicitly pass exception level to kernel_ventry macro
+    - arm64: entry: Hook up entry trampoline to exception vectors
+    - arm64: erratum: Work around Falkor erratum #E1003 in trampoline code
+    - arm64: tls: Avoid unconditional zeroing of tpidrro_el0 for native tasks
+    - arm64: entry: Add fake CPU feature for unmapping the kernel at EL0
+    - arm64: Kconfig: Add CONFIG_UNMAP_KERNEL_AT_EL0
+    - arm64: mm: Introduce TTBR_ASID_MASK for getting at the ASID in the TTBR
+    - arm64: kaslr: Put kernel vectors address in separate data page
+    - arm64: use RET instruction for exiting the trampoline
+    - arm64: Kconfig: Reword UNMAP_KERNEL_AT_EL0 kconfig entry
+    - arm64: Fix the feature type for ID register fields
+    - arm64: Take into account ID_AA64PFR0_EL1.CSV3
+    - arm64: cpufeature: Pass capability structure to ->enable callback
+    - drivers/firmware: Expose psci_get_version through psci_ops structure
+    - arm64: Move post_ttbr_update_workaround to C code
+    - arm64: Add skeleton to harden the branch predictor against aliasing attacks
+    - arm64: KVM: Use per-CPU vector when BP hardening is enabled
+    - arm64: KVM: Make PSCI_VERSION a fast path
+    - arm64: cputype: Add missing MIDR values for Cortex-A72 and Cortex-A75
+    - arm64: Implement branch predictor hardening for affected Cortex-A CPUs
+    - arm64: Define cputype macros for Falkor CPU
+    - arm64: Implement branch predictor hardening for Falkor
+    - arm64: cputype: Add MIDR values for Cavium ThunderX2 CPUs
+    - bpf: inline map in map lookup functions for array and htab
+    - bpf: perf event change needed for subsequent bpf helpers
+    - bpf: do not test for PCPU_MIN_UNIT_SIZE before percpu allocations
+    - arm64: Branch predictor hardening for Cavium ThunderX2
+    - arm64: capabilities: Handle duplicate entries for a capability
+    - arm64: kpti: Fix the interaction between ASID switching and software PAN
+    - SAUCE: arm: Add BTB invalidation on switch_mm for Cortex-A9, A12 and A17
+    - SAUCE: arm: Invalidate BTB on prefetch abort outside of user mapping on
+      Cortex A8, A9, A12 and A17
+    - SAUCE: arm: KVM: Invalidate BTB on guest exit
+    - SAUCE: arm: Add icache invalidation on switch_mm for Cortex-A15
+    - SAUCE: arm: Invalidate icache on prefetch abort outside of user mapping on
+      Cortex-A15
+    - SAUCE: arm: KVM: Invalidate icache on guest exit for Cortex-A15
+    - SAUCE: asm-generic/barrier: add generic nospec helpers
+    - SAUCE: Documentation: document nospec helpers
+    - SAUCE: arm64: implement nospec_{load,ptr}()
+    - SAUCE: arm: implement nospec_ptr()
+    - SAUCE: bpf: inhibit speculated out-of-bounds pointers
+    - SAUCE: arm64: Implement branch predictor hardening for Falkor
+    - SAUCE: arm64: Branch predictor hardening for Cavium ThunderX2
+    - [Config] UNMAP_KERNEL_AT_EL0=y && HARDEN_BRANCH_PREDICTOR=y
+
+  * [artful] panic in update_stack_state when reading /proc/<pid>/stack on i386
+    (LP: #1747263)
+    - x86/unwind: Fix dereference of untrusted pointer
+
+  * CVE-2017-5753 (Spectre v1 Intel)
+    - x86/cpu/AMD: Remove now unused definition of MFENCE_RDTSC feature
+    - SAUCE: reinstate MFENCE_RDTSC feature definition
+    - locking/barriers: introduce new observable speculation barrier
+    - bpf: prevent speculative execution in eBPF interpreter
+    - x86, bpf, jit: prevent speculative execution when JIT is enabled
+    - SAUCE: FIX: x86, bpf, jit: prevent speculative execution when JIT is enabled
+    - uvcvideo: prevent speculative execution
+    - carl9170: prevent speculative execution
+    - p54: prevent speculative execution
+    - qla2xxx: prevent speculative execution
+    - cw1200: prevent speculative execution
+    - Thermal/int340x: prevent speculative execution
+    - ipv4: prevent speculative execution
+    - ipv6: prevent speculative execution
+    - fs: prevent speculative execution
+    - net: mpls: prevent speculative execution
+    - udf: prevent speculative execution
+    - userns: prevent speculative execution
+    - SAUCE: powerpc: add osb barrier
+    - SAUCE: s390/spinlock: add osb memory barrier
+    - SAUCE: claim mitigation via observable speculation barrier
+
+  * CVE-2017-5715 (Spectre v2 retpoline)
+    - x86/asm: Fix inline asm call constraints for Clang
+    - kvm: vmx: Scrub hardware GPRs at VM-exit
+    - sysfs/cpu: Add vulnerability folder
+    - x86/cpu: Implement CPU vulnerabilites sysfs functions
+    - x86/tboot: Unbreak tboot with PTI enabled
+    - objtool: Detect jumps to retpoline thunks
+    - objtool: Allow alternatives to be ignored
+    - x86/retpoline: Add initial retpoline support
+    - x86/spectre: Add boot time option to select Spectre v2 mitigation
+    - x86/retpoline/crypto: Convert crypto assembler indirect jumps
+    - x86/retpoline/entry: Convert entry assembler indirect jumps
+    - x86/retpoline/ftrace: Convert ftrace assembler indirect jumps
+    - x86/retpoline/hyperv: Convert assembler indirect jumps
+    - x86/retpoline/xen: Convert Xen hypercall indirect jumps
+    - x86/retpoline/checksum32: Convert assembler indirect jumps
+    - x86/retpoline/irq32: Convert assembler indirect jumps
+    - x86/retpoline: Fill return stack buffer on vmexit
+    - selftests/x86: Add test_vsyscall
+    - x86/pti: Fix !PCID and sanitize defines
+    - security/Kconfig: Correct the Documentation reference for PTI
+    - x86,perf: Disable intel_bts when PTI
+    - x86/retpoline: Remove compile time warning
+    - [Config] enable CONFIG_GENERIC_CPU_VULNERABILITIES
+    - [Config] enable CONFIG_RETPOLINE
+    - [Packaging] retpoline -- add call site validation
+    - [Config] disable retpoline checks for first upload
+
+  * CVE-2017-5715 (revert embargoed) // CVE-2017-5753 (revert embargoed)
+    - Revert "UBUNTU: SAUCE: x86/entry: Fix up retpoline assembler labels"
+    - Revert "kvm: vmx: Scrub hardware GPRs at VM-exit"
+    - Revert "Revert "x86/svm: Add code to clear registers on VM exit""
+    - Revert "UBUNTU: SAUCE: x86/microcode: Extend post microcode reload to
+      support IBPB feature -- repair missmerge"
+    - Revert "UBUNTU: SAUCE: x86/kvm: Fix stuff_RSB() for 32-bit"
+    - Revert "s390/spinlock: add gmb memory barrier"
+    - Revert "powerpc: add gmb barrier"
+    - Revert "x86/cpu/AMD: Remove now unused definition of MFENCE_RDTSC feature"
+    - Revert "x86/svm: Add code to clear registers on VM exit"
+    - Revert "x86/svm: Add code to clobber the RSB on VM exit"
+    - Revert "KVM: x86: Add speculative control CPUID support for guests"
+    - Revert "x86/svm: Set IBPB when running a different VCPU"
+    - Revert "x86/svm: Set IBRS value on VM entry and exit"
+    - Revert "KVM: SVM: Do not intercept new speculative control MSRs"
+    - Revert "x86/microcode: Extend post microcode reload to support IBPB feature"
+    - Revert "x86/cpu/AMD: Add speculative control support for AMD"
+    - Revert "x86/entry: Use retpoline for syscall's indirect calls"
+    - Revert "x86/syscall: Clear unused extra registers on 32-bit compatible
+      syscall entrance"
+    - Revert "x86/syscall: Clear unused extra registers on syscall entrance"
+    - Revert "x86/spec_ctrl: Add lock to serialize changes to ibrs and ibpb
+      control"
+    - Revert "x86/spec_ctrl: Add sysctl knobs to enable/disable SPEC_CTRL feature"
+    - Revert "x86/kvm: Pad RSB on VM transition"
+    - Revert "x86/kvm: Toggle IBRS on VM entry and exit"
+    - Revert "x86/kvm: Set IBPB when switching VM"
+    - Revert "x86/kvm: add MSR_IA32_SPEC_CTRL and MSR_IA32_PRED_CMD to kvm"
+    - Revert "x86/entry: Stuff RSB for entry to kernel for non-SMEP platform"
+    - Revert "x86/mm: Only set IBPB when the new thread cannot ptrace current
+      thread"
+    - Revert "x86/mm: Set IBPB upon context switch"
+    - Revert "x86/idle: Disable IBRS when offlining cpu and re-enable on wakeup"
+    - Revert "x86/idle: Disable IBRS entering idle and enable it on wakeup"
+    - Revert "x86/enter: Use IBRS on syscall and interrupts"
+    - Revert "x86/enter: MACROS to set/clear IBRS and set IBPB"
+    - Revert "x86/feature: Report presence of IBPB and IBRS control"
+    - Revert "x86/feature: Enable the x86 feature to control Speculation"
+    - Revert "udf: prevent speculative execution"
+    - Revert "net: mpls: prevent speculative execution"
+    - Revert "fs: prevent speculative execution"
+    - Revert "ipv6: prevent speculative execution"
+    - Revert "userns: prevent speculative execution"
+    - Revert "Thermal/int340x: prevent speculative execution"
+    - Revert "cw1200: prevent speculative execution"
+    - Revert "qla2xxx: prevent speculative execution"
+    - Revert "p54: prevent speculative execution"
+    - Revert "carl9170: prevent speculative execution"
+    - Revert "uvcvideo: prevent speculative execution"
+    - Revert "x86, bpf, jit: prevent speculative execution when JIT is enabled"
+    - Revert "bpf: prevent speculative execution in eBPF interpreter"
+    - Revert "locking/barriers: introduce new memory barrier gmb()"
+
+  * Unable to boot with i386 4.13.0-25 / 4.13.0-26 / 4.13.0-31 kernel on Xenial
+    / Artful (LP: #1745118)
+    - x86/mm: Fix overlap of i386 CPU_ENTRY_AREA with FIX_BTMAP
+
+  * 4.13: unable to increase MTU configuration for GRE devices (LP: #1743746)
+    - ip_gre: remove the incorrect mtu limit for ipgre tap
+
+  * CVE-2017-17712
+    - net: ipv4: fix for a race condition in raw_sendmsg
+
+  * upload urgency should be medium by default (LP: #1745338)
+    - [Packaging] update urgency to medium by default
+
+  * CVE-2017-15115
+    - sctp: do not peel off an assoc from one netns to another one
+
+  * CVE-2017-8824
+    - dccp: CVE-2017-8824: use-after-free in DCCP code
+
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Wed, 07 Feb 2018 23:39:45 +0100
+
+linux (4.13.0-32.35) artful; urgency=low
 
   * CVE-2017-5715 // CVE-2017-5753
     - SAUCE: x86/entry: Fix up retpoline assembler labels
