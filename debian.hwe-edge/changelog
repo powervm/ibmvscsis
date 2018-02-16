@@ -1,5 +1,8 @@
-linux (4.15.0-10.11) bionic; urgency=medium
+linux-hwe-edge (4.15.0-10.11~16.04.1) xenial; urgency=medium
 
+  * linux-hwe-edge: 4.15.0-10.11~16.04.1 -proposed tracker (LP: #1749971)
+
+  [ Seth Forshee ]
   * linux: 4.15.0-10.11 -proposed tracker (LP: #1749250)
 
   * "swiotlb: coherent allocation failed" dmesg spam with linux 4.15.0-9.10
@@ -73,7 +76,7 @@ linux (4.15.0-10.11) bionic; urgency=medium
     (LP: #1743383)
     - [Packaging] git-ubuntu-log -- handle multiple bugs/cves better
 
- -- Seth Forshee <seth.forshee@canonical.com>  Tue, 13 Feb 2018 11:33:58 -0600
+ -- Marcelo Henrique Cerri <marcelo.cerri@canonical.com>  Fri, 16 Feb 2018 10:49:15 -0200
 
 linux (4.15.0-9.10) bionic; urgency=medium
 
