@@ -1,6 +1,14 @@
-linux-hwe (4.13.0-35.39~16.04.1) xenial; urgency=medium
+linux-hwe (4.13.0-36.40~16.04.1) xenial; urgency=medium
 
-  * linux-hwe: 4.13.0-35.39~16.04.1 -proposed tracker (LP: #1748479)
+  * linux-hwe: 4.13.0-36.40~16.04.1 -proposed tracker (LP: #1750052)
+
+  * linux: 4.13.0-36.40 -proposed tracker (LP: #1750010)
+
+  * Rebuild without "CVE-2017-5754 ARM64 KPTI fixes" patch set
+
+ -- Kamal Mostafa <kamal@canonical.com>  Fri, 16 Feb 2018 15:00:34 -0800
+
+linux (4.13.0-35.39) artful; urgency=medium
 
   * linux: 4.13.0-35.39 -proposed tracker (LP: #1748743)
 
@@ -10,7 +18,7 @@ linux-hwe (4.13.0-35.39~16.04.1) xenial; urgency=medium
     - [Packaging] retpoline files must be sorted
     - [Packaging] pull in retpoline files
 
- -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Mon, 12 Feb 2018 15:01:08 +0100
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Mon, 12 Feb 2018 11:28:27 +0100
 
 linux (4.13.0-34.37) artful; urgency=medium
 
