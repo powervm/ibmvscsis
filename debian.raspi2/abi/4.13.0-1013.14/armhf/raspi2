@@ -5590,6 +5590,7 @@ EXPORT_SYMBOL vmlinux 0x41482d8b	strndup_user
 EXPORT_SYMBOL vmlinux 0x414ba188	get_acl
 EXPORT_SYMBOL vmlinux 0x41573a9b	arp_send
 EXPORT_SYMBOL vmlinux 0x4159483c	dev_addr_flush
+EXPORT_SYMBOL vmlinux 0x41609a7a	sysctl_ibpb_enabled
 EXPORT_SYMBOL vmlinux 0x41713193	udp_disconnect
 EXPORT_SYMBOL vmlinux 0x417c898b	__do_once_done
 EXPORT_SYMBOL vmlinux 0x4188d439	neigh_rand_reach_time
@@ -7000,6 +7001,7 @@ EXPORT_SYMBOL vmlinux 0x91979e63	tty_port_destroy
 EXPORT_SYMBOL vmlinux 0x919c00c7	alloc_anon_inode
 EXPORT_SYMBOL vmlinux 0x91b5e658	devm_mfd_add_devices
 EXPORT_SYMBOL vmlinux 0x91bb6c20	tty_unthrottle
+EXPORT_SYMBOL vmlinux 0x91c7d9cd	spec_ctrl_mutex
 EXPORT_SYMBOL vmlinux 0x91ce6227	tcp_tso_autosize
 EXPORT_SYMBOL vmlinux 0x91d2318b	sock_alloc_file
 EXPORT_SYMBOL vmlinux 0x91d9ba91	sock_common_setsockopt
@@ -8139,6 +8141,7 @@ EXPORT_SYMBOL vmlinux 0xd10be8af	vlan_ioctl_set
 EXPORT_SYMBOL vmlinux 0xd12debe6	mmc_align_data_size
 EXPORT_SYMBOL vmlinux 0xd1313bac	ip6_frag_match
 EXPORT_SYMBOL vmlinux 0xd138cfae	md_register_thread
+EXPORT_SYMBOL vmlinux 0xd160c96d	sysctl_ibrs_enabled
 EXPORT_SYMBOL vmlinux 0xd180fd43	lookup_one_len
 EXPORT_SYMBOL vmlinux 0xd1816f32	frontswap_writethrough
 EXPORT_SYMBOL vmlinux 0xd187e276	vfs_read
@@ -8238,6 +8241,7 @@ EXPORT_SYMBOL vmlinux 0xd629b525	get_cached_acl
 EXPORT_SYMBOL vmlinux 0xd62a21cc	phy_get_eee_err
 EXPORT_SYMBOL vmlinux 0xd6387855	idr_destroy
 EXPORT_SYMBOL vmlinux 0xd648e564	fb_match_mode
+EXPORT_SYMBOL vmlinux 0xd64a6bc9	dev_get_valid_name
 EXPORT_SYMBOL vmlinux 0xd6547d1f	revalidate_disk
 EXPORT_SYMBOL vmlinux 0xd657376e	param_get_short
 EXPORT_SYMBOL vmlinux 0xd66a0c83	udp_proc_unregister
@@ -13782,6 +13786,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x1268f357	resume_device_irqs
 EXPORT_SYMBOL_GPL vmlinux 0x126c62e2	switchdev_port_attr_set
 EXPORT_SYMBOL_GPL vmlinux 0x127898f5	irq_gc_ack_set_bit
 EXPORT_SYMBOL_GPL vmlinux 0x1289f800	of_property_read_variable_u16_array
+EXPORT_SYMBOL_GPL vmlinux 0x129f7a8c	___ptrace_may_access
 EXPORT_SYMBOL_GPL vmlinux 0x12a86792	thermal_zone_unbind_cooling_device
 EXPORT_SYMBOL_GPL vmlinux 0x12afdf55	ata_std_postreset
 EXPORT_SYMBOL_GPL vmlinux 0x12bd753c	ddebug_add_module
