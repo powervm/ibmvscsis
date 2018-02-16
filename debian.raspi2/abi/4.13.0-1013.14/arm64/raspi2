@@ -5601,6 +5601,7 @@ EXPORT_SYMBOL vmlinux 0x41482d8b	strndup_user
 EXPORT_SYMBOL vmlinux 0x41525c89	vfs_iter_read
 EXPORT_SYMBOL vmlinux 0x415da9fd	kernel_getpeername
 EXPORT_SYMBOL vmlinux 0x415f1bf8	tcp_conn_request
+EXPORT_SYMBOL vmlinux 0x41609a7a	sysctl_ibpb_enabled
 EXPORT_SYMBOL vmlinux 0x4175b7d0	bio_advance
 EXPORT_SYMBOL vmlinux 0x4188d439	neigh_rand_reach_time
 EXPORT_SYMBOL vmlinux 0x418b7fbc	ndo_dflt_fdb_dump
@@ -6902,6 +6903,7 @@ EXPORT_SYMBOL vmlinux 0x8f1ad452	forget_all_cached_acls
 EXPORT_SYMBOL vmlinux 0x8f1b772c	__errseq_set
 EXPORT_SYMBOL vmlinux 0x8f1e28c0	vm_insert_pfn
 EXPORT_SYMBOL vmlinux 0x8f3787be	panic_notifier_list
+EXPORT_SYMBOL vmlinux 0x8f43fe99	dev_get_valid_name
 EXPORT_SYMBOL vmlinux 0x8f507ecc	swiotlb_unmap_sg_attrs
 EXPORT_SYMBOL vmlinux 0x8f50c762	blk_queue_unprep_rq
 EXPORT_SYMBOL vmlinux 0x8f55fcba	tty_port_raise_dtr_rts
@@ -7837,6 +7839,7 @@ EXPORT_SYMBOL vmlinux 0xc3d18b7f	mpage_writepages
 EXPORT_SYMBOL vmlinux 0xc3d859fa	mdiobus_is_registered_device
 EXPORT_SYMBOL vmlinux 0xc3d996f9	mmc_erase
 EXPORT_SYMBOL vmlinux 0xc3f3c0be	of_find_mipi_dsi_host_by_node
+EXPORT_SYMBOL vmlinux 0xc416da92	spec_ctrl_mutex
 EXPORT_SYMBOL vmlinux 0xc41b3d85	kblockd_mod_delayed_work_on
 EXPORT_SYMBOL vmlinux 0xc41bc980	iwe_stream_add_value
 EXPORT_SYMBOL vmlinux 0xc42a52e3	blk_mq_start_request
@@ -8066,6 +8069,7 @@ EXPORT_SYMBOL vmlinux 0xd12a46a5	netdev_class_create_file_ns
 EXPORT_SYMBOL vmlinux 0xd12da547	make_kuid
 EXPORT_SYMBOL vmlinux 0xd155fe5b	devm_devfreq_register_notifier
 EXPORT_SYMBOL vmlinux 0xd15ea0ce	dev_change_flags
+EXPORT_SYMBOL vmlinux 0xd160c96d	sysctl_ibrs_enabled
 EXPORT_SYMBOL vmlinux 0xd16d12df	sk_wait_data
 EXPORT_SYMBOL vmlinux 0xd17285d8	compat_tcp_getsockopt
 EXPORT_SYMBOL vmlinux 0xd176c167	dm_register_target
@@ -15005,6 +15009,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x6958ae23	dax_get_by_host
 EXPORT_SYMBOL_GPL vmlinux 0x6965c74e	pm_genpd_remove
 EXPORT_SYMBOL_GPL vmlinux 0x696f2b63	of_changeset_init
 EXPORT_SYMBOL_GPL vmlinux 0x697c5d0d	tracing_snapshot_alloc
+EXPORT_SYMBOL_GPL vmlinux 0x6980a734	___ptrace_may_access
 EXPORT_SYMBOL_GPL vmlinux 0x6986c2d1	clk_hw_get_rate
 EXPORT_SYMBOL_GPL vmlinux 0x698a899f	ring_buffer_peek
 EXPORT_SYMBOL_GPL vmlinux 0x698ffb4b	irq_chip_unmask_parent
