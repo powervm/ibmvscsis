@@ -6018,7 +6018,9 @@ EXPORT_SYMBOL vmlinux 0x00000000	___ratelimit
 EXPORT_SYMBOL vmlinux 0x00000000	__acpi_handle_debug
 EXPORT_SYMBOL vmlinux 0x00000000	__alloc_pages_nodemask
 EXPORT_SYMBOL vmlinux 0x00000000	__alloc_skb
+EXPORT_SYMBOL vmlinux 0x00000000	__arch_clear_user
 EXPORT_SYMBOL vmlinux 0x00000000	__arch_copy_from_user
+EXPORT_SYMBOL vmlinux 0x00000000	__arch_copy_in_user
 EXPORT_SYMBOL vmlinux 0x00000000	__arch_copy_to_user
 EXPORT_SYMBOL vmlinux 0x00000000	__arm_smccc_hvc
 EXPORT_SYMBOL vmlinux 0x00000000	__arm_smccc_smc
@@ -6067,7 +6069,6 @@ EXPORT_SYMBOL vmlinux 0x00000000	__cleancache_invalidate_fs
 EXPORT_SYMBOL vmlinux 0x00000000	__cleancache_invalidate_inode
 EXPORT_SYMBOL vmlinux 0x00000000	__cleancache_invalidate_page
 EXPORT_SYMBOL vmlinux 0x00000000	__cleancache_put_page
-EXPORT_SYMBOL vmlinux 0x00000000	__clear_user
 EXPORT_SYMBOL vmlinux 0x00000000	__clzdi2
 EXPORT_SYMBOL vmlinux 0x00000000	__clzsi2
 EXPORT_SYMBOL vmlinux 0x00000000	__cond_resched_lock
@@ -9634,7 +9635,6 @@ EXPORT_SYMBOL vmlinux 0x00000000	radix_tree_tag_get
 EXPORT_SYMBOL vmlinux 0x00000000	radix_tree_tag_set
 EXPORT_SYMBOL vmlinux 0x00000000	radix_tree_tagged
 EXPORT_SYMBOL vmlinux 0x00000000	rational_best_approximation
-EXPORT_SYMBOL vmlinux 0x00000000	raw_copy_in_user
 EXPORT_SYMBOL vmlinux 0x00000000	rawv6_mh_filter_register
 EXPORT_SYMBOL vmlinux 0x00000000	rawv6_mh_filter_unregister
 EXPORT_SYMBOL vmlinux 0x00000000	rb_erase
