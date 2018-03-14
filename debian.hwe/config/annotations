@@ -1141,7 +1141,7 @@ CONFIG_EDAC                                     policy<{'amd64': 'y', 'arm64': '
 CONFIG_EDAC_LEGACY_SYSFS                        policy<{'amd64': 'n', 'arm64': 'n', 'armhf': 'n', 'i386': 'n', 'ppc64el': 'n'}>
 CONFIG_EDAC_DEBUG                               policy<{'amd64': 'n', 'arm64': 'n', 'armhf': 'n', 'i386': 'n', 'ppc64el': 'n'}>
 CONFIG_EDAC_DECODE_MCE                          policy<{'amd64': 'm', 'i386': 'm'}>
-CONFIG_EDAC_GHES                                policy<{'amd64': 'n', 'arm64': 'n', 'i386': 'n'}>
+CONFIG_EDAC_GHES                                policy<{'amd64': 'n', 'arm64': 'y', 'i386': 'n'}>
 CONFIG_EDAC_AMD64                               policy<{'amd64': 'm', 'i386': 'm'}>
 CONFIG_EDAC_AMD64_ERROR_INJECTION               policy<{'amd64': 'n', 'i386': 'n'}>
 CONFIG_EDAC_AMD76X                              policy<{'i386': 'm'}>
