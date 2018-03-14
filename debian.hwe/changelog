@@ -1,6 +1,427 @@
-linux-hwe (4.13.0-37.42~16.04.1) xenial; urgency=medium
+linux-hwe (4.13.0-38.43~16.04.1) xenial; urgency=medium
 
-  * linux-hwe: 4.13.0-37.42~16.04.1 -proposed tracker (LP: #1751803)
+  * linux-hwe: 4.13.0-38.43~16.04.1 -proposed tracker (LP: #1755767)
+
+  * linux: 4.13.0-38.43 -proposed tracker (LP: #1755762)
+
+  * Servers going OOM after updating kernel from 4.10 to 4.13 (LP: #1748408)
+    - i40e: Fix memory leak related filter programming status
+    - i40e: Add programming descriptors to cleaned_count
+
+  * [SRU] Lenovo E41 Mic mute hotkey is not responding (LP: #1753347)
+    - platform/x86: ideapad-laptop: Increase timeout to wait for EC answer
+
+  * fails to dump with latest kpti fixes (LP: #1750021)
+    - kdump: write correct address of mem_section into vmcoreinfo
+
+  * headset mic can't be detected on two Dell machines (LP: #1748807)
+    - ALSA: hda/realtek - Support headset mode for ALC215/ALC285/ALC289
+    - ALSA: hda - Fix headset mic detection problem for two Dell machines
+    - ALSA: hda - Fix a wrong FIXUP for alc289 on Dell machines
+
+  * CIFS SMB2/SMB3 does not work for domain based DFS (LP: #1747572)
+    - CIFS: make IPC a regular tcon
+    - CIFS: use tcon_ipc instead of use_ipc parameter of SMB2_ioctl
+    - CIFS: dump IPC tcon in debug proc file
+
+  * i2c-thunderx: erroneous error message "unhandled state: 0" (LP: #1754076)
+    - i2c: octeon: Prevent error message on bus error
+
+  * hisi_sas: Add disk LED support (LP: #1752695)
+    - scsi: hisi_sas: directly attached disk LED feature for v2 hw
+
+  * EDAC, sb_edac: Backport 1 patch to Ubuntu 17.10 (Fix missing DIMM sysfs
+    entries with KNL SNC2/SNC4 mode) (LP: #1743856)
+    - EDAC, sb_edac: Fix missing DIMM sysfs entries with KNL SNC2/SNC4 mode
+
+  * [regression] Colour banding and artefacts appear system-wide on an Asus
+    Zenbook UX303LA with Intel HD 4400 graphics (LP: #1749420)
+    - drm/edid: Add 6 bpc quirk for CPT panel in Asus UX303LA
+
+  * DVB Card with SAA7146 chipset not working (LP: #1742316)
+    - vmalloc: fix __GFP_HIGHMEM usage for vmalloc_32 on 32b systems
+
+  * [Asus UX360UA] battery status in unity-panel is not changing when battery is
+    being charged (LP: #1661876) // AC adapter status not detected on Asus
+    ZenBook UX410UAK (LP: #1745032)
+    - ACPI / battery: Add quirk for Asus UX360UA and UX410UAK
+
+  * ASUS UX305LA - Battery state not detected correctly (LP: #1482390)
+    - ACPI / battery: Add quirk for Asus GL502VSK and UX305LA
+
+  * support thunderx2 vendor pmu events (LP: #1747523)
+    - perf pmu: Extract function to get JSON alias map
+    - perf pmu: Pass pmu as a parameter to get_cpuid_str()
+    - perf tools arm64: Add support for get_cpuid_str function.
+    - perf pmu: Add helper function is_pmu_core to detect PMU CORE devices
+    - perf vendor events arm64: Add ThunderX2 implementation defined pmu core
+      events
+    - perf pmu: Add check for valid cpuid in perf_pmu__find_map()
+
+  * lpfc.ko module doesn't work (LP: #1746970)
+    - scsi: lpfc: Fix loop mode target discovery
+
+  * Ubuntu 17.10 crashes on vmalloc.c (LP: #1739498)
+    - powerpc/mm/book3s64: Make KERN_IO_START a variable
+    - powerpc/mm/slb: Move comment next to the code it's referring to
+    - powerpc/mm/hash64: Make vmalloc 56T on hash
+
+  * ethtool -p fails to light NIC LED on HiSilicon D05 systems (LP: #1748567)
+    - net: hns: add ACPI mode support for ethtool -p
+
+  * CVE-2017-17807
+    - KEYS: add missing permission check for request_key() destination
+
+  * [Artful SRU] Fix capsule update regression (LP: #1746019)
+    - efi/capsule-loader: Reinstate virtual capsule mapping
+
+  * [Artful/Bionic] [Config] enable EDAC_GHES for ARM64 (LP: #1747746)
+    - Ubuntu: [Config] enable EDAC_GHES for ARM64
+
+  * linux-tools: perf incorrectly linking libbfd (LP: #1748922)
+    - SAUCE: tools -- add ability to disable libbfd
+    - [Packaging] correct disablement of libbfd
+
+  * Cherry pick c96f5471ce7d for delayacct fix (LP: #1747769)
+    - delayacct: Account blkio completion on the correct task
+
+  * Error in CPU frequency reporting when nominal and min pstates are same
+    (cpufreq) (LP: #1746174)
+    - cpufreq: powernv: Dont assume distinct pstate values for nominal and pmin
+
+  * retpoline abi files are empty on i386 (LP: #1751021)
+    - [Packaging] retpoline-extract -- instantiate retpoline files for i386
+    - [Packaging] final-checks -- sanity checking ABI contents
+    - [Packaging] final-checks -- check for empty retpoline files
+
+  * [P9,Power NV][WSP][Ubuntu 1804] : "Kernel access of bad area " when grouping
+    different pmu events using perf fuzzer . (perf:) (LP: #1746225)
+    - powerpc/perf: Fix oops when grouping different pmu events
+
+  * bnx2x_attn_int_deasserted3:4323 MC assert! (LP: #1715519) //
+    CVE-2018-1000026
+    - net: create skb_gso_validate_mac_len()
+    - bnx2x: disable GSO where gso_size is too big for hardware
+
+  * Ubuntu16.04.03: ISAv3 initialize MMU registers before setting partition
+    table (LP: #1736145)
+    - powerpc/64s: Initialize ISAv3 MMU registers before setting partition table
+
+  * powerpc/powernv: Flush console before platform error reboot (LP: #1735159)
+    - powerpc/powernv: Flush console before platform error reboot
+
+  * Touchpad stops working after a few seconds in Lenovo ideapad 320
+    (LP: #1732056)
+    - pinctrl/amd: fix masking of GPIO interrupts
+
+  * [Artful][Wyse 3040] System hang when trying to enable an offlined CPU core
+    (LP: #1736393)
+    - SAUCE: drm/i915:Don't set chip specific data
+    - SAUCE: drm/i915: make previous commit affects Wyse 3040 only
+
+  * ppc64el: Do not call ibm,os-term on panic (LP: #1736954)
+    - powerpc: Do not call ppc_md.panic in fadump panic notifier
+
+  * Artful update to 4.13.16 stable release (LP: #1744213)
+    - tcp_nv: fix division by zero in tcpnv_acked()
+    - net: vrf: correct FRA_L3MDEV encode type
+    - tcp: do not mangle skb->cb[] in tcp_make_synack()
+    - net: systemport: Correct IPG length settings
+    - netfilter/ipvs: clear ipvs_property flag when SKB net namespace changed
+    - l2tp: don't use l2tp_tunnel_find() in l2tp_ip and l2tp_ip6
+    - bonding: discard lowest hash bit for 802.3ad layer3+4
+    - net: cdc_ether: fix divide by 0 on bad descriptors
+    - net: qmi_wwan: fix divide by 0 on bad descriptors
+    - qmi_wwan: Add missing skb_reset_mac_header-call
+    - net: usb: asix: fill null-ptr-deref in asix_suspend
+    - tcp: gso: avoid refcount_t warning from tcp_gso_segment()
+    - tcp: fix tcp_fastretrans_alert warning
+    - vlan: fix a use-after-free in vlan_device_event()
+    - net/mlx5: Cancel health poll before sending panic teardown command
+    - net/mlx5e: Set page to null in case dma mapping fails
+    - af_netlink: ensure that NLMSG_DONE never fails in dumps
+    - vxlan: fix the issue that neigh proxy blocks all icmpv6 packets
+    - net: cdc_ncm: GetNtbFormat endian fix
+    - fealnx: Fix building error on MIPS
+    - net/sctp: Always set scope_id in sctp_inet6_skb_msgname
+    - ima: do not update security.ima if appraisal status is not INTEGRITY_PASS
+    - serial: omap: Fix EFR write on RTS deassertion
+    - serial: 8250_fintek: Fix finding base_port with activated SuperIO
+    - tpm-dev-common: Reject too short writes
+    - rcu: Fix up pending cbs check in rcu_prepare_for_idle
+    - ocfs2: fix cluster hang after a node dies
+    - ocfs2: should wait dio before inode lock in ocfs2_setattr()
+    - ipmi: fix unsigned long underflow
+    - mm/page_alloc.c: broken deferred calculation
+    - mm/page_ext.c: check if page_ext is not prepared
+    - x86/cpu/amd: Derive L3 shared_cpu_map from cpu_llc_shared_mask
+    - coda: fix 'kernel memory exposure attempt' in fsync
+    - Linux 4.13.16
+
+  * Artful update to 4.13.15 stable release (LP: #1744212)
+    - media: imon: Fix null-ptr-deref in imon_probe
+    - media: dib0700: fix invalid dvb_detach argument
+    - crypto: dh - Fix double free of ctx->p
+    - crypto: dh - Don't permit 'p' to be 0
+    - crypto: dh - Don't permit 'key' or 'g' size longer than 'p'
+    - USB: early: Use new USB product ID and strings for DbC device
+    - USB: usbfs: compute urb->actual_length for isochronous
+    - USB: Add delay-init quirk for Corsair K70 LUX keyboards
+    - usb: gadget: f_fs: Fix use-after-free in ffs_free_inst
+    - USB: serial: metro-usb: stop I/O after failed open
+    - USB: serial: Change DbC debug device binding ID
+    - USB: serial: qcserial: add pid/vid for Sierra Wireless EM7355 fw update
+    - USB: serial: garmin_gps: fix I/O after failed probe and remove
+    - USB: serial: garmin_gps: fix memory leak on probe errors
+    - x86/MCE/AMD: Always give panic severity for UC errors in kernel context
+    - platform/x86: peaq-wmi: Add DMI check before binding to the WMI interface
+    - platform/x86: peaq_wmi: Fix missing terminating entry for peaq_dmi_table
+    - HID: cp2112: add HIDRAW dependency
+    - HID: wacom: generic: Recognize WACOM_HID_WD_PEN as a type of pen collection
+    - staging: wilc1000: Fix bssid buffer offset in Txq
+    - staging: ccree: fix 64 bit scatter/gather DMA ops
+    - staging: greybus: spilib: fix use-after-free after deregistration
+    - staging: vboxvideo: Fix reporting invalid suggested-offset-properties
+    - staging: rtl8188eu: Revert 4 commits breaking ARP
+    - Linux 4.13.15
+
+  * time drifting on linux-hwe kernels (LP: #1744988)
+    - x86/tsc: Future-proof native_calibrate_tsc()
+    - x86/tsc: Fix erroneous TSC rate on Skylake Xeon
+    - x86/tsc: Print tsc_khz, when it differs from cpu_khz
+
+  * Please backport vmd suspend/resume patches to 16.04 hwe (LP: #1745508)
+    - PCI: vmd: Free up IRQs on suspend path
+
+  * CVE-2017-17448
+    - netfilter: nfnetlink_cthelper: Add missing permission checks
+
+  * Dell XPS 13 9360 bluetooth (Atheros) won't connect after resume
+    (LP: #1744712)
+    - Bluetooth: btusb: Restore QCA Rome suspend/resume fix with a "rewritten"
+      version
+
+  * [SRU] TrackPoint: middle button doesn't work on TrackPoint-compatible
+    device. (LP: #1746002)
+    - Input: trackpoint - force 3 buttons if 0 button is reported
+
+  * TB16 dock ethernet corrupts data with hw checksum silently failing
+    (LP: #1729674)
+    - r8152: disable RX aggregation on Dell TB16 dock
+
+  * [Artful] Realtek ALC225: 2 secs noise when a headset plugged in
+    (LP: #1744058)
+    - Revert "UBUNTU: SAUCE: ALSA: hda/realtek - Add support headset mode for DELL
+      WYSE"
+    - SAUCE: ALSA: hda/realtek - Add support headset mode for DELL WYSE
+    - ALSA: hda/realtek - update ALC225 depop optimize
+
+  * [A] skb leak in vhost_net / tun / tap (LP: #1738975)
+    - vhost: fix skb leak in handle_rx()
+    - tap: free skb if flags error
+    - tun: free skb in early errors
+
+  * Commit d9018976cdb6 missing in Kernels <4.14.x preventing lasting fix of
+    Intel SPI bug on certain serial flash (LP: #1742696)
+    - mfd: lpc_ich: Do not touch SPI-NOR write protection bit on Haswell/Broadwell
+    - spi-nor: intel-spi: Fix broken software sequencing codes
+
+  * CVE-2018-5332
+    - RDS: Heap OOB write in rds_message_alloc_sgs()
+
+  * [A] KVM Windows BSOD on 4.13.x (LP: #1738972)
+    - KVM: x86: fix APIC page invalidation
+
+  * elantech touchpad of Lenovo L480/580 failed to detect hw_version
+    (LP: #1733605)
+    - Input: elantech - add new icbody type 15
+
+  * [SRU] External HDMI monitor failed to show screen on Lenovo X1 series
+    (LP: #1738523)
+    - SAUCE: drm/i915: Disable writing of TMDS_OE on Lenovo ThinkPad X1 series
+
+  * ubuntu/xr-usb-serial didn't get built in zesty and artful (LP: #1733281)
+    - SAUCE: make sure ubuntu/xr-usb-serial builds for x86
+
+  * Disabling zfs does not always disable module checks for the zfs modules
+    (LP: #1737176)
+    - [Packaging] disable zfs module checks when zfs is disabled
+
+  * CVE-2017-17806
+    - crypto: hmac - require that the underlying hash algorithm is unkeyed
+
+  * CVE-2017-17805
+    - crypto: salsa20 - fix blkcipher_walk API usage
+
+  * CVE-2017-16994
+    - mm/pagewalk.c: report holes in hugetlb ranges
+
+  * CVE-2017-17450
+    - netfilter: xt_osf: Add missing permission checks
+
+  * apparmor profile load in stacked policy container fails (LP: #1746463)
+    - SAUCE: apparmor: fix display of .ns_name for containers
+
+  * CVE-2017-15129
+    - net: Fix double free and memory corruption in get_net_ns_by_id()
+
+  * CVE-2018-5344
+    - loop: fix concurrent lo_open/lo_release
+
+  * CVE-2017-1000407
+    - KVM: VMX: remove I/O port 0x80 bypass on Intel hosts
+
+  * CVE-2017-0861
+    - ALSA: pcm: prevent UAF in snd_pcm_info
+
+  * perf stat segfaults on uncore events w/o -a (LP: #1745246)
+    - perf xyarray: Save max_x, max_y
+    - perf evsel: Fix buffer overflow while freeing events
+
+  * Support cppc-cpufreq driver on ThunderX2 systems (LP: #1745007)
+    - mailbox: PCC: Move the MAX_PCC_SUBSPACES definition to header file
+    - ACPI / CPPC: Make CPPC ACPI driver aware of PCC subspace IDs
+    - ACPI / CPPC: Fix KASAN global out of bounds warning
+    - ACPI: CPPC: remove initial assignment of pcc_ss_data
+
+  * P-state not working in kernel 4.13 (LP: #1743269)
+    - x86 / CPU: Avoid unnecessary IPIs in arch_freq_get_on_cpu()
+    - x86 / CPU: Always show current CPU frequency in /proc/cpuinfo
+
+  * Regression: KVM no longer supports Intel CPUs without Virtual NMI
+    (LP: #1741655)
+    - kvm: vmx: Reinstate support for CPUs without virtual NMI
+
+  * System hang with Linux kernel due to mainline commit 24247aeeabe
+    (LP: #1733662)
+    - x86/intel_rdt/cqm: Prevent use after free
+
+  * $(LOCAL_ENV_CC) and $(LOCAL_ENV_DISTCC_HOSTS) should be properly quoted
+    (LP: #1744077)
+    - [Debian] pass LOCAL_ENV_CC and LOCAL_ENV_DISTCC_HOSTS properly
+
+  * the wifi driver is always hard blocked on a lenovo laptop (LP: #1743672)
+    - ACPI: EC: Fix possible issues related to EC initialization order
+
+  * text VTs are unavailable on desktop after upgrade to Ubuntu 17.10
+    (LP: #1724911)
+    - drm/i915/fbdev: Always forward hotplug events
+
+  * Samsung SSD 960 EVO 500GB refused to change power state (LP: #1705748)
+    - nvme-pci: disable APST on Samsung SSD 960 EVO + ASUS PRIME B350M-A
+
+  * [0cf3:e010] QCA6174A XR failed to pair with bt 4.0 device  (LP: #1741166)
+    - Bluetooth: btusb: Add support for 0cf3:e010
+
+  * CVE-2017-17741
+    - KVM: Fix stack-out-of-bounds read in write_mmio
+
+  * CVE-2018-5333
+    - RDS: null pointer dereference in rds_atomic_free_op
+
+  * [800 G3 SFF] [800 G3 DM]External microphone of headset(3-ring) is working,
+    2-ring mic not working, both not shown in sound settings  (LP: #1740974)
+    - ALSA: hda - Add MIC_NO_PRESENCE fixup for 2 HP machines
+
+  * Two front mics can't work on a lenovo machine (LP: #1740973)
+    - ALSA: hda - change the location for one mic on a Lenovo machine
+
+  * No external microphone be detected via headset jack on a dell machine
+    (LP: #1740972)
+    - ALSA: hda - fix headset mic detection issue on a Dell machine
+
+  *  Can't detect external headset via line-out jack on some Dell machines
+    (LP: #1740971)
+    - ALSA: hda/realtek - Fix Dell AIO LineOut issue
+
+  * Support realtek new codec alc257 in the alsa hda driver  (LP: #1738911)
+    - ALSA: hda/realtek - New codec support for ALC257
+
+  * Add support for 16g huge pages on Ubuntu 16.04.2 PowerNV (LP: #1706247)
+    - powerpc/mm/hugetlb: Allow runtime allocation of 16G.
+    - powerpc/mm/hugetlb: Add support for reserving gigantic huge pages via kernel
+      command line
+    - mm/hugetlb: Allow arch to override and call the weak function
+
+  * the kernel is blackholing IPv6 packets to linkdown nexthops (LP: #1738219)
+    - ipv6: Do not consider linkdown nexthops during multipath
+
+  * e1000e in 4.4.0-97-generic breaks 82574L under heavy load. (LP: #1730550)
+    - e1000e: Avoid receiver overrun interrupt bursts
+    - e1000e: Separate signaling for link check/link up
+
+  * Ubuntu 17.10: Include patch "crypto: vmx - Use skcipher for ctr fallback"
+    (LP: #1732978)
+    - crypto: vmx - Use skcipher for ctr fallback
+
+  * QCA Rome bluetooth can not wakeup after USB runtime suspended.
+    (LP: #1737890)
+    - Bluetooth: btusb: driver to enable the usb-wakeup feature
+
+  * /dev/bcache/by-uuid links not created after reboot (LP: #1729145)
+    - SAUCE: (no-up) bcache: decouple emitting a cached_dev CHANGE uevent
+
+  * Some VMs fail to reboot with "watchdog: BUG: soft lockup - CPU#0 stuck for
+    22s! [systemd:1]" (LP: #1730717)
+    - SAUCE: exec: fix lockup because retry loop may never exit
+
+  * Request to backport cxlflash patches to 16.04 HWE Kernel (LP: #1730515)
+    - scsi: cxlflash: Use derived maximum write same length
+    - scsi: cxlflash: Allow cards without WWPN VPD to configure
+    - scsi: cxlflash: Derive pid through accessors
+
+  * vagrant artful64 box filesystem too small (LP: #1726818)
+    - block: factor out __blkdev_issue_zero_pages()
+    - block: cope with WRITE ZEROES failing in blkdev_issue_zeroout()
+
+  * Artful update to 4.13.14 stable release (LP: #1744121)
+    - ppp: fix race in ppp device destruction
+    - gso: fix payload length when gso_size is zero
+    - ipv4: Fix traffic triggered IPsec connections.
+    - ipv6: Fix traffic triggered IPsec connections.
+    - netlink: do not set cb_running if dump's start() errs
+    - net: call cgroup_sk_alloc() earlier in sk_clone_lock()
+    - macsec: fix memory leaks when skb_to_sgvec fails
+    - l2tp: check ps->sock before running pppol2tp_session_ioctl()
+    - netlink: fix netlink_ack() extack race
+    - sctp: add the missing sock_owned_by_user check in sctp_icmp_redirect
+    - tcp/dccp: fix ireq->opt races
+    - packet: avoid panic in packet_getsockopt()
+    - geneve: Fix function matching VNI and tunnel ID on big-endian
+    - net: bridge: fix returning of vlan range op errors
+    - soreuseport: fix initialization race
+    - ipv6: flowlabel: do not leave opt->tot_len with garbage
+    - sctp: full support for ipv6 ip_nonlocal_bind & IP_FREEBIND
+    - tcp/dccp: fix lockdep splat in inet_csk_route_req()
+    - tcp/dccp: fix other lockdep splats accessing ireq_opt
+    - net: dsa: check master device before put
+    - net/unix: don't show information about sockets from other namespaces
+    - tap: double-free in error path in tap_open()
+    - net/mlx5: Fix health work queue spin lock to IRQ safe
+    - net/mlx5e: Properly deal with encap flows add/del under neigh update
+    - ipip: only increase err_count for some certain type icmp in ipip_err
+    - ip6_gre: only increase err_count for some certain type icmpv6 in ip6gre_err
+    - ip6_gre: update dst pmtu if dev mtu has been updated by toobig in
+      __gre6_xmit
+    - tcp: refresh tp timestamp before tcp_mtu_probe()
+    - tap: reference to KVA of an unloaded module causes kernel panic
+    - sctp: reset owner sk for data chunks on out queues when migrating a sock
+    - net_sched: avoid matching qdisc with zero handle
+    - l2tp: hold tunnel in pppol2tp_connect()
+    - ipv6: addrconf: increment ifp refcount before ipv6_del_addr()
+    - tcp: fix tcp_mtu_probe() vs highest_sack
+    - mac80211: accept key reinstall without changing anything
+    - mac80211: use constant time comparison with keys
+    - mac80211: don't compare TKIP TX MIC key in reinstall prevention
+    - usb: usbtest: fix NULL pointer dereference
+    - Input: ims-psu - check if CDC union descriptor is sane
+    - EDAC, sb_edac: Don't create a second memory controller if HA1 is not present
+    - dmaengine: dmatest: warn user when dma test times out
+    - Linux 4.13.14
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Wed, 14 Mar 2018 11:38:23 +0100
+
+linux (4.13.0-37.42) artful; urgency=medium
 
   * linux: 4.13.0-37.42 -proposed tracker (LP: #1751798)
 
@@ -144,7 +565,7 @@ linux-hwe (4.13.0-37.42~16.04.1) xenial; urgency=medium
     boot (LP: #1742721)
     - staging: sm750fb: Fix parameter mistake in poke32
 
- -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Wed, 07 Mar 2018 16:03:07 +0100
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Wed, 07 Mar 2018 12:20:00 +0100
 
 linux (4.13.0-36.40) artful; urgency=medium
 
