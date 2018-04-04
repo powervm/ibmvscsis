@@ -54,6 +54,7 @@ com90io ?
 com90xx ?
 cs89x0 ?
 ctcm ?
+cxgb4 ?
 de2104x ?
 de4x5 ?
 de600 ?
@@ -126,6 +127,7 @@ ne2k-pci ?
 ne3210 ?
 netconsole ?
 netiucv ?
+netsec ?
 netxen_nic ?
 ni5010 ?
 ni52 ?
