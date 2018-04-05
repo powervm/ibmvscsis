@@ -10018,6 +10018,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x00000000	shash_ahash_finup
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	shash_ahash_update
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	shash_attr_alg
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	shash_free_instance
+EXPORT_SYMBOL_GPL vmlinux 0x00000000	shash_no_setkey
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	shash_register_instance
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	shmem_add_seals
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	shmem_file_setup
@@ -10051,6 +10052,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x00000000	skb_copy_ubufs
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	skb_cow_data
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	skb_gro_receive
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	skb_gso_transport_seglen
+EXPORT_SYMBOL_GPL vmlinux 0x00000000	skb_gso_validate_mac_len
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	skb_gso_validate_mtu
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	skb_morph
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	skb_partial_csum_set
