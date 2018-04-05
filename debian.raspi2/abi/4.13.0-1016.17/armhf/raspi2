@@ -10663,8 +10663,8 @@ EXPORT_SYMBOL_GPL drivers/net/tap 0x299baa61	tap_destroy_cdev
 EXPORT_SYMBOL_GPL drivers/net/tap 0x59db4594	tap_free_minor
 EXPORT_SYMBOL_GPL drivers/net/tap 0x873c88c6	tap_queue_resize
 EXPORT_SYMBOL_GPL drivers/net/tap 0xa9f22845	tap_del_queues
-EXPORT_SYMBOL_GPL drivers/net/tap 0xb5148ea1	tap_create_cdev
 EXPORT_SYMBOL_GPL drivers/net/tap 0xb891d166	tap_get_skb_array
+EXPORT_SYMBOL_GPL drivers/net/tap 0xe0ef862c	tap_create_cdev
 EXPORT_SYMBOL_GPL drivers/net/tun 0x5c45d5e3	tun_get_socket
 EXPORT_SYMBOL_GPL drivers/net/tun 0xcfff75ae	tun_get_skb_array
 EXPORT_SYMBOL_GPL drivers/net/usb/cdc_ether 0x1debc451	usbnet_ether_cdc_bind
@@ -12190,7 +12190,6 @@ EXPORT_SYMBOL_GPL net/core/devlink 0xd4920fbf	devlink_port_type_eth_set
 EXPORT_SYMBOL_GPL net/core/devlink 0xd5c6d571	devlink_port_register
 EXPORT_SYMBOL_GPL net/core/devlink 0xe591d23e	devlink_alloc
 EXPORT_SYMBOL_GPL net/dccp/dccp 0x052d96a5	dccp_send_ack
-EXPORT_SYMBOL_GPL net/dccp/dccp 0x08569ae8	dccp_parse_options
 EXPORT_SYMBOL_GPL net/dccp/dccp 0x09a123b7	dccp_orphan_count
 EXPORT_SYMBOL_GPL net/dccp/dccp 0x0db0d0d2	dccp_set_state
 EXPORT_SYMBOL_GPL net/dccp/dccp 0x1a06d707	dccp_make_response
@@ -12224,6 +12223,7 @@ EXPORT_SYMBOL_GPL net/dccp/dccp 0x9dcc0b99	dccp_destroy_sock
 EXPORT_SYMBOL_GPL net/dccp/dccp 0xa00224f0	dccp_send_sync
 EXPORT_SYMBOL_GPL net/dccp/dccp 0xbc672833	dccp_insert_option
 EXPORT_SYMBOL_GPL net/dccp/dccp 0xcd7c5e47	dccp_getsockopt
+EXPORT_SYMBOL_GPL net/dccp/dccp 0xd3ee44d1	dccp_parse_options
 EXPORT_SYMBOL_GPL net/dccp/dccp 0xd3f9a093	inet_dccp_listen
 EXPORT_SYMBOL_GPL net/dccp/dccp 0xda79ad46	dccp_poll
 EXPORT_SYMBOL_GPL net/dccp/dccp 0xe63188e7	dccp_sendmsg
@@ -13770,6 +13770,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x111ed798	__blk_mq_debugfs_rq_show
 EXPORT_SYMBOL_GPL vmlinux 0x112ab9b0	get_itimerspec64
 EXPORT_SYMBOL_GPL vmlinux 0x112f7cfd	usbnet_read_cmd_nopm
 EXPORT_SYMBOL_GPL vmlinux 0x11740fed	component_unbind_all
+EXPORT_SYMBOL_GPL vmlinux 0x117cdc97	shash_no_setkey
 EXPORT_SYMBOL_GPL vmlinux 0x11a4522a	inet6_lookup_listener
 EXPORT_SYMBOL_GPL vmlinux 0x11b1bc24	powercap_register_zone
 EXPORT_SYMBOL_GPL vmlinux 0x11ccfb53	adp5520_set_bits
@@ -14824,6 +14825,7 @@ EXPORT_SYMBOL_GPL vmlinux 0x527d6a77	ndo_dflt_bridge_getlink
 EXPORT_SYMBOL_GPL vmlinux 0x529f6313	dma_buf_vmap
 EXPORT_SYMBOL_GPL vmlinux 0x52a41251	__cookie_v4_init_sequence
 EXPORT_SYMBOL_GPL vmlinux 0x52cf5fc9	tpm_transmit_cmd
+EXPORT_SYMBOL_GPL vmlinux 0x52d195ad	skb_gso_validate_mac_len
 EXPORT_SYMBOL_GPL vmlinux 0x530825f6	sock_diag_put_meminfo
 EXPORT_SYMBOL_GPL vmlinux 0x534e9509	init_uts_ns
 EXPORT_SYMBOL_GPL vmlinux 0x5358fc36	ring_buffer_discard_commit
