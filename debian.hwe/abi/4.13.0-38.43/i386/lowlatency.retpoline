@@ -1,0 +1,15 @@
+arch/x86/kernel/apm_32.c .text __apm_bios_call lcall *%cs:0x0
+arch/x86/kernel/apm_32.c .text __apm_bios_call_simple lcall *%cs:0x0
+arch/x86/pci/pcbios.c .text pci_bios_read lcall *(%esi)
+arch/x86/pci/pcbios.c .text pci_bios_read lcall *(%esi)
+arch/x86/pci/pcbios.c .text pci_bios_write lcall *(%esi)
+arch/x86/pci/pcbios.c .text pcibios_get_irq_routing_table lcall *(%esi)
+arch/x86/pci/pcbios.c .text pcibios_set_irq_routing lcall *(%esi)
+arch/x86/platform/efi/efi_stub_32.S .text efi_call_phys jmp *%ecx
+arch/x86/platform/efi/efi_stub_32.S .text efi_call_phys jmp *%edx
+arch/x86/platform/efi/efi_stub_32.S .text efi_call_phys jmp *%edx
+drivers/video/fbdev/uvesafb.c .text uvesafb_pan_display call *(%edi)
+drivers/video/fbdev/uvesafb.c .text uvesafb_setpalette.isra.6 call *(%esi)
+drivers/video/fbdev/vesafb.c .text vesafb_pan_display call *(%edi)
+drivers/video/fbdev/vesafb.c .text vesafb_setcolreg call *(%esi)
+drivers/watchdog/hpwdt.c .text asminline_call call *0xc(%ebp)
