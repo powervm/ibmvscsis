@@ -1,6 +1,132 @@
-linux-hwe (4.13.0-38.43~16.04.1) xenial; urgency=medium
+linux-hwe (4.13.0-39.44~16.04.1) xenial; urgency=medium
 
-  * linux-hwe: 4.13.0-38.43~16.04.1 -proposed tracker (LP: #1755767)
+  * linux-hwe: 4.13.0-39.44~16.04.1 -proposed tracker (LP: #1761462)
+
+  * linux: 4.13.0-39.44 -proposed tracker (LP: #1761456)
+
+  * intel-microcode 3.20180312.0 causes lockup at login screen(w/ linux-
+    image-4.13.0-37-generic) (LP: #1759920) // CVE-2017-5715 (Spectre v2
+    Intel) // CVE-2017-5754
+    - x86/mm: Reinitialize TLB state on hotplug and resume
+
+  * intel-microcode 3.20180312.0 causes lockup at login screen(w/ linux-
+    image-4.13.0-37-generic) (LP: #1759920) // CVE-2017-5715 (Spectre v2 Intel)
+    - Revert "x86/mm: Only set IBPB when the new thread cannot ptrace current
+      thread"
+    - x86/speculation: Use Indirect Branch Prediction Barrier in context switch
+
+  * DKMS driver builds fail with: Cannot use CONFIG_STACK_VALIDATION=y, please
+    install libelf-dev, libelf-devel or elfutils-libelf-devel (LP: #1760876)
+    - [Packaging] include the retpoline extractor in the headers
+
+  * retpoline hints: primary infrastructure and initial hints (LP: #1758856)
+    - [Packaging] retpoline-extract: flag *0xNNN(%reg) branches
+    - x86/speculation, objtool: Annotate indirect calls/jumps for objtool
+    - x86/speculation, objtool: Annotate indirect calls/jumps for objtool on 32bit
+    - x86/paravirt, objtool: Annotate indirect calls
+    - [Packaging] retpoline -- add safe usage hint support
+    - [Packaging] retpoline-check -- only report additions
+    - [Packaging] retpoline -- widen indirect call/jmp detection
+    - [Packaging] retpoline -- elide %rip relative indirections
+    - [Packaging] retpoline -- clear hint information from packages
+    - KVM: x86: Make indirect calls in emulator speculation safe
+    - KVM: VMX: Make indirect call speculation safe
+    - x86/boot, objtool: Annotate indirect jump in secondary_startup_64()
+    - SAUCE: early/late -- annotate indirect calls in early/late initialisation
+      code
+    - SAUCE: vga_set_mode -- avoid jump tables
+    - [Config] retpoline -- switch to new format
+    - [Packaging] retpoline hints -- handle missing files when RETPOLINE not
+      enabled
+    - [Packaging] final-checks -- remove check for empty retpoline files
+
+  * retpoline: ignore %cs:0xNNN constant indirections (LP: #1752655)
+    - [Packaging] retpoline -- elide %cs:0xNNNN constants on i386
+
+  * zfs system process hung on container stop/delete (LP: #1754584)
+    - SAUCE: Fix non-prefaulted page deadlock (LP: #1754584)
+
+  * zfs-linux 0.6.5.11-1ubuntu5 ADT test failure with linux 4.15.0-1.2
+    (LP: #1737761)
+    - SAUCE: (noup) Update zfs to 0.6.5.11-1ubuntu3.2
+
+  * AT_BASE_PLATFORM in AUXV is absent on kernels available on Ubuntu 17.10
+    (LP: #1759312)
+    - powerpc/64s: Fix NULL AT_BASE_PLATFORM when using DT CPU features
+
+  * btrfs and tar sparse truncate archives (LP: #1757565)
+    - Btrfs: move definition of the function btrfs_find_new_delalloc_bytes
+    - Btrfs: fix reported number of inode blocks after buffered append writes
+
+  * efifb broken on ThunderX-based Gigabyte nodes (LP: #1758375)
+    - drivers/fbdev/efifb: Allow BAR to be moved instead of claiming it
+
+  * Intel i40e PF reset due to incorrect MDD detection (continues...)
+    (LP: #1723127)
+    - i40e/i40evf: Account for frags split over multiple descriptors in check
+      linearize
+
+  * Fix an issue that when system in S3, USB keyboard can't wake up the system.
+    (LP: #1759511)
+    - ACPI / PM: Allow deeper wakeup power states with no _SxD nor _SxW
+
+  * [8086:3e92] display becomes blank after S3 (LP: #1759188)
+    - drm/i915: Apply Display WA #1183 on skl, kbl, and cfl
+
+  * add audio kernel patches for Raven (LP: #1758364)
+    - ALSA: hda: Add Raven PCI ID
+    - ALSA: hda/realtek - Fix ALC700 family no sound issue
+
+  * Cpu utilization showing system time for kvm guests (performance) (sysstat)
+    (LP: #1755979)
+    - KVM: PPC: Book3S HV: Fix guest time accounting with VIRT_CPU_ACCOUNTING_GEN
+
+  * Kernel panic on a nfsroot system (LP: #1734327)
+    - Revert "UBUNTU: SAUCE: LSM stacking: add stacking support to apparmor
+      network hooks"
+    - Revert "UBUNTU: SAUCE: LSM stacking: LSM: Infrastructure management of the
+      remaining blobs"
+
+  * can't record sound via front headset port on the Dell Precision 3630
+    (LP: #1759088)
+    - ALSA: hda/realtek - Fix Dell headset Mic can't record
+
+  * speaker can't output sound anymore after system resumes from S3 on a lenovo
+    machine with alc257 (LP: #1758829)
+    - ALSA: hda/realtek - Fix speaker no sound after system resume
+
+  * hda driver initialization takes too much time on the machine with coffeelake
+    audio controller [8086:a348] (LP: #1758800)
+    - ALSA: hda - Force polling mode on CFL for fixing codec communication
+
+  * Let headset-mode initialization be called on Dell Precision 3930
+    (LP: #1757584)
+    - ALSA: hda/realtek - Add headset mode support for Dell laptop
+
+  * ubuntu_zram_smoke test will cause soft lockup on Artful ThunderX ARM64
+    (LP: #1755073)
+    - SAUCE: crypto: thunderx_zip: Fix fallout from CONFIG_VMAP_STACK
+
+  * [Hyper-V] include kvp fix for Avoid reading past allocated blocks from KVP
+    file (LP: #1750349)
+    - hv: kvp: Avoid reading past allocated blocks from KVP file
+
+  * IMA policy parsing is broken in 4.13 (LP: #1755804)
+    - ima/policy: fix parsing of fsuuid
+
+  * external mic not work on Dell OptiPlex 7460 AIO (LP: #1755954)
+    - ALSA: hda/realtek - Add headset mode support for Dell laptop
+
+  * sbsa watchdog crashes thunderx2 system (LP: #1755595)
+    - watchdog: sbsa: use 32-bit read for WCV
+
+  * CVE-2018-8043
+    - net: phy: mdio-bcm-unimac: fix potential NULL dereference in
+      unimac_mdio_probe()
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Thu, 05 Apr 2018 14:47:00 +0200
+
+linux (4.13.0-38.43) artful; urgency=medium
 
   * linux: 4.13.0-38.43 -proposed tracker (LP: #1755762)
 
