@@ -99,6 +99,9 @@ fi
 #
 rsync -av --delete ${DEBIAN_SOURCE}/d-i/ ${DEBIAN_TARGET}/d-i
 
+# Remove snapdragon from d-i
+sed -i /snapdragon/d ${DEBIAN_TARGET}/d-i/kernel-versions
+
 #
 # Update configs from master
 #
@@ -108,6 +111,10 @@ rsync -av --delete ${DEBIAN_SOURCE}/config/ ${DEBIAN_TARGET}/config
 # Update package and DTB settings from master.
 #
 rsync -av --delete ${DEBIAN_SOURCE}/rules.d/*.mk ${DEBIAN_TARGET}/rules.d/
+
+# We don't build snapdragon
+sed -i '/_snapdragon/d' ${DEBIAN_TARGET}/rules.d/arm64.mk
+sed -i 's/^\(flavo.*\)\ssnapdragon\(.*\)$/\1\2/' ${DEBIAN_TARGET}/rules.d/arm64.mk
 
 #
 # Update modprobe.d from master
