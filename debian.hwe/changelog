@@ -1,6 +1,17 @@
-linux-hwe (4.13.0-39.44~16.04.1) xenial; urgency=medium
+linux-hwe (4.13.0-41.46~16.04.1) xenial; urgency=medium
 
-  * linux-hwe: 4.13.0-39.44~16.04.1 -proposed tracker (LP: #1761462)
+  * CVE-2018-8897
+    - x86/entry/64: Don't use IST entry for #BP stack
+
+  * CVE-2018-1087
+    - kvm/x86: fix icebp instruction handling
+
+  * CVE-2018-1000199
+    - perf/hwbp: Simplify the perf-hwbp code, fix documentation
+
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Thu, 03 May 2018 09:58:36 +0200
+
+linux (4.13.0-39.44) artful; urgency=medium
 
   * linux: 4.13.0-39.44 -proposed tracker (LP: #1761456)
 

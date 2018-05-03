@@ -7730,7 +7730,6 @@ EXPORT_SYMBOL_GPL virt/lib/irqbypass 0x00000000	irq_bypass_register_producer
 EXPORT_SYMBOL_GPL virt/lib/irqbypass 0x00000000	irq_bypass_unregister_consumer
 EXPORT_SYMBOL_GPL virt/lib/irqbypass 0x00000000	irq_bypass_unregister_producer
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	PageHuge
-EXPORT_SYMBOL_GPL vmlinux 0x00000000	___ptrace_may_access
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	__ablkcipher_walk_complete
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	__add_pages
 EXPORT_SYMBOL_GPL vmlinux 0x00000000	__alloc_percpu
