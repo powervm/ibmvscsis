@@ -1,6 +1,24 @@
-linux-hwe-edge (4.15.0-20.21~16.04.1) xenial; urgency=medium
+linux-hwe-edge (4.15.0-21.22~16.04.1) xenial; urgency=medium
 
-  * linux-hwe-edge: 4.15.0-20.21~16.04.1 -proposed tracker (LP: #1766473)
+  * linux-hwe-edge: 4.15.0-21.22~16.04.1 -proposed tracker (LP: #1767410)
+
+  * linux: 4.15.0-21.22 -proposed tracker (LP: #1767397)
+
+  * initramfs-tools exception during pm.DoInstall with  do-release-upgrade from
+    16.04 to 18.04  (LP: #1766727)
+    - Add linux-image-* Breaks on s390-tools (<< 2.3.0-0ubuntu3)
+
+  * linux-image-4.15.0-20-generic install after upgrade from xenial breaks
+    (LP: #1767133)
+    - Packaging: Depends on linux-base that provides the necessary tools
+
+  * linux-image packages need to Breaks flash-kernel << 3.90ubuntu2
+    (LP: #1766629)
+    - linux-image-* breaks on flash-kernel (<< 3.90ubuntu2)
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Mon, 30 Apr 2018 14:58:35 -0300
+
+linux (4.15.0-20.21) bionic; urgency=medium
 
   * linux: 4.15.0-20.21 -proposed tracker (LP: #1766452)
 
